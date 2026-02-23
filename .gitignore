@@ -3,3 +3,5 @@ Passwords.md
 
 /worker/.venv
 /worker/venv
+
+/worker/__pycache__
