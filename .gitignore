@@ -1,2 +1,5 @@
 ExecutionPlan.md
 Passwords.md
+
+/worker/.venv
+/worker/venv

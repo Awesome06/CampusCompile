@@ -1,0 +1,14 @@
+# Use the official lightweight Alpine Python image
+FROM python:3.11-alpine
+
+# Set the working directory inside the container
+WORKDIR /sandbox
+
+# CRITICAL SECURITY: Create a non-root user
+# If a student writes a script to delete the file system, it will fail because 
+# the 'student' user lacks root privileges.
+RUN adduser -D student
+USER student
+
+# The container will sit idle until we pass a command to it
+CMD ["/bin/sh"]
