@@ -51,6 +51,12 @@ def process_submission(submission_id):
         """, (submission.get('problem_id'),))
         test_cases = cursor.fetchall()
 
+        if len(test_cases) == 0:
+            cursor.execute("UPDATE submissions SET status = 'SE - No Test Cases' WHERE submission_id = %s", (submission_id,))
+            conn.commit()
+            print(f"[!] System Error: No test cases found for Problem {submission.get('problem_id')}")
+            return
+
         # 4. Loop through test cases and grade
         final_verdict = 'AC'
         max_time_ms = 0
