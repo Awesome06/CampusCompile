@@ -26,10 +26,11 @@ var (
 
 // --- STRUCTS ---
 type Problem struct {
-	ID         string `json:"problem_id"`
-	Title      string `json:"title"`
-	Slug       string `json:"slug"`
-	Difficulty string `json:"difficulty"`
+	ID          string `json:"problem_id"`
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	Difficulty  string `json:"difficulty"`
 }
 
 type SubmitRequest struct {
@@ -86,6 +87,7 @@ func main() {
 	router.POST("/api/auth/register", registerUser)
 	router.POST("/api/auth/login", loginUser)
 	router.GET("/api/problems", getProblems)
+	router.GET("/api/problems/:id", getProblemByID)
 	router.GET("/api/submissions/:id", getSubmissionStatus)
 
 	// --- PROTECTED ROUTES (Bouncer checks token first) ---
@@ -286,4 +288,20 @@ func getSubmissionStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"submission_id": submissionID, "language": language, "status": status})
+}
+
+func getProblemByID(c *gin.Context) {
+	id := c.Param("id")
+	var p Problem
+
+	err := dbPool.QueryRow(ctx,
+		"SELECT problem_id, title, description, difficulty FROM problems WHERE problem_id = $1",
+		id).Scan(&p.ID, &p.Title, &p.Description, &p.Difficulty)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, p)
 }

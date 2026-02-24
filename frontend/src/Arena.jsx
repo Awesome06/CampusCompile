@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -6,11 +6,19 @@ import axios from 'axios';
 export default function Arena() {
   const { id } = useParams();
   
-  const [code, setCode] = useState('// Write your C++ code here\n#include <iostream>\n\nint main() {\n    std::cout << "0 1\\n";\n    return 0;\n}');
-  const [language, setLanguage] = useState('cpp');
+  // 👇 New state to hold the fetched problem data
+  const [problem, setProblem] = useState(null);
   
-  // We now track the raw status string directly (e.g., "Pending", "Accepted", "Wrong Answer")
+  const [code, setCode] = useState('// Write your solution here...');
+  const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
+
+  // --- NEW: FETCH PROBLEM DATA ON LOAD ---
+  useEffect(() => {
+    axios.get(`http://localhost:8080/api/problems/${id}`)
+      .then(res => setProblem(res.data))
+      .catch(err => console.error("Could not fetch problem details", err));
+  }, [id]); // Re-run this if the 'id' in the URL changes
 
   const handleSubmit = async () => {
     setSubmitStatus('Submitting to Go API... 🚀');
@@ -33,7 +41,6 @@ export default function Arena() {
       const subId = response.data.submission_id;
       setSubmitStatus('Pending... ⏳');
       
-      // 🚀 Start polling the server for the final verdict!
       pollSubmissionStatus(subId);
 
     } catch (error) {
@@ -42,49 +49,56 @@ export default function Arena() {
     }
   };
 
-  // --- THE NEW POLLING FUNCTION ---
   const pollSubmissionStatus = async (submissionId) => {
-  try {
-    const res = await axios.get(`http://localhost:8080/api/submissions/${submissionId}`);
-    const currentStatus = res.data.status;
-    
-    console.log("Current Verdict from Backend:", currentStatus); // <-- Debugging line
+    try {
+      const res = await axios.get(`http://localhost:8080/api/submissions/${submissionId}`);
+      const currentStatus = res.data.status;
+      
+      console.log("Current Verdict from Backend:", currentStatus); 
 
-    // If the status is still "Pending" or "Running", keep polling
-    if (currentStatus === 'Pending' || currentStatus === 'Running') {
-      setTimeout(() => pollSubmissionStatus(submissionId), 1000);
-      setSubmitStatus(currentStatus); // Keep the UI updated with "Running"
-    } else {
-      // 🎉 SUCCESS: The worker finished! 
-      // This will capture "Accepted", "WA", "TLE", etc.
-      setSubmitStatus(currentStatus);
+      if (currentStatus === 'Pending' || currentStatus === 'Running') {
+        setTimeout(() => pollSubmissionStatus(submissionId), 1000);
+        setSubmitStatus(currentStatus); 
+      } else {
+        setSubmitStatus(currentStatus);
+      }
+    } catch (err) {
+      console.error("Polling Error:", err);
+      setSubmitStatus('Error fetching status');
     }
-  } catch (err) {
-    console.error("Polling Error:", err);
-    setSubmitStatus('Error fetching status');
-  }
-};
+  };
 
-  // Helper to colorize the output terminal
   const getStatusColor = () => {
-    if (submitStatus === 'Accepted') return 'text-green-400 font-bold';
-    if (submitStatus.includes('Wrong Answer') || submitStatus.includes('Error')) return 'text-red-400 font-bold';
-    if (submitStatus.includes('Pending')) return 'text-yellow-400 animate-pulse';
+    if (submitStatus === 'Accepted' || submitStatus === 'AC') return 'text-green-400 font-bold';
+    if (submitStatus === 'WA' || submitStatus.includes('Wrong') || submitStatus.includes('Error')) return 'text-red-400 font-bold';
+    if (submitStatus === 'Pending' || submitStatus === 'Running') return 'text-yellow-400 animate-pulse';
     return 'text-gray-400';
   };
+
+  // 👇 Wait to render the UI until the Go API returns the problem data
+  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl">Loading Arena...</div>;
 
   return (
     <div className="flex h-[calc(100vh-61px)] w-full"> 
       
-      {/* LEFT PANE: Problem Description */}
+      {/* LEFT PANE: Dynamic Problem Description */}
       <div className="w-1/2 p-6 overflow-y-auto border-r border-dark-border bg-dark-bg">
-        <h2 className="text-2xl font-bold mb-4 text-white">Problem ID:</h2>
-        <code className="text-xs text-dark-accent bg-dark-surface p-2 rounded mb-6 inline-block">{id}</code>
-        <p className="text-gray-300 mb-4 leading-relaxed">
-          Solve the problem described here. Once you are ready, hit the Submit Code button to send it to the execution engine.
-        </p>
+        <h2 className="text-3xl font-bold mb-4 text-white">{problem.title}</h2>
         
-        {/* Dynamic System Status Box */}
+        {/* Dynamic Difficulty Badge */}
+        <span className={`px-2 py-1 text-xs rounded font-bold mb-6 inline-block shadow-sm ${
+          problem.difficulty === 'Easy' ? 'bg-green-900/50 text-green-400 border border-green-800' : 
+          problem.difficulty === 'Medium' ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-800' : 
+          'bg-red-900/50 text-red-400 border border-red-800'
+        }`}>
+          {problem.difficulty}
+        </span>
+        
+        {/* Render the actual database description. whitespace-pre-wrap preserves formatting/newlines */}
+        <div className="text-gray-300 mb-4 leading-relaxed whitespace-pre-wrap">
+          {problem.description}
+        </div>
+        
         <div className="mt-8 p-4 bg-[#2a2a2a] border border-dark-border rounded shadow-inner">
           <h3 className="text-sm font-bold text-gray-400 mb-2">VERDICT:</h3>
           <p className={`font-mono text-lg tracking-wide ${getStatusColor()}`}>
@@ -99,7 +113,7 @@ export default function Arena() {
             <select 
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer"
+              className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer hover:border-gray-500 transition"
             >
                 <option value="cpp">C++</option>
                 <option value="python">Python</option>
