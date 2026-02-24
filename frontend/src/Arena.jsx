@@ -24,8 +24,13 @@ export default function Arena() {
     setSubmitStatus('Submitting to Go API... 🚀');
 
     // 👇 YOUR REAL JWT TOKEN
-    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzIxNjg1MzYsInVzZXJfaWQiOiI4MmJjNzZiNC04NzU5LTQxZDYtYjJlNC1hZTdkMDYyODE2NTkifQ.2vVv_rvnxlniCcBf0qL7tx8jX_33fA7hdbjq_fel_6E";
+    const token = localStorage.getItem('token');
 
+    if (!token) {
+      setSubmitStatus('Error: You must be logged in to submit code.');
+      return;
+    }
+    
     try {
       const response = await axios.post('http://localhost:8080/api/submit', {
         problem_id: id,
