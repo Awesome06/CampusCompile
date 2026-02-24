@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* A nice dark background for the whole app */
+body {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
