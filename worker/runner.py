@@ -6,7 +6,7 @@ import tempfile
 client = docker.from_env()
 
 #Python
-def execute_python_code(source_code: str, input_data: str, time_limit_seconds: int = 2):
+def execute_python_code(source_code: str, input_data: str, time_limit_seconds: float = 2):
     """
     Executes Python code inside a secure Docker container using file-based I/O.
     """
@@ -16,32 +16,37 @@ def execute_python_code(source_code: str, input_data: str, time_limit_seconds: i
         with open(source_path, 'w', encoding='utf-8') as f:
             f.write(source_code)
             
-        # 2. Write the test case input to a file (This prevents socket/buffer crashes on massive inputs)
+        # 2. Write the test case input to a file
         input_path = os.path.join(temp_dir, 'input.txt')
         with open(input_path, 'w', encoding='utf-8') as f:
             f.write(input_data)
 
         try:
             # 3. Spin up the container
-            # Notice the command: We use 'sh -c' to redirect input.txt directly into the python script
             container = client.containers.run(
                 image="campus-python",
                 command='sh -c "python /sandbox/solution.py < /sandbox/input.txt"',
                 volumes={temp_dir: {'bind': '/sandbox', 'mode': 'ro'}},
                 working_dir='/sandbox',
                 detach=True,           
-                network_disabled=True, # SECURITY: No internet access
-                mem_limit="256m",      # SECURITY: Prevent Out Of Memory crashes
+                network_disabled=True, 
+                mem_limit="256m",      
                 cpu_period=100000,
-                cpu_quota=100000       # SECURITY: Limit to 1 CPU core
+                cpu_quota=100000,
+                
+                # --- SECURITY PATCHES ---
+                pids_limit=64,                     # Prevents Fork Bombs
+                cap_drop=["ALL"],                  # Strips root capabilities
+                security_opt=["no-new-privileges"] # Prevents privilege escalation
             )
 
             # 4. Wait for the container to finish, enforcing the Time Limit (TLE)
             result = container.wait(timeout=time_limit_seconds)
             exit_code = result['StatusCode']
 
-            # 5. Grab the output (stdout and stderr)
-            logs = container.logs(stdout=True, stderr=True).decode('utf-8')
+            # 5. Grab the output (stdout and stderr) 
+            # SECURITY PATCH: tail=500 prevents Output Flooding (OOM crashes)
+            logs = container.logs(stdout=True, stderr=True, tail=500).decode('utf-8')
 
             # Clean up the container
             container.remove(force=True)
@@ -65,7 +70,7 @@ def execute_python_code(source_code: str, input_data: str, time_limit_seconds: i
             return {"status": "System Error", "output": str(e)}
 
 #CPP
-def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: int = 2):
+def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: float = 2):
     """
     Executes C++ code inside a secure Docker container using a compile-then-run pipeline.
     """
@@ -82,7 +87,6 @@ def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: int 
 
         # --- STEP 1: COMPILATION ---
         try:
-            # We mount as 'rw' so g++ can save the compiled binary back to our host temp folder
             compile_container = client.containers.run(
                 image="campus-cpp",
                 command='g++ -O2 -w /sandbox/solution.cpp -o /sandbox/solution.out',
@@ -90,15 +94,21 @@ def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: int 
                 working_dir='/sandbox',
                 detach=True,
                 network_disabled=True,
-                mem_limit="512m" # Compilation requires more memory than execution
+                mem_limit="512m",
+                
+                # --- SECURITY PATCHES ---
+                pids_limit=64,
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"]
             )
             
-            # Wait for compilation to finish (10 second hard limit for large templates)
+            # Wait for compilation to finish
             compile_result = compile_container.wait(timeout=10)
             
             # If exit code is not 0, it's a Compilation Error
             if compile_result['StatusCode'] != 0:
-                logs = compile_container.logs(stdout=True, stderr=True).decode('utf-8')
+                # SECURITY PATCH: tail=500
+                logs = compile_container.logs(stdout=True, stderr=True, tail=500).decode('utf-8')
                 compile_container.remove(force=True)
                 return {"status": "Compilation Error", "output": logs.strip()}
                 
@@ -109,7 +119,6 @@ def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: int 
 
         # --- STEP 2: EXECUTION ---
         try:
-            # We mount as 'ro' (Read-Only) for maximum security during execution
             run_container = client.containers.run(
                 image="campus-cpp",
                 command='sh -c "/sandbox/solution.out < /sandbox/input.txt"',
@@ -119,12 +128,18 @@ def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: int 
                 network_disabled=True, 
                 mem_limit="256m",      
                 cpu_period=100000,
-                cpu_quota=100000       
+                cpu_quota=100000,
+                
+                # --- SECURITY PATCHES ---
+                pids_limit=64,
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"]
             )
 
             result = run_container.wait(timeout=time_limit_seconds)
             exit_code = result['StatusCode']
-            logs = run_container.logs(stdout=True, stderr=True).decode('utf-8')
+            # SECURITY PATCH: tail=500
+            logs = run_container.logs(stdout=True, stderr=True, tail=500).decode('utf-8')
             run_container.remove(force=True)
 
             return {
@@ -144,11 +159,9 @@ def execute_cpp_code(source_code: str, input_data: str, time_limit_seconds: int 
         
 
 #Java
-def execute_java_code(source_code: str, input_data: str, time_limit_seconds: int = 2):
+def execute_java_code(source_code: str, input_data: str, time_limit_seconds: float = 2):
     """
     Executes Java code inside a secure Docker container using a compile-then-run pipeline.
-    NOTE: In Java, the public class name must match the file name. 
-    We enforce the class name 'Main' for all submissions.
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         # 1. Write the user's Java code to Main.java
@@ -170,13 +183,19 @@ def execute_java_code(source_code: str, input_data: str, time_limit_seconds: int
                 working_dir='/sandbox',
                 detach=True,
                 network_disabled=True,
-                mem_limit="512m" 
+                mem_limit="512m",
+                
+                # --- SECURITY PATCHES ---
+                pids_limit=64,
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"]
             )
             
             compile_result = compile_container.wait(timeout=10)
             
             if compile_result['StatusCode'] != 0:
-                logs = compile_container.logs(stdout=True, stderr=True).decode('utf-8')
+                # SECURITY PATCH: tail=500
+                logs = compile_container.logs(stdout=True, stderr=True, tail=500).decode('utf-8')
                 compile_container.remove(force=True)
                 return {"status": "Compilation Error", "output": logs.strip()}
                 
@@ -187,7 +206,6 @@ def execute_java_code(source_code: str, input_data: str, time_limit_seconds: int
 
         # --- STEP 2: EXECUTION ---
         try:
-            # -Xmx256m strictly limits the user's memory heap to 256MB to catch MLEs
             run_container = client.containers.run(
                 image="campus-java",
                 command='sh -c "java -Xmx256m Main < /sandbox/input.txt"',
@@ -195,14 +213,20 @@ def execute_java_code(source_code: str, input_data: str, time_limit_seconds: int
                 working_dir='/sandbox',
                 detach=True,           
                 network_disabled=True, 
-                mem_limit="512m",      # Docker container limit (higher to allow JVM overhead)
+                mem_limit="512m",      
                 cpu_period=100000,
-                cpu_quota=100000       
+                cpu_quota=100000,
+                
+                # --- SECURITY PATCHES ---
+                pids_limit=64,
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"]
             )
 
             result = run_container.wait(timeout=time_limit_seconds)
             exit_code = result['StatusCode']
-            logs = run_container.logs(stdout=True, stderr=True).decode('utf-8')
+            # SECURITY PATCH: tail=500
+            logs = run_container.logs(stdout=True, stderr=True, tail=500).decode('utf-8')
             run_container.remove(force=True)
 
             return {
@@ -246,7 +270,7 @@ def grade_submission(language: str, source_code: str, input_data: str, expected_
     time_limit_sec = time_limit_ms / 1000.0
 
     # 1. Execute the code based on language
-    if language == 'python3':
+    if language == 'python':
         result = execute_python_code(source_code, input_data, time_limit_sec)
     elif language == 'cpp':
         result = execute_cpp_code(source_code, input_data, time_limit_sec)
