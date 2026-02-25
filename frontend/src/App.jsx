@@ -4,6 +4,18 @@ import axios from 'axios';
 import Arena from './Arena';
 import Login from './Login';       // <-- New Import
 import Register from './Register'; // <-- New Import
+import { Navigate } from 'react-router-dom';
+
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    // Redirect to login if no token is found
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
 
 // --- PLACEHOLDER COMPONENTS ---
 function Landing() {
@@ -105,7 +117,14 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/problems" element={<ProblemList />} />
-          <Route path="/arena/:id" element={<Arena />} />
+          <Route 
+            path="/arena/:id" 
+            element={
+              <ProtectedRoute>
+                <Arena />
+              </ProtectedRoute>
+            } 
+          />
           <Route path="/login" element={<Login />} />       {/* <-- New Route */}
           <Route path="/register" element={<Register />} /> {/* <-- New Route */}
         </Routes>

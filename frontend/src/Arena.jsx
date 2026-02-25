@@ -13,12 +13,24 @@ export default function Arena() {
   const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
 
-  // --- NEW: FETCH PROBLEM DATA ON LOAD ---
+ // --- NEW: FETCH PROBLEM DATA ON LOAD (PROTECTED) ---
   useEffect(() => {
-    axios.get(`http://localhost:8080/api/problems/${id}`)
+    const token = localStorage.getItem('token'); // Grab the token
+
+    axios.get(`http://localhost:8080/api/problems/${id}`, {
+      headers: {
+        'Authorization': `Bearer ${token}` // Attach the VIP pass
+      }
+    })
       .then(res => setProblem(res.data))
-      .catch(err => console.error("Could not fetch problem details", err));
-  }, [id]); // Re-run this if the 'id' in the URL changes
+      .catch(err => {
+        console.error("Could not fetch problem details", err);
+        // Optional: If unauthorized, you could kick them back to login here
+        if (err.response && err.response.status === 401) {
+          window.location.href = '/login'; 
+        }
+      });
+  }, [id]);
 
   const handleSubmit = async () => {
     setSubmitStatus('Submitting to Go API... 🚀');
@@ -55,8 +67,14 @@ export default function Arena() {
   };
 
   const pollSubmissionStatus = async (submissionId) => {
+    const token = localStorage.getItem('token'); // Grab the token
+
     try {
-      const res = await axios.get(`http://localhost:8080/api/submissions/${submissionId}`);
+      const res = await axios.get(`http://localhost:8080/api/submissions/${submissionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}` // Attach the VIP pass
+        }
+      });
       const currentStatus = res.data.status;
       
       console.log("Current Verdict from Backend:", currentStatus); 

@@ -113,17 +113,19 @@ func main() {
 
 	// 4. Define endpoints
 	// --- PUBLIC ROUTES (No token needed) ---
+	// --- PUBLIC ROUTES (Anyone can browse the list) ---
 	router.POST("/api/auth/register", registerUser)
 	router.POST("/api/auth/login", loginUser)
 	router.GET("/api/problems", getProblems)
-	router.GET("/api/problems/:id", getProblemByID)
-	router.GET("/api/submissions/:id", getSubmissionStatus)
 
 	// --- PROTECTED ROUTES (Bouncer checks token first) ---
 	protected := router.Group("/api")
 	protected.Use(requireAuth) // Attach the middleware
 	{
 		protected.POST("/submit", submitCode)
+		// 👇 Moved these inside to secure specific problem/submission data
+		protected.GET("/problems/:id", getProblemByID)
+		protected.GET("/submissions/:id", getSubmissionStatus)
 	}
 
 	// 5. Start the server
