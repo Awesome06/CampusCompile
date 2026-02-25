@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -49,6 +50,12 @@ type RegisterRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
+}
+
+type RunRequest struct {
+	Language    string `json:"language"`
+	SourceCode  string `json:"source_code"`
+	CustomInput string `json:"custom_input"`
 }
 
 // --- MAIN ---
@@ -123,7 +130,8 @@ func main() {
 	protected.Use(requireAuth) // Attach the middleware
 	{
 		protected.POST("/submit", submitCode)
-		// 👇 Moved these inside to secure specific problem/submission data
+		protected.POST("/run", runCode)
+		protected.GET("/run/:id", getRunStatus)
 		protected.GET("/problems/:id", getProblemByID)
 		protected.GET("/submissions/:id", getSubmissionStatus)
 	}
@@ -348,4 +356,60 @@ func getProblemByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, p)
+}
+
+func runCode(c *gin.Context) {
+	var req RunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	runID := uuid.New().String()
+
+	// Create a custom payload with the 'is_custom' flag
+	payload := map[string]interface{}{
+		"is_custom":    true,
+		"run_id":       runID,
+		"language":     req.Language,
+		"source_code":  req.SourceCode,
+		"custom_input": req.CustomInput,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create execution payload"})
+		return
+	}
+
+	// Drop it into the exact same queue the official submissions use
+	err = rdb.LPush(ctx, "submission_queue", jsonPayload).Err()
+	if err != nil {
+		fmt.Printf("[!] Redis Push Error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue run"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{"run_id": runID, "status": "Pending"})
+}
+
+func getRunStatus(c *gin.Context) {
+	runID := c.Param("id")
+
+	// Check Redis for the result
+	val, err := rdb.Get(ctx, "run_result:"+runID).Result()
+
+	if err == redis.Nil {
+		// Key doesn't exist yet, worker is still running
+		c.JSON(http.StatusOK, gin.H{"status": "Pending"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Redis error"})
+		return
+	}
+
+	// The worker finished! Parse the JSON string from Redis and send it to React
+	var result map[string]interface{}
+	json.Unmarshal([]byte(val), &result)
+	c.JSON(http.StatusOK, result)
 }

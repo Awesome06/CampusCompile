@@ -113,9 +113,42 @@ def start_worker():
         queue, message = redis_client.brpop(QUEUE_NAME)
         if message:
             submission_data = json.loads(message)
-            sub_id = submission_data.get('submission_id')
-            print(f"\n[+] Picked up submission ID: {sub_id}")
-            process_submission(sub_id)
+            
+            # 👇 --- NEW: INTERCEPT CUSTOM RUNS --- 👇
+            if submission_data.get('is_custom'):
+                run_id = submission_data.get('run_id')
+                print(f"\n[+] Processing Custom Run: {run_id}")
+                
+                # Execute the code against the user's custom input
+                result = grade_submission(
+                    language=submission_data.get('language'),
+                    source_code=submission_data.get('source_code'),
+                    input_data=submission_data.get('custom_input', ''),
+                    expected_output="", # We don't care about expected output for custom runs
+                    time_limit_ms=2000
+                )
+                
+                # Determine what to show the user
+                output_to_show = result.get('actual_output')
+                if result['verdict'] in ['CE', 'RE', 'TLE', 'SE']:
+                    output_to_show = result.get('message', f"Error: {result['verdict']}")
+                    
+                # Save the raw output directly to Redis (expires in 10 minutes)
+                # Note: We use redis_client, matching your initialization at the top of the file
+                redis_client.set(f"run_result:{run_id}", json.dumps({
+                    "status": "Completed",
+                    "output": output_to_show,
+                    "verdict": result['verdict']
+                }), ex=600) 
+                
+            # 👆 --- END OF CUSTOM RUN LOGIC --- 👆
+            
+            # --- EXISTING LOGIC: OFFICIAL SUBMISSIONS ---
+            else:
+                sub_id = submission_data.get('submission_id')
+                if sub_id:
+                    print(f"\n[+] Picked up submission ID: {sub_id}")
+                    process_submission(sub_id)
 
 if __name__ == "__main__":
     start_worker()

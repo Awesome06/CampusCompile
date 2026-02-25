@@ -119,6 +119,46 @@ export default function Arena() {
     return 'text-gray-400';
   };
 
+  const handleRunCode = async () => {
+    setConsoleOutput('Spinning up sandbox... ⚙️');
+    setActiveTab('output');
+    setIsConsoleOpen(true);
+
+    const token = localStorage.getItem('token');
+    
+    try {
+      const response = await axios.post('http://localhost:8080/api/run', {
+        language: language,
+        source_code: code,
+        custom_input: customInput
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      pollRunStatus(response.data.run_id);
+    } catch (error) {
+      setConsoleOutput('Error: Could not connect to execution engine.');
+    }
+  };
+
+  const pollRunStatus = async (runId) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await axios.get(`http://localhost:8080/api/run/${runId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.data.status === 'Pending') {
+        setTimeout(() => pollRunStatus(runId), 1000);
+      } else {
+        // Output the raw execution logs
+        setConsoleOutput(res.data.output || "Program finished successfully with no output.");
+      }
+    } catch (err) {
+      setConsoleOutput('Error polling execution status.');
+    }
+  };
+
   // 👇 Wait to render the UI until the Go API returns the problem data
   if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl">Loading Arena...</div>;
 
@@ -170,12 +210,21 @@ export default function Arena() {
                 <option value="java">Java</option>
             </select>
             
-            <button 
-              onClick={handleSubmit}
-              className="bg-dark-success text-white px-5 py-1.5 rounded font-bold hover:bg-green-600 transition shadow-lg"
-            >
-                Submit Code
-            </button>
+            {/* Wrap both buttons in a flex container to align them on the right */}
+            <div className="flex space-x-3">
+                <button 
+                  onClick={handleRunCode}
+                  className="bg-gray-700 text-white px-5 py-1.5 rounded font-bold hover:bg-gray-600 transition shadow-lg"
+                >
+                    Run Code
+                </button>
+                <button 
+                  onClick={handleSubmit}
+                  className="bg-dark-success text-white px-5 py-1.5 rounded font-bold hover:bg-green-600 transition shadow-lg"
+                >
+                    Submit Code
+                </button>
+            </div>
         </div>
         
         {/* Monaco Editor (Takes remaining space above console) */}
