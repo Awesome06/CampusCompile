@@ -1,5 +1,5 @@
 # Use the official Golang alpine image
-FROM golang:1.21-alpine
+FROM golang:1.25-alpine
 
 WORKDIR /app
 

@@ -15,7 +15,7 @@ DB_CONFIG = {
     "port": "5432"
 }
 
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0, decode_responses=True)
 QUEUE_NAME = 'submission_queue'
 
 def get_db_connection():
@@ -76,6 +76,10 @@ def process_submission(submission_id):
             # If a test case fails (WA, TLE, CE, RE, SE), we break early! 
             if result['verdict'] != 'AC':
                 final_verdict = result['verdict']
+
+                print(f"[!] Details: {result.get('message', 'No message provided')}")
+                print(f"[-] Expected: {repr(tc.get('expected_output'))}")
+                print(f"[-] Actual:   {repr(result.get('actual_output'))}")
                 break
 
         # 5. Save the final verdict back to the database

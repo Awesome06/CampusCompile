@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # --- 1. POSTGRES DATABASE ---
   db:
@@ -11,7 +9,7 @@ services:
       POSTGRES_PASSWORD: app
       POSTGRES_DB: CampusCompile_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -46,8 +44,10 @@ services:
       - db
       - redis
     volumes:
-      # 👇 THE MAGIC TRICK: Gives Python access to the host's Docker engine
+      # Gives Python access to the host's Docker engine
       - /var/run/docker.sock:/var/run/docker.sock 
+      # Give the worker access to the shared sandbox drive
+      - sandbox_volume:/sandbox_shared
     environment:
       - DB_HOST=db
       - REDIS_HOST=redis
@@ -65,3 +65,5 @@ services:
 # Define the persistent storage for Postgres
 volumes:
   pgdata:
+  sandbox_volume:
+    name: sandbox_volume

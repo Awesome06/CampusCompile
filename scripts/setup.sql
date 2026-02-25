@@ -8,10 +8,10 @@ DROP USER IF EXISTS campus_app;
 
 -- Step 2 - Set up
 -- 1. Create the Database Owner (Admin)
-CREATE USER campus_admin WITH PASSWORD 'admin_password_here' CREATEDB;
+CREATE USER campus_admin WITH PASSWORD 'admin' CREATEDB;
 
 -- 2. Create the Application User (For your backend API)
-CREATE USER campus_app WITH PASSWORD 'app_password_here';
+CREATE USER campus_app WITH PASSWORD 'app';
 
 -- 3. Create the fresh Database and assign ownership to the Admin
 CREATE DATABASE "CampusCompile_db" OWNER campus_admin;
