@@ -50,14 +50,24 @@ function ProblemList() {
     <div className="p-8 max-w-6xl mx-auto">
       <h2 className="text-3xl font-bold text-white mb-6">Problem Repository</h2>
       <div className="bg-dark-surface border border-dark-border rounded-lg p-4 shadow-lg">
-        <div className="flex justify-between items-center py-3 border-b border-dark-border text-gray-400 font-semibold">
+        
+        {/* Updated Header with a "#" column */}
+        <div className="flex justify-between items-center py-3 border-b border-dark-border text-gray-400 font-semibold px-2">
+          <span className="w-12 text-left">#</span>
           <span className="w-1/2">Title</span>
           <span className="w-1/4">Difficulty</span>
           <span className="w-1/4 text-right">Action</span>
         </div>
+
         {loading && <div className="text-center py-8 text-gray-400">Loading problems...</div>}
-        {!loading && problems.map((prob) => (
+        
+        {/* Updated Mapping logic to use (prob, index) */}
+        {!loading && problems.map((prob, index) => (
           <div key={prob.problem_id} className="flex justify-between items-center py-4 text-white border-b border-dark-border last:border-0 hover:bg-[#363636] px-2 rounded transition">
+            
+            {/* The numeric index starting at 1 */}
+            <span className="w-12 text-left font-bold text-gray-500">{index + 1}</span>
+            
             <span className="w-1/2 font-medium">{prob.title}</span>
             <span className={`w-1/4 font-semibold ${prob.difficulty === 'Easy' ? 'text-green-400' : 'text-red-400'}`}>
               {prob.difficulty}

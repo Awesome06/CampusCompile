@@ -250,7 +250,7 @@ func loginUser(c *gin.Context) {
 
 // --- EXISTING HANDLERS ---
 func getProblems(c *gin.Context) {
-	rows, err := dbPool.Query(ctx, "SELECT problem_id, title, slug, difficulty FROM problems")
+	rows, err := dbPool.Query(ctx, "SELECT problem_id, title, slug, difficulty FROM problems ORDER BY created_at ASC")
 	if err != nil {
 		fmt.Printf("[!] Database query failed: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})

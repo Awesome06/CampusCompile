@@ -3,13 +3,19 @@ import Editor from '@monaco-editor/react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 
+const boilerplates = {
+  cpp: `#include <iostream>\n#include <vector>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}`,
+  python: `# Write your Python code here`,
+  java: `import java.util.*;\nimport java.io.*;\n\n public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}`
+};
+
 export default function Arena() {
   const { id } = useParams();
   
   // 👇 New state to hold the fetched problem data
   const [problem, setProblem] = useState(null);
   
-  const [code, setCode] = useState('// Write your solution here...');
+  const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
 
@@ -135,7 +141,11 @@ export default function Arena() {
         <div className="flex justify-between items-center p-2 bg-[#1e1e1e] border-b border-dark-border">
             <select 
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) => {
+                const newLang = e.target.value;
+                setLanguage(newLang);
+                setCode(boilerplates[newLang]); // Instantly swaps the code!
+              }}
               className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer hover:border-gray-500 transition"
             >
                 <option value="cpp">C++</option>
