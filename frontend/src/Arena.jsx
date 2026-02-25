@@ -17,11 +17,12 @@ export default function Arena() {
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
-
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('input'); // 'input' or 'output'
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
+  const [leftTab, setLeftTab] = useState('description'); // 'description' or 'history'
+  const [history, setHistory] = useState([]);
 
  // --- NEW: FETCH PROBLEM DATA ON LOAD (PROTECTED) ---
   useEffect(() => {
@@ -40,7 +41,35 @@ export default function Arena() {
           window.location.href = '/login'; 
         }
       });
+    fetchHistory();
   }, [id]);
+
+  // Fetch the user's submission history
+  const fetchHistory = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const res = await axios.get(`http://localhost:8080/api/submissions/history/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setHistory(res.data);
+    } catch (err) {
+      console.error("Could not fetch history:", err);
+    }
+  };
+
+  // Helper to convert literal "\n" strings from the DB into real newlines
+  const formatText = (text) => {
+    if (!text) return "";
+    return text.replace(/\\n/g, '\n');
+  };
+
+  // Helper to copy text to clipboard
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(formatText(text));
+    // Optional: You could add a toast notification here later!
+  };
 
   const handleSubmit = async () => {
     setSubmitStatus('Submitting to Go API... 🚀');
@@ -94,6 +123,7 @@ export default function Arena() {
         setSubmitStatus(currentStatus); 
       } else {
         setSubmitStatus(currentStatus);
+        fetchHistory();
 
         if (currentStatus === 'CE' || currentStatus === 'RE' || currentStatus === 'WA') {
           // Note: res.data.message will require a small backend update (explained below)
@@ -165,29 +195,118 @@ export default function Arena() {
   return (
     <div className="flex h-[calc(100vh-61px)] w-full"> 
       
-      {/* LEFT PANE: Dynamic Problem Description */}
-      <div className="w-1/2 p-6 overflow-y-auto border-r border-dark-border bg-dark-bg">
-        <h2 className="text-3xl font-bold mb-4 text-white">{problem.title}</h2>
+      {/* LEFT PANE: Dynamic Content (Tabs) */}
+      <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
         
-        {/* Dynamic Difficulty Badge */}
-        <span className={`px-2 py-1 text-xs rounded font-bold mb-6 inline-block shadow-sm ${
-          problem.difficulty === 'Easy' ? 'bg-green-900/50 text-green-400 border border-green-800' : 
-          problem.difficulty === 'Medium' ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-800' : 
-          'bg-red-900/50 text-red-400 border border-red-800'
-        }`}>
-          {problem.difficulty}
-        </span>
-        
-        {/* Render the actual database description. whitespace-pre-wrap preserves formatting/newlines */}
-        <div className="text-gray-300 mb-4 leading-relaxed whitespace-pre-wrap">
-          {problem.description}
+        {/* Left Pane Tab Bar */}
+        <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
+          <button 
+            className={`py-3 px-4 text-sm font-bold tracking-wide transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setLeftTab('description')}
+          >
+            Description
+          </button>
+          <button 
+            className={`py-3 px-4 text-sm font-bold tracking-wide transition ${leftTab === 'history' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setLeftTab('history')}
+          >
+            Submissions
+          </button>
         </div>
-        
-        <div className="mt-8 p-4 bg-[#2a2a2a] border border-dark-border rounded shadow-inner">
-          <h3 className="text-sm font-bold text-gray-400 mb-2">VERDICT:</h3>
-          <p className={`font-mono text-lg tracking-wide ${getStatusColor()}`}>
-            {submitStatus || "Awaiting submission..."}
-          </p>
+
+        {/* Tab Content Area */}
+        <div className="flex-grow p-6 overflow-y-auto">
+          {leftTab === 'history' && (
+            <div>
+              <h3 className="text-xl font-bold text-white mb-6">Submission History</h3>
+              
+              <div className="bg-[#1e1e1e] border border-dark-border rounded-lg overflow-hidden shadow-inner">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#2a2a2a] border-b border-dark-border text-gray-400 text-xs uppercase tracking-wider">
+                      <th className="p-4 font-semibold">Time Submitted</th>
+                      <th className="p-4 font-semibold">Status</th>
+                      <th className="p-4 font-semibold">Language</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="p-6 text-center text-gray-500 italic">
+                          No submissions yet. Step into the arena!
+                        </td>
+                      </tr>
+                    ) : (
+                      history.map(sub => (
+                        <tr key={sub.submission_id} className="border-b border-dark-border last:border-0 hover:bg-[#2a2a2a] transition">
+                          <td className="p-4 text-sm text-gray-300">
+                            {new Date(sub.submitted_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                          <td className={`p-4 text-sm font-bold ${sub.status === 'AC' || sub.status === 'Accepted' ? 'text-green-400' : 'text-red-400'}`}>
+                            {sub.status}
+                          </td>
+                          <td className="p-4 text-sm text-gray-300 uppercase">
+                            {sub.language}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {leftTab === 'description' && (
+            <>
+              <h2 className="text-3xl font-bold mb-4 text-white">{problem.title}</h2>
+              
+              {/* Dynamic Difficulty Badge */}
+              <span className={`px-2 py-1 text-xs rounded font-bold mb-6 inline-block shadow-sm ${
+                problem.difficulty === 'Easy' ? 'bg-green-900/50 text-green-400 border border-green-800' : 
+                problem.difficulty === 'Medium' ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-800' : 
+                'bg-red-900/50 text-red-400 border border-red-800'
+              }`}>
+                {problem.difficulty}
+              </span>
+              
+              {/* Problem Description */}
+              <div className="text-gray-300 mb-8 leading-relaxed whitespace-pre-wrap">
+                {problem.description}
+              </div>
+              
+              {/* Sample Test Case UI */}
+              {(problem.sample_input != null && problem.sample_output != null) && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-bold text-white mb-3 tracking-wide">Sample Test Case</h3>
+                  <div className="bg-[#1e1e1e] border border-dark-border rounded-lg overflow-hidden shadow-inner">
+                    <div className="p-4 border-b border-dark-border relative group">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Input:</span>
+                        <button onClick={() => handleCopy(problem.sample_input)} className="text-xs text-gray-400 hover:text-white bg-dark-bg px-2 py-1 rounded border border-dark-border opacity-0 group-hover:opacity-100 transition absolute top-2 right-2 shadow">Copy</button>
+                      </div>
+                      <pre className="font-mono text-gray-300 whitespace-pre-wrap">{formatText(problem.sample_input)}</pre>
+                    </div>
+                    <div className="p-4 bg-[#1a1a1a] relative group">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Expected Output:</span>
+                        <button onClick={() => handleCopy(problem.sample_output)} className="text-xs text-gray-400 hover:text-white bg-dark-bg px-2 py-1 rounded border border-dark-border opacity-0 group-hover:opacity-100 transition absolute top-2 right-2 shadow">Copy</button>
+                      </div>
+                      <pre className="font-mono text-gray-300 whitespace-pre-wrap">{formatText(problem.sample_output)}</pre>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Verdict Box */}
+              <div className="mt-8 p-4 bg-[#2a2a2a] border border-dark-border rounded shadow-inner">
+                <h3 className="text-sm font-bold text-gray-400 mb-2">LATEST VERDICT:</h3>
+                <p className={`font-mono text-lg tracking-wide ${getStatusColor()}`}>
+                  {submitStatus || "Awaiting submission..."}
+                </p>
+              </div>
+            </>
+          )}
+
         </div>
       </div>
 

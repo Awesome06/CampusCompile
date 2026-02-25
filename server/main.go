@@ -28,11 +28,13 @@ var (
 
 // --- STRUCTS ---
 type Problem struct {
-	ID          string `json:"problem_id"`
-	Title       string `json:"title"`
-	Slug        string `json:"slug"`
-	Description string `json:"description"`
-	Difficulty  string `json:"difficulty"`
+	ID           string  `json:"problem_id"`
+	Title        string  `json:"title"`
+	Slug         string  `json:"slug"`
+	Description  string  `json:"description"`
+	Difficulty   string  `json:"difficulty"`
+	SampleInput  *string `json:"sample_input,omitempty"`  // 👇 NEW
+	SampleOutput *string `json:"sample_output,omitempty"` // 👇 NEW
 }
 
 type SubmitRequest struct {
@@ -56,6 +58,13 @@ type RunRequest struct {
 	Language    string `json:"language"`
 	SourceCode  string `json:"source_code"`
 	CustomInput string `json:"custom_input"`
+}
+
+type SubmissionHistoryEntry struct {
+	ID          string    `json:"submission_id"`
+	Language    string    `json:"language"`
+	Status      string    `json:"status"`
+	SubmittedAt time.Time `json:"submitted_at"`
 }
 
 // --- MAIN ---
@@ -134,6 +143,7 @@ func main() {
 		protected.GET("/run/:id", getRunStatus)
 		protected.GET("/problems/:id", getProblemByID)
 		protected.GET("/submissions/:id", getSubmissionStatus)
+		protected.GET("/submissions/history/:id", getSubmissionHistory)
 	}
 
 	// 5. Start the server
@@ -346,6 +356,7 @@ func getProblemByID(c *gin.Context) {
 	id := c.Param("id")
 	var p Problem
 
+	// 1. Fetch the problem details
 	err := dbPool.QueryRow(ctx,
 		"SELECT problem_id, title, description, difficulty FROM problems WHERE problem_id = $1",
 		id).Scan(&p.ID, &p.Title, &p.Description, &p.Difficulty)
@@ -353,6 +364,20 @@ func getProblemByID(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
 		return
+	}
+
+	// 2. Fetch the FIRST test case to use as a sample
+	var sampleInput, sampleOutput string
+
+	// We use LIMIT 1 to just grab the first one available
+	err = dbPool.QueryRow(ctx,
+		"SELECT input_data, expected_output FROM test_cases WHERE problem_id = $1 LIMIT 1",
+		id).Scan(&sampleInput, &sampleOutput)
+
+	// If we successfully found a test case, attach it to the struct
+	if err == nil {
+		p.SampleInput = &sampleInput
+		p.SampleOutput = &sampleOutput
 	}
 
 	c.JSON(http.StatusOK, p)
@@ -412,4 +437,39 @@ func getRunStatus(c *gin.Context) {
 	var result map[string]interface{}
 	json.Unmarshal([]byte(val), &result)
 	c.JSON(http.StatusOK, result)
+}
+
+func getSubmissionHistory(c *gin.Context) {
+	problemID := c.Param("id")
+	userID := c.MustGet("user_id").(string) // Grab the authenticated user's ID
+
+	// Fetch history ordered by newest first
+	rows, err := dbPool.Query(ctx,
+		`SELECT submission_id, language, status, submitted_at 
+		 FROM submissions 
+		 WHERE user_id = $1 AND problem_id = $2 
+		 ORDER BY submitted_at DESC`,
+		userID, problemID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
+		return
+	}
+	defer rows.Close()
+
+	var history []SubmissionHistoryEntry
+	for rows.Next() {
+		var entry SubmissionHistoryEntry
+		if err := rows.Scan(&entry.ID, &entry.Language, &entry.Status, &entry.SubmittedAt); err != nil {
+			continue // Skip broken rows
+		}
+		history = append(history, entry)
+	}
+
+	// If they have no history, return an empty array instead of null
+	if history == nil {
+		history = []SubmissionHistoryEntry{}
+	}
+
+	c.JSON(http.StatusOK, history)
 }
