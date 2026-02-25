@@ -62,17 +62,6 @@ function ProblemList() {
   );
 }
 
-function Leaderboard() {
-  return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h2 className="text-3xl font-bold text-white mb-6">Campus Leaderboard</h2>
-      <div className="bg-dark-surface border border-dark-border rounded-lg p-8 text-center text-gray-400">
-        Global rankings will be displayed here.
-      </div>
-    </div>
-  );
-}
-
 // --- MAIN APP COMPONENT ---
 function App() {
   // Check if a token exists in the browser's storage
@@ -95,7 +84,6 @@ function App() {
             </Link>
             <div className="flex space-x-6 text-sm font-semibold text-gray-300">
               <Link to="/problems" className="hover:text-white transition">Problems</Link>
-              <Link to="/leaderboard" className="hover:text-white transition">Leaderboard</Link>
             </div>
           </div>
 
@@ -117,7 +105,6 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/problems" element={<ProblemList />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/arena/:id" element={<Arena />} />
           <Route path="/login" element={<Login />} />       {/* <-- New Route */}
           <Route path="/register" element={<Register />} /> {/* <-- New Route */}

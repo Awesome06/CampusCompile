@@ -67,13 +67,29 @@ func main() {
 
 	// 1. Connect to PostgreSQL
 	dbURL := fmt.Sprintf("postgres://campus_app:app@%s:5432/CampusCompile_db?sslmode=disable", dbHost)
+
+	fmt.Println("[*] Attempting to connect to PostgreSQL...")
 	var err error
-	dbPool, err = pgxpool.New(ctx, dbURL)
-	if err != nil {
-		log.Fatalf("Unable to create database pool: %v\n", err)
+	for i := 1; i <= 5; i++ {
+		dbPool, err = pgxpool.New(ctx, dbURL)
+
+		// If the pool was created, try to actually Ping the database
+		if err == nil {
+			err = dbPool.Ping(ctx)
+		}
+
+		if err == nil {
+			fmt.Println("[*] Connected to PostgreSQL successfully!")
+			break
+		}
+
+		fmt.Printf("[!] Database not ready (Attempt %d/5). Waiting 2 seconds...\n", i)
+		time.Sleep(2 * time.Second)
+
+		if i == 5 {
+			log.Fatalf("Fatal: Could not connect to database after 5 attempts: %v\n", err)
+		}
 	}
-	defer dbPool.Close()
-	fmt.Println("[*] Connected to PostgreSQL successfully!")
 
 	// 2. Connect to Redis
 	rdb = redis.NewClient(&redis.Options{Addr: redisHost + ":6379"})
