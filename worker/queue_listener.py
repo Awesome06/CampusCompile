@@ -60,7 +60,7 @@ def process_submission(submission_id):
 
         # 4. Loop through test cases and grade
         final_verdict = 'AC'
-        max_time_ms = 0
+        final_message = 'All test cases passed! 🎉'
         
         for idx, tc in enumerate(test_cases):
             print(f"[-] Running Test Case {idx + 1}/{len(test_cases)}...")
@@ -76,18 +76,24 @@ def process_submission(submission_id):
             # If a test case fails (WA, TLE, CE, RE, SE), we break early! 
             if result['verdict'] != 'AC':
                 final_verdict = result['verdict']
-
-                print(f"[!] Details: {result.get('message', 'No message provided')}")
-                print(f"[-] Expected: {repr(tc.get('expected_output'))}")
-                print(f"[-] Actual:   {repr(result.get('actual_output'))}")
+                
+                # 👇 NEW: Hide the test case data if it's a Wrong Answer
+                if final_verdict == 'WA':
+                    final_message = f"Wrong Answer on Test Case {idx + 1}.\nTest data is hidden to prevent hardcoding."
+                else:
+                    # Keep the detailed logs for CE, RE, and TLE so they can debug
+                    final_message = result.get('message', f"Verdict: {final_verdict} on Test Case {idx + 1}")
                 break
 
         # 5. Save the final verdict back to the database
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE submissions 
-            SET status = %s 
+            SET status = %s, error_logs = %s 
             WHERE submission_id = %s
-        """, (final_verdict, submission_id))
+            """,
+            (final_verdict, final_message, submission_id)
+        )
         conn.commit()
         
         print(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")

@@ -14,10 +14,14 @@ export default function Arena() {
   
   // 👇 New state to hold the fetched problem data
   const [problem, setProblem] = useState(null);
-  
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
+
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('input'); // 'input' or 'output'
+  const [customInput, setCustomInput] = useState('');
+  const [consoleOutput, setConsoleOutput] = useState('');
 
  // --- NEW: FETCH PROBLEM DATA ON LOAD (PROTECTED) ---
   useEffect(() => {
@@ -90,6 +94,17 @@ export default function Arena() {
         setSubmitStatus(currentStatus); 
       } else {
         setSubmitStatus(currentStatus);
+
+        if (currentStatus === 'CE' || currentStatus === 'RE' || currentStatus === 'WA') {
+          // Note: res.data.message will require a small backend update (explained below)
+          setConsoleOutput(res.data.message || `Verdict: ${currentStatus}\nNo detailed logs provided by server.`);
+          setActiveTab('output');
+          setIsConsoleOpen(true);
+        } else if (currentStatus === 'AC' || currentStatus === 'Accepted') {
+          setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
+          setActiveTab('output');
+          setIsConsoleOpen(true);
+        }
       }
     } catch (err) {
       console.error("Polling Error:", err);
@@ -136,15 +151,17 @@ export default function Arena() {
         </div>
       </div>
 
-      {/* RIGHT PANE: Code Editor */}
-      <div className="w-1/2 flex flex-col bg-dark-surface">
+      {/* RIGHT PANE: Code Editor & Console */}
+      <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border">
+        
+        {/* Editor Header */}
         <div className="flex justify-between items-center p-2 bg-[#1e1e1e] border-b border-dark-border">
             <select 
               value={language}
               onChange={(e) => {
                 const newLang = e.target.value;
                 setLanguage(newLang);
-                setCode(boilerplates[newLang]); // Instantly swaps the code!
+                setCode(boilerplates[newLang]);
               }}
               className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer hover:border-gray-500 transition"
             >
@@ -161,7 +178,8 @@ export default function Arena() {
             </button>
         </div>
         
-        <div className="flex-grow">
+        {/* Monaco Editor (Takes remaining space above console) */}
+        <div className="flex-grow overflow-hidden relative">
           <Editor
             height="100%"
             language={language}
@@ -170,6 +188,49 @@ export default function Arena() {
             onChange={(value) => setCode(value)}
             options={{ minimap: { enabled: false }, fontSize: 16, wordWrap: 'on', padding: { top: 16 } }}
           />
+        </div>
+
+        {/* 👇 THE NEW BOTTOM CONSOLE 👇 */}
+        <div className={`flex flex-col border-t border-dark-border bg-[#1e1e1e] transition-all duration-300 ease-in-out ${isConsoleOpen ? 'h-64' : 'h-10'}`}>
+            
+            {/* Console Tab Bar (Clickable) */}
+            <div className="flex items-center justify-between px-4 py-2 bg-dark-surface cursor-pointer select-none" onClick={() => setIsConsoleOpen(!isConsoleOpen)}>
+                <div className="flex space-x-6">
+                    <button 
+                      className={`text-sm font-bold tracking-wide transition ${activeTab === 'input' && isConsoleOpen ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
+                      onClick={(e) => { e.stopPropagation(); setActiveTab('input'); setIsConsoleOpen(true); }}
+                    >
+                        Custom Input
+                    </button>
+                    <button 
+                      className={`text-sm font-bold tracking-wide transition ${activeTab === 'output' && isConsoleOpen ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
+                      onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsConsoleOpen(true); }}
+                    >
+                        Output / Errors
+                    </button>
+                </div>
+                <span className="text-gray-400 text-xs font-bold uppercase tracking-wider hover:text-white transition">
+                    {isConsoleOpen ? '▼ Close' : '▲ Console'}
+                </span>
+            </div>
+
+            {/* Console Content Area */}
+            {isConsoleOpen && (
+                <div className="flex-grow p-4 bg-dark-bg overflow-hidden">
+                    {activeTab === 'input' ? (
+                        <textarea 
+                            className="w-full h-full bg-[#1e1e1e] text-gray-300 p-3 rounded border border-dark-border outline-none resize-none font-mono text-sm focus:border-gray-500 transition"
+                            placeholder="Enter your custom input here..."
+                            value={customInput}
+                            onChange={(e) => setCustomInput(e.target.value)}
+                        />
+                    ) : (
+                        <div className="w-full h-full bg-[#1e1e1e] text-red-300 p-3 rounded border border-dark-border overflow-y-auto font-mono text-sm whitespace-pre-wrap">
+                            {consoleOutput || "Run code to see output..."}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
       </div>
     </div>

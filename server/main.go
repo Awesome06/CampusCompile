@@ -309,7 +309,10 @@ func submitCode(c *gin.Context) {
 func getSubmissionStatus(c *gin.Context) {
 	submissionID := c.Param("id")
 	var status, language string
-	err := dbPool.QueryRow(ctx, "SELECT status, language FROM submissions WHERE submission_id = $1", submissionID).Scan(&status, &language)
+
+	var errorLogs *string
+
+	err := dbPool.QueryRow(ctx, "SELECT status, language, error_logs FROM submissions WHERE submission_id = $1", submissionID).Scan(&status, &language, &errorLogs)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
@@ -318,7 +321,17 @@ func getSubmissionStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch status"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"submission_id": submissionID, "language": language, "status": status})
+	message := ""
+	if errorLogs != nil {
+		message = *errorLogs
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"submission_id": submissionID,
+		"language":      language,
+		"status":        status,
+		"message":       message, // Sends the compiler errors to the React UI!
+	})
 }
 
 func getProblemByID(c *gin.Context) {

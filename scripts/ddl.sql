@@ -44,6 +44,7 @@ CREATE TABLE submissions (
     source_code TEXT NOT NULL,
     language VARCHAR(50) NOT NULL,
     status submission_status DEFAULT 'Pending',
+    error_logs TEXT, -- 👇 NEW: Stores the cc1plus or javac errors
     execution_time_ms INT,
     memory_used_kb INT,
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
