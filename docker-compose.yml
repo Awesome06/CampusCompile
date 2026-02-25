@@ -40,7 +40,7 @@ services:
   # --- 4. PYTHON EXECUTION WORKER ---
   worker:
     build: 
-      context: .         # Looks for a Dockerfile where queue_listener.py is
+      context: ./worker        # Looks for a Dockerfile where queue_listener.py is
     container_name: campus-worker
     depends_on:
       - db
