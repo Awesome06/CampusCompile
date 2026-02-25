@@ -1,6 +1,7 @@
 import redis
 import json
 import psycopg2
+import os
 from psycopg2.extras import RealDictCursor
 from runner import grade_submission
 
@@ -10,7 +11,7 @@ DB_CONFIG = {
     "dbname": "CampusCompile_db",
     "user": "campus_app",            # The app user we created
     "password": "app", # The password you set for campus_app
-    "host": "localhost",
+    "host": os.getenv("DB_HOST", "localhost"),
     "port": "5432"
 }
 

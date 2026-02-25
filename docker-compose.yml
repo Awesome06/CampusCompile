@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # --- 1. POSTGRES DATABASE ---
+  db:
+    image: postgres:15-alpine
+    container_name: campus-db
+    restart: always
+    environment:
+      POSTGRES_USER: campus_app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: CampusCompile_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # --- 2. REDIS MESSAGE QUEUE ---
+  redis:
+    image: redis:alpine
+    container_name: campus-redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # --- 3. GO API BACKEND ---
+  api:
+    build: 
+      context: ./server  # Looks for a Dockerfile in your 'server' folder
+    container_name: campus-api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DB_HOST=db       # Go will connect to 'db' instead of 'localhost'
+      - REDIS_HOST=redis # Go will connect to 'redis' instead of 'localhost'
+
+  # --- 4. PYTHON EXECUTION WORKER ---
+  worker:
+    build: 
+      context: .         # Looks for a Dockerfile where queue_listener.py is
+    container_name: campus-worker
+    depends_on:
+      - db
+      - redis
+    volumes:
+      # 👇 THE MAGIC TRICK: Gives Python access to the host's Docker engine
+      - /var/run/docker.sock:/var/run/docker.sock 
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+
+  # --- 5. REACT FRONTEND ---
+  frontend:
+    build:
+      context: ./frontend
+    container_name: campus-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+
+# Define the persistent storage for Postgres
+volumes:
+  pgdata:

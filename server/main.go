@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -52,8 +53,20 @@ type LoginRequest struct {
 
 // --- MAIN ---
 func main() {
-	// 1. Connect to PostgreSQL (Make sure your actual password is here)
-	dbURL := "postgres://campus_app:app@localhost:5432/CampusCompile_db?sslmode=disable"
+	// --- DOCKER NETWORK CONFIGURATION ---
+	// Grab the hosts from Docker, or default to localhost if running manually
+	dbHost := os.Getenv("DB_HOST")
+	if dbHost == "" {
+		dbHost = "localhost"
+	}
+
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = "localhost"
+	}
+
+	// 1. Connect to PostgreSQL
+	dbURL := fmt.Sprintf("postgres://campus_app:app@%s:5432/CampusCompile_db?sslmode=disable", dbHost)
 	var err error
 	dbPool, err = pgxpool.New(ctx, dbURL)
 	if err != nil {
@@ -63,7 +76,7 @@ func main() {
 	fmt.Println("[*] Connected to PostgreSQL successfully!")
 
 	// 2. Connect to Redis
-	rdb = redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	rdb = redis.NewClient(&redis.Options{Addr: redisHost + ":6379"})
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Fatalf("Unable to connect to Redis: %v\n", err)
 	}
