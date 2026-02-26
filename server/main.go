@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -27,6 +28,15 @@ var (
 )
 
 // --- STRUCTS ---
+type CreateProblemRequest struct {
+	Title        string  `json:"title"`
+	Description  string  `json:"description"`
+	Difficulty   string  `json:"difficulty"`
+	TimeLimit    float64 `json:"time_limit"`
+	MemoryLimit  int     `json:"memory_limit"`
+	SampleInput  string  `json:"sample_input"`
+	SampleOutput string  `json:"sample_output"`
+}
 type Problem struct {
 	ID           string  `json:"problem_id"`
 	Title        string  `json:"title"`
@@ -144,6 +154,7 @@ func main() {
 		protected.GET("/problems/:id", getProblemByID)
 		protected.GET("/submissions/:id", getSubmissionStatus)
 		protected.GET("/submissions/history/:id", getSubmissionHistory)
+		protected.POST("/problems", createProblem)
 	}
 
 	// 5. Start the server
@@ -182,6 +193,7 @@ func requireAuth(c *gin.Context) {
 	// 3. Extract the user_id from the token and attach it to the request context
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
 		c.Set("user_id", claims["user_id"])
+		c.Set("role", claims["role"])
 		c.Next() // Allow the request to proceed to /submit!
 	} else {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload"})
@@ -230,39 +242,50 @@ func loginUser(c *gin.Context) {
 		return
 	}
 
-	// 1. Fetch the user's ID and hashed password from the database
-	var userID, storedHash string
-	err := dbPool.QueryRow(ctx, "SELECT user_id, password_hash FROM users WHERE email = $1", req.Email).Scan(&userID, &storedHash)
+	fmt.Printf("[DEBUG] Attempting login for: %s\n", req.Email)
+
+	// 1. Fetch user data - we cast role::text to handle the ENUM
+	var userID, storedHash, role string
+	err := dbPool.QueryRow(ctx,
+		"SELECT user_id, password_hash, role::text FROM users WHERE email = $1",
+		req.Email).Scan(&userID, &storedHash, &role)
+
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		fmt.Printf("[ERROR] Database query failed for %s: %v\n", req.Email, err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password. Are you sure you are a Knight?"})
 		return
 	}
+
+	fmt.Printf("[DEBUG] User found. Role: %s. Comparing passwords...\n", role)
 
 	// 2. Compare the provided password with the stored hash
 	err = bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(req.Password))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		fmt.Printf("[ERROR] Password mismatch for %s: %v\n", req.Email, err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password. Are you sure you are a Knight?"})
 		return
 	}
 
-	// 3. Password is correct! Generate a JWT.
-	// We store the user_id inside the token payload
+	// 3. Generate JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour * 72).Unix(), // Token expires in 3 days
+		"role":    role,
+		"exp":     time.Now().Add(time.Hour * 72).Unix(),
 	})
 
-	// Sign the token with our secret key
 	tokenString, err := token.SignedString(jwtSecret)
 	if err != nil {
+		fmt.Printf("[ERROR] JWT generation failed: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
 
-	// 4. Return the token to the user
+	fmt.Printf("[SUCCESS] Login successful for %s\n", req.Email)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Login successful",
 		"token":   tokenString,
+		"role":    role,
 	})
 }
 
@@ -472,4 +495,69 @@ func getSubmissionHistory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, history)
+}
+
+func createProblem(c *gin.Context) {
+	// 1. STRICT LOWERCASE RBAC CHECK (Relies on DB consistency)
+	userRole, exists := c.Get("role")
+	if !exists || (userRole != "professor" && userRole != "admin") {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only admins and professors can add problems."})
+		return
+	}
+
+	// 2. PARSE THE INCOMING REACT FORM DATA
+	var req CreateProblemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	slug := strings.ToLower(strings.ReplaceAll(req.Title, " ", "-"))
+
+	// 3. DATABASE TRANSACTIONS
+	// We need this to insert into BOTH problems and test_cases tables safely.
+	tx, err := dbPool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start database transaction"})
+		return
+	}
+	defer tx.Rollback(ctx) // Safely rolls back if tx.Commit() isn't reached
+
+	// Insert into problems table
+	var newProblemID string
+	err = tx.QueryRow(ctx,
+		`INSERT INTO problems (title, slug, description, difficulty) 
+		 VALUES ($1, $2, $3, $4) RETURNING problem_id`,
+		req.Title, slug, req.Description, req.Difficulty).Scan(&newProblemID)
+
+	if err != nil {
+		fmt.Printf("[!] DB Insert Error (Problems): %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create problem"})
+		return
+	}
+
+	// Insert the sample test case into the test_cases table
+	// is_hidden is set to false so it shows up in the Arena UI
+	_, err = tx.Exec(ctx,
+		`INSERT INTO test_cases (problem_id, input_data, expected_output, is_hidden) 
+		 VALUES ($1, $2, $3, false)`,
+		newProblemID, req.SampleInput, req.SampleOutput)
+
+	if err != nil {
+		fmt.Printf("[!] DB Insert Error (Test Cases): %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to attach sample test cases"})
+		return
+	}
+
+	// Commit the transaction since both queries succeeded
+	err = tx.Commit(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to finalize problem creation"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":    "Problem created successfully!",
+		"problem_id": newProblemID,
+	})
 }

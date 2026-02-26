@@ -8,6 +8,12 @@ export default function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  // Wipe stale keys when landing on the login page
+  React.useEffect(() => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -18,12 +24,16 @@ export default function Login() {
         password
       });
 
-      // 🏆 SUCCESS! Save the token to the browser's Local Storage
-      localStorage.setItem('token', response.data.token);
-      
-      // Redirect the knight to the problem repository
-      window.location.href = '/problems';
+      // ✅ FIXED: Use 'response' instead of 'res'
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('role', response.data.role);
+        
+        // Force a hard reload to ensure App.jsx picks up the new localStorage values
+        window.location.href = '/problems';
+      }
     } catch (err) {
+      console.error("Login error:", err);
       setError('Invalid email or password. Are you sure you are a Knight?');
     }
   };
