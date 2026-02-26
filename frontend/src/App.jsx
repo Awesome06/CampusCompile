@@ -21,11 +21,21 @@ const ProtectedRoute = ({ children }) => {
 function Landing() {
   return (
     <div className="flex flex-col items-center justify-center h-[calc(100vh-61px)]">
+      
+      {/* 👇 NEW: Centered Logo above the text 👇 */}
+      <img 
+        src="/Logo_small.png" 
+        alt="CampusCompile Logo" 
+        className="w-48 h-auto mb-8 drop-shadow-2xl" 
+      />
+      
       <h1 className="text-5xl font-bold text-white mb-6">Welcome to CampusCompile</h1>
       <p className="text-xl text-gray-400 mb-8">The ultimate competitive programming arena.</p>
-      <Link to="/problems" className="bg-dark-accent text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition">
+      
+      <Link to="/problems" className="bg-dark-accent text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition shadow-lg">
         Enter the Arena
       </Link>
+      
     </div>
   );
 }
