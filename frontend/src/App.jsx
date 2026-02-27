@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Arena from './Arena';
 import Login from './Login';
-import Register from './Register';
 import Landing from './Landing';         
 import ProblemList from './ProblemList'; 
 import AddProblem from './AddProblem';
+import OAuthSuccess from './OAuthSuccess';
+import Onboarding from './Onboarding';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -60,8 +61,9 @@ function App() {
               </button>
             ) : (
               <>
-                <Link to="/login" className="text-sm font-medium text-gray-300 hover:text-white transition">Login</Link>
-                <Link to="/register" className="text-sm font-medium bg-dark-accent px-4 py-1.5 rounded hover:bg-blue-600 transition text-white">Register</Link>
+                <Link to="/login" className="text-sm font-medium bg-[#0078D4] px-4 py-1.5 rounded hover:bg-[#005ea6] transition text-white flex items-center gap-2">
+                  Sign In
+                </Link>
               </>
             )}
           </div>
@@ -69,8 +71,23 @@ function App() {
 
         {/* Route Configuration */}
         <Routes>
+          {/* Public Routes */}
           <Route path="/" element={<Landing />} />
           <Route path="/problems" element={<ProblemList />} />
+          <Route path="/login" element={<Login />} />
+          
+          {/* SSO Callback (Must be public to catch Microsoft's redirect) */}
+          <Route path="/oauth-success" element={<OAuthSuccess />} />
+          
+          {/* Protected Routes (Requires JWT Token) */}
+          <Route 
+            path="/onboarding" 
+            element={
+              <ProtectedRoute>
+                <Onboarding />
+              </ProtectedRoute>
+            } 
+          />
           <Route 
             path="/arena/:id" 
             element={
@@ -87,8 +104,6 @@ function App() {
               </ProtectedRoute>
             } 
           />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
         </Routes>
         
       </div>

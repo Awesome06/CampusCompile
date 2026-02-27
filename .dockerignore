@@ -1,0 +1,15 @@
+# Version Control
+.gitignore
+
+# Docker
+docker-compose.yml
+.dockerignore
+Dockerfile*
+
+# Frontend (React)
+frontend/node_modules
+
+# Worker (Python)
+worker/venv
+worker/__pycache__
+worker/.env

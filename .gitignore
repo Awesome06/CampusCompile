@@ -3,5 +3,8 @@ Passwords.txt
 
 /worker/.venv
 /worker/venv
-
 /worker/__pycache__
+
+.env
+
+/frontend/node_modules

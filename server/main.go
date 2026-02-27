@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -53,17 +52,6 @@ type SubmitRequest struct {
 	SourceCode string `json:"source_code"`
 }
 
-type RegisterRequest struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=1"`
-}
-
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
 type RunRequest struct {
 	Language    string `json:"language"`
 	SourceCode  string `json:"source_code"`
@@ -77,6 +65,16 @@ type SubmissionHistoryEntry struct {
 	SubmittedAt time.Time `json:"submitted_at"`
 }
 
+type OnboardRequest struct {
+	Username     string `json:"username" binding:"required,max=50"`
+	Course       string `json:"course" binding:"required"`
+	Department   string `json:"department" binding:"required"`
+	CourseYear   int    `json:"course_year" binding:"required,min=1,max=4"`
+	Batch        string `json:"batch" binding:"required"`
+	Section      string `json:"section" binding:"required"`
+	StudentGroup string `json:"student_group" binding:"required"`
+}
+
 // --- MAIN ---
 func main() {
 	// --- DOCKER NETWORK CONFIGURATION ---
@@ -86,6 +84,7 @@ func main() {
 		dbHost = "localhost"
 	}
 
+	initOAuthConfig()
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
 		redisHost = "localhost"
@@ -140,14 +139,18 @@ func main() {
 	// 4. Define endpoints
 	// --- PUBLIC ROUTES (No token needed) ---
 	// --- PUBLIC ROUTES (Anyone can browse the list) ---
-	router.POST("/api/auth/register", registerUser)
-	router.POST("/api/auth/login", loginUser)
+	authGroup := router.Group("/api/auth")
+	{
+		authGroup.GET("/login", handleAzureLogin)
+		authGroup.GET("/callback", handleAzureCallback)
+	}
 	router.GET("/api/problems", getProblems)
 
 	// --- PROTECTED ROUTES (Bouncer checks token first) ---
 	protected := router.Group("/api")
 	protected.Use(requireAuth) // Attach the middleware
 	{
+		protected.POST("/auth/onboard", completeOnboarding)
 		protected.POST("/submit", submitCode)
 		protected.POST("/run", runCode)
 		protected.GET("/run/:id", getRunStatus)
@@ -199,94 +202,6 @@ func requireAuth(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload"})
 		c.Abort()
 	}
-}
-
-// --- AUTH HANDLERS ---
-
-func registerUser(c *gin.Context) {
-	var req RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input data"})
-		return
-	}
-
-	// 1. Hash the password using bcrypt
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
-		return
-	}
-
-	// 2. Generate a UUID for the new user
-	userID := uuid.New().String()
-
-	// 3. Insert into the database. (Role defaults to 'student', rating to 1200)
-	_, err = dbPool.Exec(ctx,
-		`INSERT INTO users (user_id, username, email, password_hash, role, campus_rating) 
-		 VALUES ($1, $2, $3, $4, 'student', 1200)`,
-		userID, req.Username, req.Email, string(hashedPassword))
-
-	if err != nil {
-		fmt.Printf("[!] DB Insert Error: %v\n", err)
-		c.JSON(http.StatusConflict, gin.H{"error": "Username or Email already exists"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully!", "user_id": userID})
-}
-
-func loginUser(c *gin.Context) {
-	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input data"})
-		return
-	}
-
-	fmt.Printf("[DEBUG] Attempting login for: %s\n", req.Email)
-
-	// 1. Fetch user data - we cast role::text to handle the ENUM
-	var userID, storedHash, role string
-	err := dbPool.QueryRow(ctx,
-		"SELECT user_id, password_hash, role::text FROM users WHERE email = $1",
-		req.Email).Scan(&userID, &storedHash, &role)
-
-	if err != nil {
-		fmt.Printf("[ERROR] Database query failed for %s: %v\n", req.Email, err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password. Are you sure you are a Knight?"})
-		return
-	}
-
-	fmt.Printf("[DEBUG] User found. Role: %s. Comparing passwords...\n", role)
-
-	// 2. Compare the provided password with the stored hash
-	err = bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(req.Password))
-	if err != nil {
-		fmt.Printf("[ERROR] Password mismatch for %s: %v\n", req.Email, err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password. Are you sure you are a Knight?"})
-		return
-	}
-
-	// 3. Generate JWT
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": userID,
-		"role":    role,
-		"exp":     time.Now().Add(time.Hour * 72).Unix(),
-	})
-
-	tokenString, err := token.SignedString(jwtSecret)
-	if err != nil {
-		fmt.Printf("[ERROR] JWT generation failed: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	fmt.Printf("[SUCCESS] Login successful for %s\n", req.Email)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Login successful",
-		"token":   tokenString,
-		"role":    role,
-	})
 }
 
 // --- EXISTING HANDLERS ---

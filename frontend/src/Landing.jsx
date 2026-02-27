@@ -30,9 +30,6 @@ export default function Landing() {
             <Link to="/login" className="bg-dark-surface border border-dark-border text-white px-8 py-3 rounded-lg font-bold hover:bg-[#2a2a2a] transition shadow-lg">
               Login
             </Link>
-            <Link to="/register" className="bg-dark-accent text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-600 transition shadow-lg">
-              Register
-            </Link>
           </>
         ) : (
           <>

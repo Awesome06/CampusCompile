@@ -1,79 +1,37 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import React, { useEffect } from 'react';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
-
   // Wipe stale keys when landing on the login page
-  React.useEffect(() => {
+  useEffect(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
   }, []);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    
-    try {
-      const response = await axios.post('http://localhost:8080/api/auth/login', {
-        email,
-        password
-      });
-
-      // ✅ FIXED: Use 'response' instead of 'res'
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('role', response.data.role);
-        
-        // Force a hard reload to ensure App.jsx picks up the new localStorage values
-        window.location.href = '/problems';
-      }
-    } catch (err) {
-      console.error("Login error:", err);
-      setError('Invalid email or password. Are you sure you are a Knight?');
-    }
+  const handleSSOLogin = () => {
+    // Redirect the browser straight to your Go backend's Azure trigger
+    window.location.href = 'http://localhost:8080/api/auth/login';
   };
 
   return (
     <div className="flex items-center justify-center h-[calc(100vh-61px)] bg-dark-bg">
-      <div className="bg-dark-surface p-8 rounded-lg border border-dark-border w-96 shadow-2xl">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center tracking-wide">Enter the Arena</h2>
-        
-        {error && <div className="bg-red-900/50 border border-red-500 text-red-400 p-2 rounded mb-4 text-sm text-center">{error}</div>}
+      <div className="bg-dark-surface p-8 rounded-lg border border-dark-border w-96 shadow-2xl text-center">
+        <img src="/Logo_small.png" alt="Logo" className="w-24 mx-auto mb-6" />
+        <h2 className="text-2xl font-bold text-white mb-2 tracking-wide">Enter the Arena</h2>
+        <p className="text-gray-400 text-sm mb-8">Access restricted to Bennett University students and faculty.</p>
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-4">
-          <div>
-            <label className="block text-gray-400 text-sm font-bold mb-2">Email</label>
-            <input 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-dark-bg text-white px-3 py-2 rounded border border-dark-border focus:outline-none focus:border-dark-accent transition" 
-              required 
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 text-sm font-bold mb-2">Password</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-dark-bg text-white px-3 py-2 rounded border border-dark-border focus:outline-none focus:border-dark-accent transition" 
-              required 
-            />
-          </div>
-          <button type="submit" className="w-full bg-dark-accent text-white font-bold py-2 px-4 rounded hover:bg-blue-600 transition mt-2">
-            Login
-          </button>
-        </form>
-
-        <p className="text-gray-400 text-sm text-center mt-6">
-          Don't have an account? <Link to="/register" className="text-dark-accent hover:text-blue-400">Register</Link>
-        </p>
+        <button 
+          onClick={handleSSOLogin} 
+          className="w-full bg-[#0078D4] text-white font-bold py-3 px-4 rounded hover:bg-[#005ea6] transition flex items-center justify-center gap-3 shadow-lg"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 48 48">
+            <path fill="#f3f3f3" d="M24 24h24v24H24z"/>
+            <path fill="#f35325" d="M0 0h22v22H0z"/>
+            <path fill="#81bc06" d="M24 0h24v22H24z"/>
+            <path fill="#05a6f0" d="M0 24h22v24H0z"/>
+            <path fill="#ffba08" d="M24 24h24v24H24z"/>
+          </svg>
+          Sign in with Microsoft
+        </button>
       </div>
     </div>
   );
