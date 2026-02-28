@@ -106,9 +106,14 @@ func HandleAzureCallback(c *gin.Context) {
 		assignedRole = "professor"
 	}
 
-	//Admin/Professor Testing Email
+	//Admin Set Up
 	if emailLower == "mrigank.bhatnagar@bennett.edu.in" {
 		assignedRole = "admin"
+	}
+
+	initialOnboarded := false
+	if assignedRole == "professor" || assignedRole == "admin" {
+		initialOnboarded = true // Auto-skip onboarding for faculty
 	}
 
 	var userID, finalRole string
@@ -116,12 +121,14 @@ func HandleAzureCallback(c *gin.Context) {
 
 	err = database.Pool.QueryRow(reqCtx, `
 		INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
-		VALUES ($1, $2, $3, CAST($4 AS user_role), false)
+		VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
 		ON CONFLICT (email) 
-		DO UPDATE SET provider_id = EXCLUDED.provider_id, real_name = EXCLUDED.real_name
+		DO UPDATE SET 
+			provider_id = EXCLUDED.provider_id, 
+			real_name = EXCLUDED.real_name,
+			is_onboarded = CASE WHEN users.role IN ('professor', 'admin') THEN true ELSE users.is_onboarded END
 		RETURNING user_id, role::text, is_onboarded;
-	`, msUser.ID, emailLower, msUser.DisplayName, assignedRole).Scan(&userID, &finalRole, &isOnboarded)
-
+	`, msUser.ID, emailLower, msUser.DisplayName, assignedRole, initialOnboarded).Scan(&userID, &finalRole, &isOnboarded)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login"})
 		return

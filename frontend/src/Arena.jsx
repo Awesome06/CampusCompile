@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api'; // 👈 Swapped axios for our custom API service
 
 const boilerplates = {
   cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}`,
@@ -12,7 +12,6 @@ const boilerplates = {
 export default function Arena() {
   const { id } = useParams();
   
-  // 👇 New state to hold the fetched problem data
   const [problem, setProblem] = useState(null);
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
@@ -24,74 +23,45 @@ export default function Arena() {
   const [leftTab, setLeftTab] = useState('description'); // 'description' or 'history'
   const [history, setHistory] = useState([]);
 
- // --- NEW: FETCH PROBLEM DATA ON LOAD (PROTECTED) ---
+  // --- FETCH PROBLEM DATA ON LOAD ---
   useEffect(() => {
-    const token = localStorage.getItem('token'); // Grab the token
-
-    axios.get(`http://localhost:8080/api/problems/${id}`, {
-      headers: {
-        'Authorization': `Bearer ${token}` // Attach the VIP pass
-      }
-    })
+    // Look how clean this is! The URL base and Token are handled automatically.
+    api.get(`/problems/${id}`)
       .then(res => setProblem(res.data))
       .catch(err => {
         console.error("Could not fetch problem details", err);
-        // Optional: If unauthorized, you could kick them back to login here
-        if (err.response && err.response.status === 401) {
-          window.location.href = '/login'; 
-        }
       });
+      
     fetchHistory();
   }, [id]);
 
   // Fetch the user's submission history
   const fetchHistory = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
     try {
-      const res = await axios.get(`http://localhost:8080/api/submissions/history/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/submissions/history/${id}`);
       setHistory(res.data);
     } catch (err) {
       console.error("Could not fetch history:", err);
     }
   };
 
-  // Helper to convert literal "\n" strings from the DB into real newlines
   const formatText = (text) => {
     if (!text) return "";
     return text.replace(/\\n/g, '\n');
   };
 
-  // Helper to copy text to clipboard
   const handleCopy = (text) => {
     navigator.clipboard.writeText(formatText(text));
-    // Optional: You could add a toast notification here later!
   };
 
   const handleSubmit = async () => {
     setSubmitStatus('Submitting to Go API... 🚀');
-
-    // 👇 YOUR REAL JWT TOKEN
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      setSubmitStatus('Error: You must be logged in to submit code.');
-      return;
-    }
     
     try {
-      const response = await axios.post('http://localhost:8080/api/submit', {
+      const response = await api.post('/submit', {
         problem_id: id,
         language: language,
         source_code: code
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
       });
 
       const subId = response.data.submission_id;
@@ -106,14 +76,8 @@ export default function Arena() {
   };
 
   const pollSubmissionStatus = async (submissionId) => {
-    const token = localStorage.getItem('token'); // Grab the token
-
     try {
-      const res = await axios.get(`http://localhost:8080/api/submissions/${submissionId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}` // Attach the VIP pass
-        }
-      });
+      const res = await api.get(`/submissions/${submissionId}`);
       const currentStatus = res.data.status;
       
       console.log("Current Verdict from Backend:", currentStatus); 
@@ -126,7 +90,6 @@ export default function Arena() {
         fetchHistory();
 
         if (currentStatus === 'CE' || currentStatus === 'RE' || currentStatus === 'WA') {
-          // Note: res.data.message will require a small backend update (explained below)
           setConsoleOutput(res.data.message || `Verdict: ${currentStatus}\nNo detailed logs provided by server.`);
           setActiveTab('output');
           setIsConsoleOpen(true);
@@ -153,16 +116,12 @@ export default function Arena() {
     setConsoleOutput('Spinning up sandbox... ⚙️');
     setActiveTab('output');
     setIsConsoleOpen(true);
-
-    const token = localStorage.getItem('token');
     
     try {
-      const response = await axios.post('http://localhost:8080/api/run', {
+      const response = await api.post('/run', {
         language: language,
         source_code: code,
         custom_input: customInput
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
 
       pollRunStatus(response.data.run_id);
@@ -172,16 +131,12 @@ export default function Arena() {
   };
 
   const pollRunStatus = async (runId) => {
-    const token = localStorage.getItem('token');
     try {
-      const res = await axios.get(`http://localhost:8080/api/run/${runId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/run/${runId}`);
       
       if (res.data.status === 'Pending') {
         setTimeout(() => pollRunStatus(runId), 1000);
       } else {
-        // Output the raw execution logs
         setConsoleOutput(res.data.output || "Program finished successfully with no output.");
       }
     } catch (err) {
@@ -189,7 +144,6 @@ export default function Arena() {
     }
   };
 
-  // 👇 Wait to render the UI until the Go API returns the problem data
   if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl">Loading Arena...</div>;
 
   return (
@@ -329,7 +283,6 @@ export default function Arena() {
                 <option value="java">Java</option>
             </select>
             
-            {/* Wrap both buttons in a flex container to align them on the right */}
             <div className="flex space-x-3">
                 <button 
                   onClick={handleRunCode}
@@ -346,7 +299,7 @@ export default function Arena() {
             </div>
         </div>
         
-        {/* Monaco Editor (Takes remaining space above console) */}
+        {/* Monaco Editor */}
         <div className="flex-grow overflow-hidden relative">
           <Editor
             height="100%"
@@ -358,7 +311,7 @@ export default function Arena() {
           />
         </div>
 
-        {/* 👇 THE NEW BOTTOM CONSOLE 👇 */}
+        {/* BOTTOM CONSOLE */}
         <div className={`flex flex-col border-t border-dark-border bg-[#1e1e1e] transition-all duration-300 ease-in-out ${isConsoleOpen ? 'h-64' : 'h-10'}`}>
             
             {/* Console Tab Bar (Clickable) */}
