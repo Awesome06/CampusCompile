@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -38,7 +39,11 @@ func initOAuthConfig() {
 // 1. Redirects the React frontend to the Microsoft Login Screen
 func handleAzureLogin(c *gin.Context) {
 	// In production, use a secure random string for the state parameter to prevent CSRF
-	url := oauthConfig.AuthCodeURL("campus-compile-secure-state", oauth2.AccessTypeOffline)
+	url := oauthConfig.AuthCodeURL(
+		"campus-compile-secure-state",
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "select_account"),
+	)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
@@ -81,18 +86,33 @@ func handleAzureCallback(c *gin.Context) {
 		email = msUser.UserPrincipalName
 	}
 
-	// 3. Database UPSERT Logic
-	var userID, role string
+	emailLower := strings.ToLower(email)
+
+	// 👇 1. AUTOMATED ROLE DETECTION (Regex Engine)
+	assignedRole := "student" // Fallback default
+
+	// Bennett student emails contain their enrollment numbers (e.g., e24cseu0343@bennett.edu.in)
+	// Faculty emails are strictly alphabetical (e.g., firstname.lastname@bennett.edu.in)
+	hasNumbers, _ := regexp.MatchString(`[0-9]`, emailLower)
+
+	if !hasNumbers {
+		// No numbers detected -> Grant Professor privileges
+		assignedRole = "professor"
+	}
+
+	// 👇 2. Database UPSERT Logic (The "Calculate Once" Magic)
+	var userID, finalRole string
 	var isOnboarded bool
 
-	// Upsert query: Creates the user if they don't exist, updates their provider_id if they do
+	// Upsert query: Creates the user with 'assignedRole' if they don't exist.
+	// If they DO exist, it updates provider_id/real_name but LEAVES 'role' ALONE.
 	err = dbPool.QueryRow(reqCtx, `
 		INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
-		VALUES ($1, $2, $3, 'student', false)
+		VALUES ($1, $2, $3, $4, false)
 		ON CONFLICT (email) 
 		DO UPDATE SET provider_id = EXCLUDED.provider_id, real_name = EXCLUDED.real_name
 		RETURNING user_id, role::text, is_onboarded;
-	`, msUser.ID, email, msUser.DisplayName).Scan(&userID, &role, &isOnboarded)
+	`, msUser.ID, emailLower, msUser.DisplayName, assignedRole).Scan(&userID, &finalRole, &isOnboarded)
 
 	if err != nil {
 		fmt.Printf("[ERROR] DB Upsert failed: %v\n", err)
@@ -100,11 +120,11 @@ func handleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	// 4. Generate CampusCompile JWT
-	// Note: We use the global 'jwtSecret' defined in main.go
+	// 👇 3. Generate CampusCompile JWT
+	// Note: We use 'finalRole' returned from the DB, NOT the 'assignedRole' calculation
 	ccToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":      userID,
-		"role":         role,
+		"role":         finalRole,
 		"is_onboarded": isOnboarded,
 		"exp":          time.Now().Add(time.Hour * 72).Unix(),
 	})
@@ -117,7 +137,8 @@ func handleAzureCallback(c *gin.Context) {
 	}
 
 	// Redirect back to the React app with the data attached to the URL
-	frontendRedirectURL := fmt.Sprintf("http://localhost:5173/oauth-success?token=%s&role=%s&onboarded=%t", tokenString, role, isOnboarded)
+	// Note: Replaced 'role' with 'finalRole' here as well
+	frontendRedirectURL := fmt.Sprintf("http://localhost:5173/oauth-success?token=%s&role=%s&onboarded=%t", tokenString, finalRole, isOnboarded)
 	c.Redirect(http.StatusTemporaryRedirect, frontendRedirectURL)
 }
 

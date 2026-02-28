@@ -6,12 +6,20 @@ CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 
 -- 2. Create the Users Table
 CREATE TABLE users (
     user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(50) UNIQUE NOT NULL,
+    provider_id VARCHAR(255) UNIQUE,
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    username VARCHAR(50) UNIQUE,
+    real_name VARCHAR(255),
+    batch VARCHAR(50),
+    section VARCHAR(50),
+    student_group VARCHAR(50),
+    course VARCHAR(100),
+    department VARCHAR(100),
+    course_year INTEGER,
     role user_role NOT NULL DEFAULT 'student',
-    campus_rating INT DEFAULT 1200,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    campus_rating INTEGER DEFAULT 1200,
+    is_onboarded BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Create the Problems Table
