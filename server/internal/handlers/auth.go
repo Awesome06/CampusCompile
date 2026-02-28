@@ -120,15 +120,15 @@ func HandleAzureCallback(c *gin.Context) {
 	var isOnboarded bool
 
 	err = database.Pool.QueryRow(reqCtx, `
-		INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
-		VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
-		ON CONFLICT (email) 
-		DO UPDATE SET 
-			provider_id = EXCLUDED.provider_id, 
-			real_name = EXCLUDED.real_name,
-			is_onboarded = CASE WHEN users.role IN ('professor', 'admin') THEN true ELSE users.is_onboarded END
-		RETURNING user_id, role::text, is_onboarded;
-	`, msUser.ID, emailLower, msUser.DisplayName, assignedRole, initialOnboarded).Scan(&userID, &finalRole, &isOnboarded)
+    INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
+    VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
+    ON CONFLICT (email) 
+    DO UPDATE 
+		SET provider_id = EXCLUDED.provider_id, 
+		real_name = EXCLUDED.real_name
+    RETURNING user_id, role::text, is_onboarded;
+`, msUser.ID, emailLower, msUser.DisplayName, assignedRole, initialOnboarded).Scan(&userID, &finalRole, &isOnboarded)
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login"})
 		return
@@ -160,20 +160,36 @@ func CompleteOnboarding(c *gin.Context) {
 		return
 	}
 
+	// Update the database
 	_, err := database.Pool.Exec(c.Request.Context(), `
-		UPDATE users 
-		SET username = $1, course = $2, department = $3, course_year = $4, batch = $5, section = $6, student_group = $7, is_onboarded = true
-		WHERE user_id = $8
-	`, req.Username, req.Course, req.Department, req.CourseYear, req.Batch, req.Section, req.StudentGroup, userID)
+        UPDATE users 
+        SET username = $1, course = $2, department = $3, graduation_year = $4, batch = $5, section = $6, student_group = $7, is_onboarded = true
+        WHERE user_id = $8
+    `, req.Username, req.Course, req.Department, req.GraduationYear, req.Batch, req.Section, req.StudentGroup, userID)
 
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") || strings.Contains(err.Error(), "users_username_key") {
-			c.JSON(http.StatusConflict, gin.H{"error": "That Arena Username is already taken. Please choose another."})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save profile data."})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database update failed"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Profile forged successfully!"})
+	// 👇 1. Generate the NEW token immediately
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":      userID,
+		"role":         "student",
+		"is_onboarded": true, // 👈 This is the key to unlocking the app
+		"exp":          time.Now().Add(time.Hour * 72).Unix(),
+	})
+
+	tokenString, err := newToken.SignedString(middleware.JwtSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new session"})
+		return
+	}
+
+	// 👇 2. Send ONE SINGLE JSON response containing everything
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Profile forged successfully!",
+		"token":   tokenString,
+		"role":    "student",
+	})
 }

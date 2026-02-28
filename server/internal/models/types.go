@@ -13,13 +13,13 @@ type MicrosoftGraphUser struct {
 }
 
 type OnboardRequest struct {
-	Username     string `json:"username" binding:"required,max=50"`
-	Course       string `json:"course" binding:"required"`
-	Department   string `json:"department" binding:"required"`
-	CourseYear   int    `json:"course_year" binding:"required,min=1,max=4"`
-	Batch        string `json:"batch" binding:"required"`
-	Section      string `json:"section" binding:"required"`
-	StudentGroup string `json:"student_group" binding:"required"`
+	Username       string `json:"username" binding:"required,max=50"`
+	Course         string `json:"course" binding:"required"`
+	Department     string `json:"department" binding:"required"`
+	GraduationYear int    `json:"graduation_year" binding:"required"`
+	Batch          string `json:"batch" binding:"required"`
+	Section        string `json:"section" binding:"required"`
+	StudentGroup   string `json:"student_group" binding:"required"`
 }
 
 // --- PROBLEM STRUCTS ---

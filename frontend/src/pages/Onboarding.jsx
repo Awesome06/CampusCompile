@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
-// 👇 Import your UI Toolkit
 import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
 import Button from '../components/ui/Button';
@@ -12,9 +11,24 @@ export default function Onboarding() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Dynamically calculate graduation years based on the current year
+  const currentYear = new Date().getFullYear();
+  const gradYearOptions = [
+    { value: currentYear + 0, label: `${currentYear + 0}` },
+    { value: currentYear + 1, label: `${currentYear + 1}` },
+    { value: currentYear + 2, label: `${currentYear + 2}` },
+    { value: currentYear + 3, label: `${currentYear + 3}` },
+    { value: currentYear + 4, label: `${currentYear + 4}` },
+  ];
+
   const [formData, setFormData] = useState({
-    username: '', course: 'B.Tech', department: 'CSE', 
-    course_year: 1, batch: '', section: '', student_group: ''
+    username: '', 
+    course: 'B.Tech', 
+    department: 'CSE', 
+    graduation_year: currentYear + 3, // Default to a standard 4-year degree timeline
+    batch: '', 
+    section: '', 
+    student_group: ''
   });
 
   useEffect(() => {
@@ -27,17 +41,28 @@ export default function Onboarding() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setIsLoading(true);
 
     try {
-      await api.post('/auth/onboard', {
+      const res = await api.post('/auth/onboard', {
         ...formData,
-        course_year: parseInt(formData.course_year, 10) 
+        graduation_year: parseInt(formData.graduation_year, 10)
       });
-      window.location.href = '/problems';
+
+      // Extract the new token that now contains is_onboarded: true
+      const { token, role } = res.data;
+
+      if (token) {
+        localStorage.setItem('token', token);
+        localStorage.setItem('role', role || 'student');
+
+        // Give the browser 100ms to breathe and save the data
+        setTimeout(() => {
+          window.location.href = '/problems';
+        }, 100);
+      }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save profile. Please try again.');
+      setError(err.response?.data?.error || 'Failed to save profile.');
     } finally {
       setIsLoading(false);
     }
@@ -65,7 +90,7 @@ export default function Onboarding() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Select 
               label="Course" name="course" value={formData.course} onChange={handleChange}
-              options={[{value: 'B.Tech', label: 'B.Tech'}, {value: 'BCA', label: 'BCA'}, {value: 'BBA', label: 'BBA'}, {value: 'BA', label: 'BA'}]}
+              options={[{value: 'B.Tech', label: 'B.Tech'}, {value: 'M.Tech', label: 'M.Tech'}, {value: 'BCA', label: 'BCA'}, {value: 'MCA', label: 'MCA'}, {value: 'Ph.D', label: 'Ph.D'}]}
             />
             
             <Select 
@@ -73,14 +98,15 @@ export default function Onboarding() {
               options={[{value: 'CSE', label: 'Computer Science (CSE)'}, {value: 'ECE', label: 'Electronics (ECE)'}, {value: 'MECH', label: 'Mechanical (MECH)'}, {value: 'BIOTECH', label: 'Biotech'}, {value: 'OTHER', label: 'Other'}]}
             />
 
+            {/* 👇 The new Graduation Year Dropdown */}
             <Select 
-              label="Course Year" name="course_year" value={formData.course_year} onChange={handleChange}
-              options={[{value: 1, label: 'Year 1'}, {value: 2, label: 'Year 2'}, {value: 3, label: 'Year 3'}, {value: 4, label: 'Year 4'}]}
+              label="Graduation Year" name="graduation_year" value={formData.graduation_year} onChange={handleChange}
+              options={gradYearOptions}
             />
 
-            <Input label="Batch" name="batch" value={formData.batch} onChange={handleChange} placeholder="e.g., B7" required />
-            <Input label="Section" name="section" value={formData.section} onChange={handleChange} placeholder="e.g., S4" required />
-            <Input label="Student Group" name="student_group" value={formData.student_group} onChange={handleChange} placeholder="e.g., G2" required />
+            <Input label="Batch" name="batch" value={formData.batch} onChange={handleChange} placeholder="e.g., B15" required />
+            <Input label="Section" name="section" value={formData.section} onChange={handleChange} placeholder="e.g., S8" required />
+            <Input label="Student Group" name="student_group" value={formData.student_group} onChange={handleChange} placeholder="e.g., G4" required />
           </div>
 
           <div className="mt-8">

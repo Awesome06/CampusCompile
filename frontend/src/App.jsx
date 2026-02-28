@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { jwtDecode } from 'jwt-decode';
 
 import Navbar from './components/Navbar';
 
@@ -13,11 +14,28 @@ import OAuthSuccess from './pages/OAuthSuccess';
 import Onboarding from './pages/Onboarding';
 
 // The Bouncer
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, requireOnboarding = true }) => {
   const token = localStorage.getItem('token');
-  if (!token) {
+  if (!token) return <Navigate to="/login" replace />;
+
+  try {
+    const decoded = jwtDecode(token);
+    
+    // If you ARE onboarded, but trying to access the /onboarding page...
+    if (!requireOnboarding && decoded.is_onboarded) {
+      // ...immediately send you to the problems list instead
+      return <Navigate to="/problems" replace />;
+    }
+
+    // If the page REQUIRES onboarding and you haven't done it...
+    if (requireOnboarding && !decoded.is_onboarded) {
+      // ...lock you into the onboarding page
+      return <Navigate to="/onboarding" replace />;
+    }
+  } catch (error) {
     return <Navigate to="/login" replace />;
   }
+
   return children;
 };
 
@@ -31,14 +49,19 @@ function App() {
 
         {/* Route Configuration */}
         <Routes>
-          {/* Public Routes */}
           <Route path="/" element={<Landing />} />
-          <Route path="/problems" element={<ProblemList />} />
           <Route path="/login" element={<Login />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           
-          {/* Protected Routes */}
-          <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+          {/* Onboarding doesn't require "onboarding" to be true, but requires a token */}
+          <Route path="/onboarding" element={
+            <ProtectedRoute requireOnboarding={false}>
+              <Onboarding />
+            </ProtectedRoute>
+          } />
+
+          {/* These strictly require the user to be onboarded */}
+          <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
           <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
           <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
         </Routes>

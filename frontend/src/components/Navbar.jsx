@@ -1,15 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { jwtDecode } from 'jwt-decode'; //
 
 export default function Navbar() {
-  // The Navbar manages its own state now!
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
   const [userRole, setUserRole] = useState(localStorage.getItem('role'));
+  const [isOnboarded, setIsOnboarded] = useState(false); //
+
+  // Function to derive onboarding status from the current token
+  const checkOnboardingStatus = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const decoded = jwtDecode(token);
+        setIsOnboarded(!!decoded.is_onboarded); //
+      } catch (e) {
+        setIsOnboarded(false); //
+      }
+    } else {
+      setIsOnboarded(false);
+    }
+  };
 
   useEffect(() => {
+    // Initial check on mount
+    checkOnboardingStatus();
+
     const syncAuthState = () => {
       setIsLoggedIn(!!localStorage.getItem('token'));
       setUserRole(localStorage.getItem('role'));
+      checkOnboardingStatus(); // Re-check status when storage changes
     };
 
     window.addEventListener('storage', syncAuthState);
@@ -20,6 +40,7 @@ export default function Navbar() {
     localStorage.clear(); 
     setIsLoggedIn(false);
     setUserRole(null);
+    setIsOnboarded(false);
     window.location.href = '/login'; 
   };
 
@@ -31,15 +52,22 @@ export default function Navbar() {
         <Link to="/" className="text-xl font-bold text-blue-500 tracking-wide hover:text-blue-400 transition">
           CampusCompile
         </Link>
-        <div className="flex space-x-6 text-sm font-semibold text-gray-300">
-          <Link to="/problems" className="hover:text-white transition">Problems</Link>
-          
-          {hasElevatedAccess && (
-            <Link to="/add-problem" className="text-green-400 hover:text-green-300 transition flex items-center gap-1">
-              <span>+</span> Forge Problem
-            </Link>
-          )}
-        </div>
+        
+        {/* 👇 CRITICAL CHANGE: 
+            Navigation links are ONLY visible if the user is logged in AND onboarded.
+            This prevents students from clicking "Problems" to escape the onboarding screen. 
+        */}
+        {isLoggedIn && isOnboarded && (
+          <div className="flex space-x-6 text-sm font-semibold text-gray-300">
+            <Link to="/problems" className="hover:text-white transition">Problems</Link>
+            
+            {hasElevatedAccess && (
+              <Link to="/add-problem" className="text-green-400 hover:text-green-300 transition flex items-center gap-1">
+                <span>+</span> Forge Problem
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="space-x-4 flex items-center">

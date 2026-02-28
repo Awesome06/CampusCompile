@@ -15,7 +15,7 @@ CREATE TABLE users (
     student_group VARCHAR(50),
     course VARCHAR(100),
     department VARCHAR(100),
-    course_year INTEGER,
+    graduation_year INTEGER,
     role user_role NOT NULL DEFAULT 'student',
     campus_rating INTEGER DEFAULT 1200,
     is_onboarded BOOLEAN DEFAULT FALSE,
