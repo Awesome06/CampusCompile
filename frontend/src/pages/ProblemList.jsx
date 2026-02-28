@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import api from '../services/api'; 
+import Button from '../components/ui/Button';
 
 export default function ProblemList() {
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // 1. Check user role from localStorage (Normalized to lowercase for safety)
   const userRole = localStorage.getItem('role');
   const canAddProblem = userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'professor';
 
   useEffect(() => {
-    // 2. Fetch problems using the centralized API service
     api.get('/problems')
       .then((response) => {
         setProblems(response.data);
@@ -27,18 +26,24 @@ export default function ProblemList() {
   return (
     <div className="p-8 max-w-6xl mx-auto">
       
-      {/* Header Row with Title and Conditional Button */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-white">Problem Repository</h2>
+      {/* Centered Header Row */}
+      <div className="relative flex justify-center items-center mb-8 h-10">
         
-        {/* The button only renders if the user has elevated privileges */}
+        {/* Perfectly Centered Title */}
+        <h2 className="text-3xl font-bold text-white whitespace-nowrap">Problem Repository</h2>
+        
+        {/* Right-Pinned Button using size="sm" */}
         {canAddProblem && (
-          <button 
-            onClick={() => navigate('/add-problem')}
-            className="bg-green-700 hover:bg-green-600 text-white font-bold py-2 px-4 rounded shadow-lg transition border border-green-600 hover:border-green-500 flex items-center gap-2"
-          >
-            <span>+</span> Forge Problem
-          </button>
+          <div className="absolute right-0">
+            <Button 
+              onClick={() => navigate('/add-problem')}
+              variant="success"
+              size="sm"
+              className="border border-green-600 hover:border-green-500"
+            >
+              <span>+</span> Forge Problem
+            </Button>
+          </div>
         )}
       </div>
 
@@ -53,7 +58,6 @@ export default function ProblemList() {
 
         {loading && <div className="text-center py-8 text-gray-400 animate-pulse">Loading arena data...</div>}
         
-        {/* Fallback if the database has zero problems */}
         {!loading && problems.length === 0 && (
           <div className="text-center py-10 text-gray-500 italic border-b border-dark-border last:border-0">
             No problems have been forged yet.

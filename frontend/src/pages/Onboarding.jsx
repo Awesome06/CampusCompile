@@ -2,30 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
+// 👇 Import your UI Toolkit
+import Input from '../components/ui/Input';
+import Select from '../components/ui/Select';
+import Button from '../components/ui/Button';
+
 export default function Onboarding() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    username: '',
-    course: 'B.Tech',
-    department: 'CSE',
-    course_year: 1,
-    batch: '',
-    section: '',
-    student_group: ''
+    username: '', course: 'B.Tech', department: 'CSE', 
+    course_year: 1, batch: '', section: '', student_group: ''
   });
 
   useEffect(() => {
-    if (!localStorage.getItem('token')) {
-      navigate('/login');
-    }
+    if (!localStorage.getItem('token')) navigate('/login');
   }, [navigate]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e) => {
@@ -38,16 +35,9 @@ export default function Onboarding() {
         ...formData,
         course_year: parseInt(formData.course_year, 10) 
       });
-
       window.location.href = '/problems';
-      
     } catch (err) {
-      console.error("Onboarding error:", err);
-      if (err.response?.data?.error) {
-        setError(err.response.data.error); 
-      } else {
-        setError('Failed to save profile. Please try again.');
-      }
+      setError(err.response?.data?.error || 'Failed to save profile. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -61,128 +51,43 @@ export default function Onboarding() {
           Forge your identity. This data determines your contest eligibility and leaderboard groups.
         </p>
         
-        {error && (
-          <div className="bg-red-900/50 border border-red-500 text-red-400 p-3 rounded mb-6 text-sm text-center font-bold">
-            {error}
-          </div>
-        )}
+        {error && <div className="bg-red-900/50 border border-red-500 text-red-400 p-3 rounded mb-6 text-sm text-center font-bold">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Username Row */}
+          
           <div>
-            <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Arena Username</label>
-            <input 
-              type="text" 
-              name="username"
-              value={formData.username}
-              onChange={handleChange}
-              className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition" 
-              placeholder="e.g., CodeNinja99"
-              required 
-              maxLength="50"
-            />
+            <Input label="Arena Username" name="username" value={formData.username} onChange={handleChange} placeholder="e.g., CodeNinja99" required />
             <p className="text-xs text-gray-500 mt-1">This will be your public handle on the leaderboards.</p>
           </div>
 
           <div className="border-t border-dark-border my-6"></div>
 
-          {/* Academic Metadata Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Select 
+              label="Course" name="course" value={formData.course} onChange={handleChange}
+              options={[{value: 'B.Tech', label: 'B.Tech'}, {value: 'BCA', label: 'BCA'}, {value: 'BBA', label: 'BBA'}, {value: 'BA', label: 'BA'}]}
+            />
             
-            <div>
-              <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Course</label>
-              <select 
-                name="course" 
-                value={formData.course} 
-                onChange={handleChange}
-                className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition appearance-none"
-              >
-                <option value="B.Tech">B.Tech</option>
-                <option value="BCA">BCA</option>
-                <option value="BBA">BBA</option>
-                <option value="BA">BA</option>
-              </select>
-            </div>
+            <Select 
+              label="Department" name="department" value={formData.department} onChange={handleChange}
+              options={[{value: 'CSE', label: 'Computer Science (CSE)'}, {value: 'ECE', label: 'Electronics (ECE)'}, {value: 'MECH', label: 'Mechanical (MECH)'}, {value: 'BIOTECH', label: 'Biotech'}, {value: 'OTHER', label: 'Other'}]}
+            />
 
-            <div>
-              <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Department</label>
-              <select 
-                name="department" 
-                value={formData.department} 
-                onChange={handleChange}
-                className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition appearance-none"
-              >
-                <option value="CSE">Computer Science (CSE)</option>
-                <option value="ECE">Electronics (ECE)</option>
-                <option value="MECH">Mechanical (MECH)</option>
-                <option value="BIOTECH">Biotech</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
+            <Select 
+              label="Course Year" name="course_year" value={formData.course_year} onChange={handleChange}
+              options={[{value: 1, label: 'Year 1'}, {value: 2, label: 'Year 2'}, {value: 3, label: 'Year 3'}, {value: 4, label: 'Year 4'}]}
+            />
 
-            <div>
-              <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Course Year</label>
-              <select 
-                name="course_year" 
-                value={formData.course_year} 
-                onChange={handleChange}
-                className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition appearance-none"
-              >
-                <option value={1}>Year 1</option>
-                <option value={2}>Year 2</option>
-                <option value={3}>Year 3</option>
-                <option value={4}>Year 4</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Batch</label>
-              <input 
-                type="text" 
-                name="batch"
-                value={formData.batch}
-                onChange={handleChange}
-                className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition" 
-                placeholder="e.g., B7"
-                required 
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Section</label>
-              <input 
-                type="text" 
-                name="section"
-                value={formData.section}
-                onChange={handleChange}
-                className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition" 
-                placeholder="e.g., S4"
-                required 
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-sm font-bold mb-2 uppercase tracking-wide">Student Group</label>
-              <input 
-                type="text" 
-                name="student_group"
-                value={formData.student_group}
-                onChange={handleChange}
-                className="w-full bg-[#2a2a2a] text-white px-4 py-3 rounded border border-dark-border focus:outline-none focus:border-blue-500 transition" 
-                placeholder="e.g., G2"
-                required 
-              />
-            </div>
-
+            <Input label="Batch" name="batch" value={formData.batch} onChange={handleChange} placeholder="e.g., B7" required />
+            <Input label="Section" name="section" value={formData.section} onChange={handleChange} placeholder="e.g., S4" required />
+            <Input label="Student Group" name="student_group" value={formData.student_group} onChange={handleChange} placeholder="e.g., G2" required />
           </div>
 
-          <button 
-            type="submit" 
-            disabled={isLoading}
-            className={`w-full bg-blue-600 text-white font-bold py-3 px-4 rounded shadow-lg transition mt-8 tracking-wide ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-500'}`}
-          >
-            {isLoading ? 'Saving Profile...' : 'Enter the Arena'}
-          </button>
+          <div className="mt-8">
+            <Button type="submit" variant="primary" disabled={isLoading}>
+              {isLoading ? 'Saving Profile...' : 'Enter the Arena'}
+            </Button>
+          </div>
         </form>
 
       </div>

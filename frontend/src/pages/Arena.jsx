@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useParams } from 'react-router-dom';
-import api from '../services/api'; // 👈 Swapped axios for our custom API service
+import api from '../services/api';
+import Button from '../components/ui/Button';
 
 const boilerplates = {
   cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}`,
@@ -276,7 +277,7 @@ export default function Arena() {
                 setLanguage(newLang);
                 setCode(boilerplates[newLang]);
               }}
-              className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer hover:border-gray-500 transition"
+              className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer hover:border-gray-500 transition text-sm"
             >
                 <option value="cpp">C++</option>
                 <option value="python">Python</option>
@@ -284,18 +285,12 @@ export default function Arena() {
             </select>
             
             <div className="flex space-x-3">
-                <button 
-                  onClick={handleRunCode}
-                  className="bg-gray-700 text-white px-5 py-1.5 rounded font-bold hover:bg-gray-600 transition shadow-lg"
-                >
+                <Button onClick={handleRunCode} variant="secondary" size="sm">
                     Run Code
-                </button>
-                <button 
-                  onClick={handleSubmit}
-                  className="bg-dark-success text-white px-5 py-1.5 rounded font-bold hover:bg-green-600 transition shadow-lg"
-                >
+                </Button>
+                <Button onClick={handleSubmit} variant="success" size="sm">
                     Submit Code
-                </button>
+                </Button>
             </div>
         </div>
         
