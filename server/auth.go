@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -36,11 +38,25 @@ func initOAuthConfig() {
 	}
 }
 
+func generateStateOauthCookie(c *gin.Context) string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	state := base64.URLEncoding.EncodeToString(b)
+
+	// Set cookie: name, value, maxAge (seconds), path, domain, secure, httpOnly
+	// Note: Set 'secure' to true in production when running on HTTPS
+	c.SetCookie("oauth_state", state, int(10*time.Minute.Seconds()), "/", "localhost", false, true)
+
+	return state
+}
+
 // 1. Redirects the React frontend to the Microsoft Login Screen
 func handleAzureLogin(c *gin.Context) {
 	// In production, use a secure random string for the state parameter to prevent CSRF
+	oauthState := generateStateOauthCookie(c)
+
 	url := oauthConfig.AuthCodeURL(
-		"campus-compile-secure-state",
+		oauthState, // 👈 Now using the dynamic, randomized state
 		oauth2.AccessTypeOffline,
 		oauth2.SetAuthURLParam("prompt", "select_account"),
 	)
@@ -50,6 +66,23 @@ func handleAzureLogin(c *gin.Context) {
 // 2. Catches the user coming back from Microsoft
 func handleAzureCallback(c *gin.Context) {
 	reqCtx := c.Request.Context() // ✅ FIXED: Use the request context for better memory management
+
+	// 1. Grab the state Microsoft sent back in the URL
+	returnedState := c.Query("state")
+
+	// 2. Grab the original state we planted in the browser cookie
+	cookieState, err := c.Cookie("oauth_state")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OAuth state cookie missing. Please ensure cookies are enabled and try again."})
+		return
+	}
+
+	// 3. If they don't match exactly, kill the request immediately
+	if returnedState != cookieState {
+		fmt.Printf("[SECURITY] CSRF attack thwarted! Expected state: %s, got: %s\n", cookieState, returnedState)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OAuth state. Potential CSRF attack detected."})
+		return
+	}
 
 	code := c.Query("code")
 	if code == "" {
