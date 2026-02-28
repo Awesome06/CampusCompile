@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { jwtDecode } from 'jwt-decode'; // 👇 New import
+import { jwtDecode } from 'jwt-decode';
+import api from '../services/api'; // 👈 Using the centralized API service
 
 export default function AddProblem() {
   const navigate = useNavigate();
   
-  // 👇 New states for access control
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Form state
+  // Form state matches the Go backend models.CreateProblemRequest exactly
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -24,23 +23,20 @@ export default function AddProblem() {
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 👇 CHECK PERMISSIONS ON LOAD
+  // CHECK PERMISSIONS ON LOAD
   useEffect(() => {
     const token = localStorage.getItem('token');
 
     if (!token) {
-      // No token at all? Kick them to login.
       navigate('/login');
       return;
     }
 
     try {
-      // Crack open the token payload
       const decodedToken = jwtDecode(token);
-      
-      // Check the role (Make sure 'role' matches exactly what your Go API puts in the JWT claim!)
       const userRole = decodedToken.role; 
 
+      // Matches the Go backend ENUM roles ('admin', 'professor')
       if (userRole === 'Admin' || userRole === 'Professor' || userRole === 'admin' || userRole === 'professor') {
         setIsAuthorized(true);
       } else {
@@ -64,21 +60,16 @@ export default function AddProblem() {
     setIsSubmitting(true);
     setStatus({ type: 'info', message: 'Adding problem to the arena... 🚀' });
 
-    const token = localStorage.getItem('token');
-
     try {
+      // Ensure numeric types for the Go struct
       const payload = {
         ...formData,
         time_limit: parseFloat(formData.time_limit),
         memory_limit: parseInt(formData.memory_limit, 10)
       };
 
-      const res = await axios.post('http://localhost:8080/api/problems', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      // 👈 Look how clean this is now! The token is attached automatically.
+      const res = await api.post('/problems', payload);
 
       setStatus({ type: 'success', message: 'Problem added successfully! 🎉' });
       
@@ -90,19 +81,17 @@ export default function AddProblem() {
       console.error("Error adding problem:", err);
       setStatus({ 
         type: 'error', 
-        message: err.response?.data?.message || 'Failed to add problem. Check server logs.' 
+        message: err.response?.data?.error || 'Failed to add problem. Check server logs.' 
       });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // 👇 Show loading state while checking the token
   if (isLoading) {
     return <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg text-white text-xl">Verifying permissions...</div>;
   }
 
-  // 👇 The "Bouncer" UI for unauthorized users
   if (!isAuthorized) {
     return (
       <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg">
@@ -122,7 +111,6 @@ export default function AddProblem() {
     );
   }
 
-  // 👇 The actual form for authorized users
   return (
     <div className="min-h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex justify-center py-10">
       <div className="w-full max-w-4xl bg-[#1e1e1e] p-8 rounded-lg shadow-xl border border-dark-border">

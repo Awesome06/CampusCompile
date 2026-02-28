@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 
 export default function Onboarding() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // The exact fields matching our new PostgreSQL schema
   const [formData, setFormData] = useState({
     username: '',
     course: 'B.Tech',
@@ -18,7 +17,6 @@ export default function Onboarding() {
     student_group: ''
   });
 
-  // Security Check: If they somehow got here without a token, kick them out
   useEffect(() => {
     if (!localStorage.getItem('token')) {
       navigate('/login');
@@ -35,27 +33,18 @@ export default function Onboarding() {
     setError('');
     setIsLoading(true);
 
-    const token = localStorage.getItem('token');
-
     try {
-      // We will create this Go endpoint next!
-      await axios.post('http://localhost:8080/api/auth/onboard', 
-        {
-          ...formData,
-          course_year: parseInt(formData.course_year, 10) // Ensure year is an integer
-        }, 
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      await api.post('/auth/onboard', {
+        ...formData,
+        course_year: parseInt(formData.course_year, 10) 
+      });
 
-      // Success! They are now fully onboarded. Send them to the Arena.
       window.location.href = '/problems';
       
     } catch (err) {
       console.error("Onboarding error:", err);
-      if (err.response && err.response.data && err.response.data.error) {
-        setError(err.response.data.error); // e.g., "Username already taken"
+      if (err.response?.data?.error) {
+        setError(err.response.data.error); 
       } else {
         setError('Failed to save profile. Please try again.');
       }
