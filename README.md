@@ -2,6 +2,13 @@
 
 CampusCompile is the ultimate collegiate coding arena. Built specifically for the university ecosystem, it is a centralized platform designed to host campus-wide coding competitions, store algorithmic problem sets, and automatically evaluate student code with precision.
 
+## Features
+
+*   **Competition Management:** Host and manage campus-wide coding contests.
+*   **Problem Repository:** Centralized storage for algorithmic challenges.
+*   **Automated Evaluation:** Secure, sandboxed code execution engine.
+*   **Real-time Feedback:** Instant results for student submissions.
+
 ## Tech Stack
 
 *   **Frontend:** React (Vite)
@@ -35,6 +42,12 @@ The platform consists of several containerized services orchestrated via Docker 
 
     ```bash
     docker-compose up --build
+    ```
+
+4.  To stop the application:
+
+    ```bash
+    docker-compose down
     ```
 
 ### Accessing Services
