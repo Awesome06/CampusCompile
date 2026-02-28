@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import api from '../services/api'; // 👈 Swapped axios for our custom API service
+import api from '../services/api';
 
 export default function ProblemList() {
   const [problems, setProblems] = useState([]);
