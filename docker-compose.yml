@@ -24,7 +24,7 @@ services:
   # --- 3. GO API BACKEND ---
   api:
     build: 
-      context: ./server  # Looks for a Dockerfile in your 'server' folder
+      context: ./server
     container_name: campus-api
     ports:
       - "8080:8080"
@@ -34,8 +34,10 @@ services:
     env_file:
       - ./.env
     environment:
-      - DB_HOST=db       # Go will connect to 'db' instead of 'localhost'
-      - REDIS_HOST=redis # Go will connect to 'redis' instead of 'localhost'
+      - DB_HOST=db       
+      - REDIS_HOST=redis 
+    volumes:
+      - sandbox_volume:/sandbox_shared
 
   # --- 4. PYTHON EXECUTION WORKER ---
   worker:

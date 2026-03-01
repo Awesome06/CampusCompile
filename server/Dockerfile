@@ -7,12 +7,14 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy your Go code and build the binary
+# Copy your Go code into the container
 COPY . .
-RUN go build -o main .
+
+# 👇 Tell Docker to build the API from the new specific path
+RUN go build -o api ./cmd/api
 
 # Expose your API port
 EXPOSE 8080
 
 # Run the compiled binary
-CMD ["./main"]
+CMD ["./api"]

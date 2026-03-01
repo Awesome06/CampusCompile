@@ -4,6 +4,19 @@ import (
 	"time"
 )
 
+// --- API REQUEST STRUCTS ---
+type SubmitRequest struct {
+	ProblemID  string `json:"problem_id" binding:"required"`
+	Language   string `json:"language" binding:"required"`
+	SourceCode string `json:"source_code" binding:"required"`
+}
+
+type RunRequest struct {
+	Language    string `json:"language" binding:"required"`
+	SourceCode  string `json:"source_code" binding:"required"`
+	CustomInput string `json:"custom_input"`
+}
+
 // --- AUTH STRUCTS ---
 type MicrosoftGraphUser struct {
 	ID                string `json:"id"`
@@ -44,13 +57,15 @@ type Problem struct {
 }
 
 // --- SUBMISSION STRUCTS ---
-type SubmitRequest struct {
-	ProblemID  string `json:"problem_id"`
-	Language   string `json:"language"`
-	SourceCode string `json:"source_code"`
+// OfficialSubmissionPayload updated to string to match UUID usage
+type OfficialSubmissionPayload struct {
+	SubmissionID string `json:"submission_id"`
 }
 
-type RunRequest struct {
+// CustomRunPayload matches the "is_custom" logic in queue_listener.py
+type CustomRunPayload struct {
+	IsCustom    bool   `json:"is_custom"`
+	RunID       string `json:"run_id"`
 	Language    string `json:"language"`
 	SourceCode  string `json:"source_code"`
 	CustomInput string `json:"custom_input"`

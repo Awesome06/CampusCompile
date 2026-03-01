@@ -2,30 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 import api from '../services/api'; 
-
-// 👇 Import your shiny new UI components!
-import Input from '../components/ui/Input';
-import Select from '../components/ui/Select';
-import TextArea from '../components/ui/TextArea';
+import Button from '../components/ui/Button';
 
 export default function AddProblem() {
   const navigate = useNavigate();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    difficulty: 'Easy',
-    sample_input: '',
-    sample_output: '',
-    time_limit: 1.0,
-    memory_limit: 256 
-  });
-
+  const [file, setFile] = useState(null);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // CHECK PERMISSIONS ON LOAD
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -44,29 +32,42 @@ export default function AddProblem() {
     }
   }, [navigate]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile && selectedFile.name.endsWith('.zip')) {
+      setFile(selectedFile);
+      setStatus({ type: '', message: '' });
+    } else {
+      setFile(null);
+      setStatus({ type: 'error', message: 'Please select a valid .zip Polygon package.' });
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!file) {
+      setStatus({ type: 'error', message: 'No package selected.' });
+      return;
+    }
+
     setIsSubmitting(true);
-    setStatus({ type: 'info', message: 'Adding problem to the arena... 🚀' });
+    setStatus({ type: 'info', message: 'Uploading and extracting Polygon package... 🚀' });
+
+    const formData = new FormData();
+    formData.append('package', file);
 
     try {
-      const payload = {
-        ...formData,
-        time_limit: parseFloat(formData.time_limit),
-        memory_limit: parseInt(formData.memory_limit, 10)
-      };
-
-      const res = await api.post('/problems', payload);
-      setStatus({ type: 'success', message: 'Problem added successfully! 🎉' });
+      // Direct Multipart upload to the new Polygon endpoint
+      const res = await api.post('/problems/import/polygon', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       
+      setStatus({ type: 'success', message: 'Problem synced and forged successfully! 🎉' });
+      
+      // Redirect to the newly created problem arena
       setTimeout(() => navigate(`/arena/${res.data.problem_id}`), 2000);
     } catch (err) {
-      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to add problem.' });
+      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to parse Polygon package.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -89,12 +90,15 @@ export default function AddProblem() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex justify-center py-10">
-      <div className="w-full max-w-4xl bg-[#1e1e1e] p-8 rounded-lg shadow-xl border border-dark-border">
-        <h2 className="text-3xl font-bold text-white mb-6 border-b border-dark-border pb-4">Create New Problem</h2>
+    <div className="min-h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex justify-center py-10 px-4">
+      <div className="w-full max-w-2xl bg-[#1e1e1e] p-8 rounded-lg shadow-xl border border-dark-border h-max">
+        <h2 className="text-3xl font-bold text-white mb-2 tracking-wide">Bulk Import (Modality C)</h2>
+        <p className="text-gray-400 text-sm mb-6 border-b border-dark-border pb-6">
+          Upload a Codeforces Polygon <code className="bg-dark-bg px-1 py-0.5 rounded text-blue-400">.zip</code> package. The system will automatically extract the description, time/memory limits, checker scripts, and test cases.
+        </p>
 
         {status.message && (
-          <div className={`p-4 mb-6 rounded font-bold ${
+          <div className={`p-4 mb-6 rounded font-bold text-sm ${
             status.type === 'error' ? 'bg-red-900/50 text-red-400 border border-red-800' :
             status.type === 'success' ? 'bg-green-900/50 text-green-400 border border-green-800' :
             'bg-blue-900/50 text-blue-400 border border-blue-800'
@@ -103,44 +107,43 @@ export default function AddProblem() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-8">
           
-          <div className="flex gap-6">
-            <div className="flex-grow">
-              <Input label="Problem Title" name="title" value={formData.title} onChange={handleChange} placeholder="e.g., Two Sum" required />
-            </div>
-            <div className="w-1/3">
-              <Select 
-                label="Difficulty" name="difficulty" value={formData.difficulty} onChange={handleChange} 
-                options={[{value: 'Easy', label: 'Easy'}, {value: 'Medium', label: 'Medium'}, {value: 'Hard', label: 'Hard'}]} 
+          <div className="flex flex-col items-center justify-center w-full">
+            <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-dark-border border-dashed rounded-lg cursor-pointer bg-dark-bg hover:bg-[#2a2a2a] transition">
+              <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                <svg className="w-10 h-10 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                  <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                </svg>
+                <p className="mb-2 text-sm text-gray-400">
+                  <span className="font-semibold text-blue-500">Click to upload</span> or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">Polygon Windows/Linux Package (.zip)</p>
+              </div>
+              <input 
+                type="file" 
+                className="hidden" 
+                accept=".zip"
+                onChange={handleFileChange} 
               />
-            </div>
+            </label>
           </div>
 
-          <div className="flex gap-6">
-            <div className="w-1/2">
-              <Input label="Time Limit (Seconds)" name="time_limit" type="number" step="0.1" value={formData.time_limit} onChange={handleChange} required />
+          {file && (
+            <div className="bg-dark-bg p-3 rounded border border-dark-border flex justify-between items-center">
+              <span className="text-sm text-gray-300 font-mono">{file.name}</span>
+              <span className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</span>
             </div>
-            <div className="w-1/2">
-              <Input label="Memory Limit (MB)" name="memory_limit" type="number" value={formData.memory_limit} onChange={handleChange} required />
-            </div>
-          </div>
+          )}
 
-          <TextArea label="Problem Description" name="description" value={formData.description} onChange={handleChange} placeholder="Explain the problem clearly here..." rows={6} required />
-
-          <div className="flex gap-6">
-            <div className="w-1/2">
-              <TextArea label="Sample Input" name="sample_input" value={formData.sample_input} onChange={handleChange} placeholder="2 7 11 15\n9" required />
-            </div>
-            <div className="w-1/2">
-              <TextArea label="Sample Output" name="sample_output" value={formData.sample_output} onChange={handleChange} placeholder="0 1" required />
-            </div>
-          </div>
-
-          <div className="flex justify-end mt-8 border-t border-dark-border pt-6">
-            <button type="submit" disabled={isSubmitting} className={`bg-dark-success text-white px-8 py-3 rounded font-bold shadow-lg transition tracking-wide ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-600'}`}>
-              {isSubmitting ? 'Publishing...' : 'Publish Problem'}
-            </button>
+          <div className="flex justify-end pt-4">
+            <Button 
+              type="submit" 
+              variant="success" 
+              disabled={isSubmitting || !file}
+            >
+              {isSubmitting ? 'Extracting Package...' : 'Sync Problem Data'}
+            </Button>
           </div>
 
         </form>

@@ -62,18 +62,26 @@ func main() {
 	{
 		protected.POST("/auth/onboard", handlers.CompleteOnboarding)
 
-		// Problems
+		// Public Problem Access & Execution (Students + Faculty)
 		protected.GET("/problems/:id", handlers.GetProblemByID)
-		protected.POST("/problems", handlers.CreateProblem)
-
-		// Submissions & Execution
 		protected.POST("/submit", handlers.SubmitCode)
 		protected.POST("/run", handlers.RunCode)
 		protected.GET("/run/:id", handlers.GetRunStatus)
 		protected.GET("/submissions/:id", handlers.GetSubmissionStatus)
 		protected.GET("/submissions/history/:id", handlers.GetSubmissionHistory)
-	}
 
+		// --- FACULTY ONLY ROUTES ---
+		// This group chains RequireAuth -> RequireRole
+		faculty := protected.Group("")
+		faculty.Use(middleware.RequireRole("professor", "admin"))
+		{
+			// The old manual creation
+			faculty.POST("/problems", handlers.CreateProblem)
+
+			// The new Modality C Polygon Bulk Import
+			faculty.POST("/problems/import/polygon", handlers.ImportPolygonPackage)
+		}
+	}
 	// 5. START SERVER
 	fmt.Println("[*] API Server running on http://localhost:8080")
 	router.Run(":8080")

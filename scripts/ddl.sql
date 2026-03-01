@@ -24,24 +24,55 @@ CREATE TABLE users (
 
 -- 3. Create the Problems Table
 CREATE TABLE problems (
-    problem_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) UNIQUE NOT NULL,
-    description TEXT NOT NULL,
-    difficulty problem_difficulty NOT NULL,
-    time_limit_ms INT NOT NULL DEFAULT 2000, 
-    memory_limit_kb INT NOT NULL DEFAULT 262144, -- Defaults to 256MB
-    author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    -- Primary Identification
+    problem_id      uuid DEFAULT gen_random_uuid() NOT NULL,
+    polygon_id      text, -- Unique ID from the Polygon package
+    title           varchar(255) NOT NULL,
+    slug            varchar(255) NOT NULL,
+    
+    -- Content and Metadata
+    description     text NOT NULL,
+    difficulty      public."problem_difficulty" NOT NULL,
+    
+    -- Resource Constraints (Standardized to Polygon Units)
+    time_limit_ms   int4 DEFAULT 2000 NOT NULL,
+    memory_limit_kb int4 DEFAULT 262144 NOT NULL,
+    
+    -- Modality C: Specialized Judging
+    has_checker     boolean DEFAULT FALSE, -- True if problem uses a checker.cpp
+    checker_path    text, -- Storage path for the compiled checker
+    
+    -- Ownership and Timestamps
+    author_id       uuid NULL,
+    created_at      timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+    
+    -- Constraints
+    CONSTRAINT problems_pkey PRIMARY KEY (problem_id),
+    CONSTRAINT problems_slug_key UNIQUE (slug)
 );
 
 -- 4. Create the Test Cases Table
 CREATE TABLE test_cases (
-    test_case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
-    input_data TEXT NOT NULL,
-    expected_output TEXT NOT NULL,
-    is_hidden BOOLEAN DEFAULT TRUE
+    -- Primary Identification
+    test_case_id      uuid DEFAULT gen_random_uuid() NOT NULL,
+    problem_id        uuid NOT NULL, -- Changed from NULL to NOT NULL for strict relation
+    
+    -- Ordering and Visibility
+    test_index        int4 NOT NULL, -- Required to maintain Polygon's 1, 2, 3 sequence
+    is_hidden         boolean DEFAULT true NOT NULL, -- Maps to Polygon: sample="true" means is_hidden=false
+    
+    -- Scalable File System Pointers (Replaces input_data & expected_output)
+    input_file_path   text NOT NULL,
+    output_file_path  text NOT NULL,
+    
+    -- Advanced Judging (Optional but highly recommended)
+    output_hash       varchar(64), -- SHA-256 hash of the output for lightning-fast wrong-answer rejections
+    
+    -- Constraints
+    CONSTRAINT test_cases_pkey PRIMARY KEY (test_case_id),
+    CONSTRAINT test_cases_problem_id_fkey FOREIGN KEY (problem_id) 
+        REFERENCES problems(problem_id) 
+        ON DELETE CASCADE
 );
 
 -- 5. Create the Submissions Table
@@ -87,3 +118,9 @@ CREATE INDEX idx_submissions_status ON submissions(status);
 
 -- Optimize leaderboards for contests
 CREATE INDEX idx_contests_times ON contests(start_time, end_time);
+
+-- Index to instantly fetch all test cases for a specific problem when judging
+CREATE INDEX idx_test_cases_problem_id ON test_cases(problem_id);
+
+-- Index to instantly fetch ONLY the public samples for the React frontend
+CREATE INDEX idx_test_cases_samples ON test_cases(problem_id, is_hidden) WHERE is_hidden = false;

@@ -6,11 +6,10 @@ from psycopg2.extras import RealDictCursor
 from runner import grade_submission
 
 # --- CONFIGURATION ---
-# Match these to the PostgreSQL credentials you set up in Phase 1
 DB_CONFIG = {
     "dbname": "CampusCompile_db",
-    "user": "campus_app",            # The app user we created
-    "password": "app", # The password you set for campus_app
+    "user": "campus_app",            
+    "password": "app", 
     "host": os.getenv("DB_HOST", "localhost"),
     "port": "5432"
 }
@@ -26,11 +25,9 @@ def process_submission(submission_id):
     cursor = conn.cursor()
     
     try:
-        # 1. Update status to 'Running' so the user interface knows it started
         cursor.execute("UPDATE submissions SET status = 'Running' WHERE submission_id = %s", (submission_id,))
         conn.commit()
 
-        # 2. Fetch the submission details and problem constraints
         cursor.execute("""
             SELECT s.source_code, s.language, s.problem_id, 
                    p.time_limit_ms, p.memory_limit_kb 
@@ -44,9 +41,9 @@ def process_submission(submission_id):
             print(f"[!] Submission {submission_id} not found in database.")
             return
 
-        # 3. Fetch all test cases for this problem
+        # 燥 UPDATED: Fetch Modality C file paths alongside raw data
         cursor.execute("""
-            SELECT input_data, expected_output 
+            SELECT input_data, expected_output, input_file_path, expected_output_file_path
             FROM test_cases 
             WHERE problem_id = %s
         """, (submission.get('problem_id'),))
@@ -58,34 +55,32 @@ def process_submission(submission_id):
             print(f"[!] System Error: No test cases found for Problem {submission.get('problem_id')}")
             return
 
-        # 4. Loop through test cases and grade
         final_verdict = 'AC'
-        final_message = 'All test cases passed! 🎉'
+        final_message = 'All test cases passed! 脂'
         
         for idx, tc in enumerate(test_cases):
             print(f"[-] Running Test Case {idx + 1}/{len(test_cases)}...")
             
+            # 燥 UPDATED: Pass file paths to the runner
             result = grade_submission(
                 language=submission.get('language'),
                 source_code=submission.get('source_code'),
                 input_data=tc.get('input_data'),
                 expected_output=tc.get('expected_output'),
-                time_limit_ms=submission.get('time_limit_ms')
+                time_limit_ms=submission.get('time_limit_ms'),
+                memory_limit_kb=submission.get('memory_limit_kb'),
+                input_file_path=tc.get('input_file_path'),
+                expected_output_file_path=tc.get('expected_output_file_path')
             )
             
-            # If a test case fails (WA, TLE, CE, RE, SE), we break early! 
             if result['verdict'] != 'AC':
                 final_verdict = result['verdict']
-                
-                # 👇 NEW: Hide the test case data if it's a Wrong Answer
                 if final_verdict == 'WA':
                     final_message = f"Wrong Answer on Test Case {idx + 1}.\nTest data is hidden to prevent hardcoding."
                 else:
-                    # Keep the detailed logs for CE, RE, and TLE so they can debug
                     final_message = result.get('message', f"Verdict: {final_verdict} on Test Case {idx + 1}")
                 break
 
-        # 5. Save the final verdict back to the database
         cursor.execute(
             """
             UPDATE submissions 
@@ -114,36 +109,28 @@ def start_worker():
         if message:
             submission_data = json.loads(message)
             
-            # 👇 --- NEW: INTERCEPT CUSTOM RUNS --- 👇
             if submission_data.get('is_custom'):
                 run_id = submission_data.get('run_id')
                 print(f"\n[+] Processing Custom Run: {run_id}")
                 
-                # Execute the code against the user's custom input
                 result = grade_submission(
                     language=submission_data.get('language'),
                     source_code=submission_data.get('source_code'),
                     input_data=submission_data.get('custom_input', ''),
-                    expected_output="", # We don't care about expected output for custom runs
+                    expected_output="", 
                     time_limit_ms=2000
                 )
                 
-                # Determine what to show the user
                 output_to_show = result.get('actual_output')
                 if result['verdict'] in ['CE', 'RE', 'TLE', 'SE']:
                     output_to_show = result.get('message', f"Error: {result['verdict']}")
                     
-                # Save the raw output directly to Redis (expires in 10 minutes)
-                # Note: We use redis_client, matching your initialization at the top of the file
                 redis_client.set(f"run_result:{run_id}", json.dumps({
                     "status": "Completed",
                     "output": output_to_show,
                     "verdict": result['verdict']
                 }), ex=600) 
                 
-            # 👆 --- END OF CUSTOM RUN LOGIC --- 👆
-            
-            # --- EXISTING LOGIC: OFFICIAL SUBMISSIONS ---
             else:
                 sub_id = submission_data.get('submission_id')
                 if sub_id:

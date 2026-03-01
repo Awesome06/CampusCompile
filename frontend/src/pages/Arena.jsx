@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useParams } from 'react-router-dom';
+import Latex from 'react-latex-next';
 import api from '../services/api';
 import Button from '../components/ui/Button';
 
@@ -18,107 +19,88 @@ export default function Arena() {
   const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('input'); // 'input' or 'output'
+  const [activeTab, setActiveTab] = useState('input');
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
-  const [leftTab, setLeftTab] = useState('description'); // 'description' or 'history'
+  const [leftTab, setLeftTab] = useState('description');
   const [history, setHistory] = useState([]);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // --- FETCH PROBLEM DATA ON LOAD ---
   useEffect(() => {
-    // Look how clean this is! The URL base and Token are handled automatically.
     api.get(`/problems/${id}`)
       .then(res => setProblem(res.data))
-      .catch(err => {
-        console.error("Could not fetch problem details", err);
-      });
+      .catch(err => console.error("Could not fetch problem details", err));
       
     fetchHistory();
   }, [id]);
 
-  // Fetch the user's submission history
   const fetchHistory = async () => {
     try {
       const res = await api.get(`/submissions/history/${id}`);
-      setHistory(res.data);
+      setHistory(res.data || []);
     } catch (err) {
       console.error("Could not fetch history:", err);
     }
   };
 
-  const formatText = (text) => {
-    if (!text) return "";
-    return text.replace(/\\n/g, '\n');
-  };
+  const formatText = (text) => text ? text.replace(/\\n/g, '\n') : "";
 
-  const handleCopy = (text) => {
-    navigator.clipboard.writeText(formatText(text));
-  };
+  const handleCopy = (text) => navigator.clipboard.writeText(formatText(text));
 
   const handleSubmit = async () => {
-    setSubmitStatus('Submitting to Go API... 🚀');
+    setSubmitStatus('Pending... ⏳');
+    setIsConsoleOpen(false);
     
     try {
+      // Matches Go SubmitRequest struct
       const response = await api.post('/submit', {
         problem_id: id,
         language: language,
         source_code: code
       });
 
-      const subId = response.data.submission_id;
-      setSubmitStatus('Pending... ⏳');
-      
-      pollSubmissionStatus(subId);
-
+      pollSubmissionStatus(response.data.submission_id);
     } catch (error) {
-      console.error("Submission Error:", error);
-      setSubmitStatus('Error: Unauthorized or Server Dead');
+      setSubmitStatus('Error: Submission Failed');
     }
   };
 
   const pollSubmissionStatus = async (submissionId) => {
     try {
       const res = await api.get(`/submissions/${submissionId}`);
-      const currentStatus = res.data.status;
+      const { status, message } = res.data;
       
-      console.log("Current Verdict from Backend:", currentStatus); 
-
-      if (currentStatus === 'Pending' || currentStatus === 'Running') {
+      if (status === 'Pending' || status === 'Running') {
+        setSubmitStatus(status === 'Running' ? 'Running... ⚙️' : 'Pending... ⏳');
         setTimeout(() => pollSubmissionStatus(submissionId), 1000);
-        setSubmitStatus(currentStatus); 
       } else {
-        setSubmitStatus(currentStatus);
+        setSubmitStatus(status);
         fetchHistory();
 
-        if (currentStatus === 'CE' || currentStatus === 'RE' || currentStatus === 'WA') {
-          setConsoleOutput(res.data.message || `Verdict: ${currentStatus}\nNo detailed logs provided by server.`);
+        // Handle error displays for CE, RE, WA, TLE
+        if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(status)) {
+          setConsoleOutput(message || `Verdict: ${status}`);
           setActiveTab('output');
           setIsConsoleOpen(true);
-        } else if (currentStatus === 'AC' || currentStatus === 'Accepted') {
+        } else if (status === 'AC' || status === 'Accepted') {
           setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
           setActiveTab('output');
           setIsConsoleOpen(true);
         }
       }
     } catch (err) {
-      console.error("Polling Error:", err);
       setSubmitStatus('Error fetching status');
     }
   };
 
-  const getStatusColor = () => {
-    if (submitStatus === 'Accepted' || submitStatus === 'AC') return 'text-green-400 font-bold';
-    if (submitStatus === 'WA' || submitStatus.includes('Wrong') || submitStatus.includes('Error')) return 'text-red-400 font-bold';
-    if (submitStatus === 'Pending' || submitStatus === 'Running') return 'text-yellow-400 animate-pulse';
-    return 'text-gray-400';
-  };
-
   const handleRunCode = async () => {
-    setConsoleOutput('Spinning up sandbox... ⚙️');
+    setConsoleOutput('Queuing... ⚙️');
     setActiveTab('output');
     setIsConsoleOpen(true);
     
     try {
+      // Matches Go RunRequest struct
       const response = await api.post('/run', {
         language: language,
         source_code: code,
@@ -138,215 +120,173 @@ export default function Arena() {
       if (res.data.status === 'Pending') {
         setTimeout(() => pollRunStatus(runId), 1000);
       } else {
-        setConsoleOutput(res.data.output || "Program finished successfully with no output.");
+        // If there was an error (CE, RE), show the message, otherwise show output
+        setConsoleOutput(res.data.output || res.data.message || "Program finished with no output.");
       }
     } catch (err) {
       setConsoleOutput('Error polling execution status.');
     }
   };
 
-  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl">Loading Arena...</div>;
+  const getStatusColor = () => {
+    if (['Accepted', 'AC'].includes(submitStatus)) return 'text-green-400 font-bold';
+    if (['WA', 'CE', 'RE', 'TLE', 'SE'].includes(submitStatus) || submitStatus.includes('Error')) return 'text-red-400 font-bold';
+    if (['Pending', 'Running'].includes(submitStatus) || submitStatus.includes('⏳')) return 'text-yellow-400 animate-pulse';
+    return 'text-gray-400';
+  };
+
+  const handleViewSubmission = async (submissionId) => {
+    try {
+      const res = await api.get(`/submissions/${submissionId}`);
+      setSelectedSubmission(res.data);
+      setIsModalOpen(true);
+    } catch (err) {
+      console.error("Error fetching submission details:", err);
+    }
+  };
+
+  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Arena...</div>;
 
   return (
-    <div className="flex h-[calc(100vh-61px)] w-full"> 
-      
-      {/* LEFT PANE: Dynamic Content (Tabs) */}
+    <div className="flex h-[calc(100vh-61px)] w-full font-sans"> 
+      {/* LEFT PANE: Description & History */}
       <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
-        
-        {/* Left Pane Tab Bar */}
         <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
           <button 
-            className={`py-3 px-4 text-sm font-bold tracking-wide transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
+            className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
             onClick={() => setLeftTab('description')}
-          >
-            Description
-          </button>
+          >Description</button>
           <button 
-            className={`py-3 px-4 text-sm font-bold tracking-wide transition ${leftTab === 'history' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
+            className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'history' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
             onClick={() => setLeftTab('history')}
-          >
-            Submissions
-          </button>
+          >Submissions</button>
         </div>
 
-        {/* Tab Content Area */}
-        <div className="flex-grow p-6 overflow-y-auto">
-          {leftTab === 'history' && (
-            <div>
-              <h3 className="text-xl font-bold text-white mb-6">Submission History</h3>
-              
-              <div className="bg-[#1e1e1e] border border-dark-border rounded-lg overflow-hidden shadow-inner">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-[#2a2a2a] border-b border-dark-border text-gray-400 text-xs uppercase tracking-wider">
-                      <th className="p-4 font-semibold">Time Submitted</th>
-                      <th className="p-4 font-semibold">Status</th>
-                      <th className="p-4 font-semibold">Language</th>
+        <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
+          {leftTab === 'history' ? (
+            <div className="bg-[#1e1e1e] border border-dark-border rounded-lg overflow-hidden shadow-xl">
+              <table className="w-full text-left">
+                <thead className="bg-[#2a2a2a] border-b border-dark-border text-gray-400 text-xs uppercase">
+                  <tr>
+                    <th className="p-4">Time</th>
+                    <th className="p-4">Verdict</th>
+                    <th className="p-4">Lang</th>
+                    <th className="p-4 text-right">Action</th> {/* 👈 NEW COLUMN */}
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {history.map(sub => (
+                    <tr key={sub.submission_id} className="border-b border-dark-border hover:bg-[#2a2a2a] transition">
+                      <td className="p-4 text-gray-300">
+                        {new Date(sub.submitted_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                      <td className={`p-4 font-bold ${['AC', 'Accepted'].includes(sub.status) ? 'text-green-400' : 'text-red-400'}`}>
+                        {sub.status}
+                      </td>
+                      <td className="p-4 text-gray-400 uppercase font-mono">{sub.language}</td>
+                      <td className="p-4 text-right">
+                        <button 
+                          onClick={() => handleViewSubmission(sub.submission_id)}
+                          className="text-dark-accent hover:underline text-xs font-bold"
+                        >
+                          View Code
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {history.length === 0 ? (
-                      <tr>
-                        <td colSpan="3" className="p-6 text-center text-gray-500 italic">
-                          No submissions yet. Step into the arena!
-                        </td>
-                      </tr>
-                    ) : (
-                      history.map(sub => (
-                        <tr key={sub.submission_id} className="border-b border-dark-border last:border-0 hover:bg-[#2a2a2a] transition">
-                          <td className="p-4 text-sm text-gray-300">
-                            {new Date(sub.submitted_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                          </td>
-                          <td className={`p-4 text-sm font-bold ${sub.status === 'AC' || sub.status === 'Accepted' ? 'text-green-400' : 'text-red-400'}`}>
-                            {sub.status}
-                          </td>
-                          <td className="p-4 text-sm text-gray-300 uppercase">
-                            {sub.language}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-          {leftTab === 'description' && (
+          ) : (
             <>
-              <h2 className="text-3xl font-bold mb-4 text-white">{problem.title}</h2>
-              
-              {/* Dynamic Difficulty Badge */}
-              <span className={`px-2 py-1 text-xs rounded font-bold mb-6 inline-block shadow-sm ${
-                problem.difficulty === 'Easy' ? 'bg-green-900/50 text-green-400 border border-green-800' : 
-                problem.difficulty === 'Medium' ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-800' : 
-                'bg-red-900/50 text-red-400 border border-red-800'
-              }`}>
-                {problem.difficulty}
-              </span>
-              
-              {/* Problem Description */}
-              <div className="text-gray-300 mb-8 leading-relaxed whitespace-pre-wrap">
-                {problem.description}
+              <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problem.title}</h2>
+              <div className="flex space-x-3 mb-6">
+                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border">
+                  ⏱️ {problem.time_limit_ms || 2000}ms
+                </span>
+                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border">
+                  💾 {problem.memory_limit_kb / 1024 || 256}MB
+                </span>
+                <span className={`px-3 py-1 text-xs rounded font-bold border ${
+                  problem.difficulty === 'Easy' ? 'border-green-800 text-green-400' : 
+                  problem.difficulty === 'Medium' ? 'border-yellow-800 text-yellow-400' : 'border-red-800 text-red-400'
+                }`}>{problem.difficulty}</span>
               </div>
               
-              {/* Sample Test Case UI */}
-              {(problem.sample_input != null && problem.sample_output != null) && (
-                <div className="mb-8">
-                  <h3 className="text-lg font-bold text-white mb-3 tracking-wide">Sample Test Case</h3>
-                  <div className="bg-[#1e1e1e] border border-dark-border rounded-lg overflow-hidden shadow-inner">
-                    <div className="p-4 border-b border-dark-border relative group">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Input:</span>
-                        <button onClick={() => handleCopy(problem.sample_input)} className="text-xs text-gray-400 hover:text-white bg-dark-bg px-2 py-1 rounded border border-dark-border opacity-0 group-hover:opacity-100 transition absolute top-2 right-2 shadow">Copy</button>
-                      </div>
-                      <pre className="font-mono text-gray-300 whitespace-pre-wrap">{formatText(problem.sample_input)}</pre>
-                    </div>
-                    <div className="p-4 bg-[#1a1a1a] relative group">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Expected Output:</span>
-                        <button onClick={() => handleCopy(problem.sample_output)} className="text-xs text-gray-400 hover:text-white bg-dark-bg px-2 py-1 rounded border border-dark-border opacity-0 group-hover:opacity-100 transition absolute top-2 right-2 shadow">Copy</button>
-                      </div>
-                      <pre className="font-mono text-gray-300 whitespace-pre-wrap">{formatText(problem.sample_output)}</pre>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div className="prose prose-invert max-w-none text-gray-300 mb-8 whitespace-pre-wrap text-[15px] leading-relaxed">
+                <Latex>{problem.description}</Latex>
+              </div>
 
-              {/* Verdict Box */}
-              <div className="mt-8 p-4 bg-[#2a2a2a] border border-dark-border rounded shadow-inner">
-                <h3 className="text-sm font-bold text-gray-400 mb-2">LATEST VERDICT:</h3>
-                <p className={`font-mono text-lg tracking-wide ${getStatusColor()}`}>
-                  {submitStatus || "Awaiting submission..."}
-                </p>
+              {/* Latest Verdict Status Bar */}
+              <div className="mt-auto p-4 bg-[#1a1a1a] border border-dark-border rounded-lg flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Verdict</span>
+                <span className={`font-mono text-lg ${getStatusColor()}`}>{submitStatus || "Ready"}</span>
               </div>
             </>
           )}
-
         </div>
       </div>
 
-      {/* RIGHT PANE: Code Editor & Console */}
+      {/* RIGHT PANE: Monaco Editor & Console */}
       <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border">
-        
-        {/* Editor Header */}
         <div className="flex justify-between items-center p-2 bg-[#1e1e1e] border-b border-dark-border">
-            <select 
-              value={language}
-              onChange={(e) => {
-                const newLang = e.target.value;
-                setLanguage(newLang);
-                setCode(boilerplates[newLang]);
-              }}
-              className="bg-dark-bg text-gray-300 px-3 py-1 rounded border border-dark-border outline-none cursor-pointer hover:border-gray-500 transition text-sm"
-            >
-                <option value="cpp">C++</option>
-                <option value="python">Python</option>
-                <option value="java">Java</option>
-            </select>
-            
-            <div className="flex space-x-3">
-                <Button onClick={handleRunCode} variant="secondary" size="sm">
-                    Run Code
-                </Button>
-                <Button onClick={handleSubmit} variant="success" size="sm">
-                    Submit Code
-                </Button>
-            </div>
+          <select 
+            value={language}
+            onChange={(e) => {
+              setLanguage(e.target.value);
+              setCode(boilerplates[e.target.value]);
+            }}
+            className="bg-dark-bg text-gray-300 px-3 py-1.5 rounded border border-dark-border font-mono text-sm outline-none"
+          >
+            <option value="cpp">C++ 20</option>
+            <option value="python">Python 3</option>
+            <option value="java">Java 17</option>
+          </select>
+          <div className="flex space-x-2">
+            <Button onClick={handleRunCode} variant="secondary" size="sm">Run</Button>
+            <Button onClick={handleSubmit} variant="success" size="sm">Submit</Button>
+          </div>
         </div>
-        
-        {/* Monaco Editor */}
-        <div className="flex-grow overflow-hidden relative">
+
+        <div className="flex-grow relative">
           <Editor
             height="100%"
-            language={language}
+            language={language === 'cpp' ? 'cpp' : language}
             theme="vs-dark"
             value={code}
-            onChange={(value) => setCode(value)}
-            options={{ minimap: { enabled: false }, fontSize: 16, wordWrap: 'on', padding: { top: 16 } }}
+            onChange={setCode}
+            options={{ fontSize: 15, minimap: { enabled: false }, padding: { top: 20 } }}
           />
         </div>
 
-        {/* BOTTOM CONSOLE */}
-        <div className={`flex flex-col border-t border-dark-border bg-[#1e1e1e] transition-all duration-300 ease-in-out ${isConsoleOpen ? 'h-64' : 'h-10'}`}>
-            
-            {/* Console Tab Bar (Clickable) */}
-            <div className="flex items-center justify-between px-4 py-2 bg-dark-surface cursor-pointer select-none" onClick={() => setIsConsoleOpen(!isConsoleOpen)}>
-                <div className="flex space-x-6">
-                    <button 
-                      className={`text-sm font-bold tracking-wide transition ${activeTab === 'input' && isConsoleOpen ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
-                      onClick={(e) => { e.stopPropagation(); setActiveTab('input'); setIsConsoleOpen(true); }}
-                    >
-                        Custom Input
-                    </button>
-                    <button 
-                      className={`text-sm font-bold tracking-wide transition ${activeTab === 'output' && isConsoleOpen ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`}
-                      onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsConsoleOpen(true); }}
-                    >
-                        Output / Errors
-                    </button>
-                </div>
-                <span className="text-gray-400 text-xs font-bold uppercase tracking-wider hover:text-white transition">
-                    {isConsoleOpen ? '▼ Close' : '▲ Console'}
-                </span>
+        {/* CONSOLE AREA */}
+        <div className={`flex flex-col bg-[#1e1e1e] border-t border-dark-border transition-all ${isConsoleOpen ? 'h-72' : 'h-11'}`}>
+          <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" onClick={() => setIsConsoleOpen(!isConsoleOpen)}>
+            <div className="flex space-x-6">
+              <button onClick={(e) => { e.stopPropagation(); setActiveTab('input'); setIsConsoleOpen(true); }}
+                className={`text-xs font-black uppercase tracking-widest ${activeTab === 'input' && isConsoleOpen ? 'text-white' : 'text-gray-500'}`}>Input</button>
+              <button onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsConsoleOpen(true); }}
+                className={`text-xs font-black uppercase tracking-widest ${activeTab === 'output' && isConsoleOpen ? 'text-white' : 'text-gray-500'}`}>Output</button>
             </div>
+            <span className="text-[10px] font-bold text-gray-600 uppercase">{isConsoleOpen ? 'Collapse' : 'Expand Console'}</span>
+          </div>
 
-            {/* Console Content Area */}
-            {isConsoleOpen && (
-                <div className="flex-grow p-4 bg-dark-bg overflow-hidden">
-                    {activeTab === 'input' ? (
-                        <textarea 
-                            className="w-full h-full bg-[#1e1e1e] text-gray-300 p-3 rounded border border-dark-border outline-none resize-none font-mono text-sm focus:border-gray-500 transition"
-                            placeholder="Enter your custom input here..."
-                            value={customInput}
-                            onChange={(e) => setCustomInput(e.target.value)}
-                        />
-                    ) : (
-                        <div className="w-full h-full bg-[#1e1e1e] text-red-300 p-3 rounded border border-dark-border overflow-y-auto font-mono text-sm whitespace-pre-wrap">
-                            {consoleOutput || "Run code to see output..."}
-                        </div>
-                    )}
+          {isConsoleOpen && (
+            <div className="flex-grow p-4 bg-[#0d0d0d]">
+              {activeTab === 'input' ? (
+                <textarea 
+                  className="w-full h-full bg-transparent text-gray-300 font-mono text-sm outline-none resize-none"
+                  placeholder="Custom stdin..."
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                />
+              ) : (
+                <div className="h-full font-mono text-sm text-gray-300 overflow-y-auto whitespace-pre-wrap">
+                  {consoleOutput || "No output to display."}
                 </div>
-            )}
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
