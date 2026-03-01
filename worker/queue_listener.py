@@ -41,9 +41,9 @@ def process_submission(submission_id):
             print(f"[!] Submission {submission_id} not found in database.")
             return
 
-        # 燥 UPDATED: Fetch Modality C file paths alongside raw data
+        # 💡 UPDATED: Fetching S3 keys instead of local Polygon paths
         cursor.execute("""
-            SELECT input_data, expected_output, input_file_path, expected_output_file_path
+            SELECT input_data, expected_output, input_s3_key, expected_s3_key
             FROM test_cases 
             WHERE problem_id = %s
         """, (submission.get('problem_id'),))
@@ -56,12 +56,12 @@ def process_submission(submission_id):
             return
 
         final_verdict = 'AC'
-        final_message = 'All test cases passed! 脂'
+        final_message = 'All test cases passed! 🏆'
         
         for idx, tc in enumerate(test_cases):
             print(f"[-] Running Test Case {idx + 1}/{len(test_cases)}...")
             
-            # 燥 UPDATED: Pass file paths to the runner
+            # 💡 UPDATED: Passing memory limits and S3 keys to the runner
             result = grade_submission(
                 language=submission.get('language'),
                 source_code=submission.get('source_code'),
@@ -69,8 +69,8 @@ def process_submission(submission_id):
                 expected_output=tc.get('expected_output'),
                 time_limit_ms=submission.get('time_limit_ms'),
                 memory_limit_kb=submission.get('memory_limit_kb'),
-                input_file_path=tc.get('input_file_path'),
-                expected_output_file_path=tc.get('expected_output_file_path')
+                input_s3_key=tc.get('input_s3_key'),
+                expected_s3_key=tc.get('expected_s3_key')
             )
             
             if result['verdict'] != 'AC':
@@ -90,7 +90,6 @@ def process_submission(submission_id):
             (final_verdict, final_message, submission_id)
         )
         conn.commit()
-        
         print(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")
 
     except Exception as e:
@@ -100,19 +99,15 @@ def process_submission(submission_id):
         cursor.close()
         conn.close()
 
-
 def start_worker():
     print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
-    
     while True:
         queue, message = redis_client.brpop(QUEUE_NAME)
         if message:
             submission_data = json.loads(message)
-            
             if submission_data.get('is_custom'):
                 run_id = submission_data.get('run_id')
                 print(f"\n[+] Processing Custom Run: {run_id}")
-                
                 result = grade_submission(
                     language=submission_data.get('language'),
                     source_code=submission_data.get('source_code'),
@@ -120,17 +115,12 @@ def start_worker():
                     expected_output="", 
                     time_limit_ms=2000
                 )
-                
                 output_to_show = result.get('actual_output')
                 if result['verdict'] in ['CE', 'RE', 'TLE', 'SE']:
                     output_to_show = result.get('message', f"Error: {result['verdict']}")
-                    
                 redis_client.set(f"run_result:{run_id}", json.dumps({
-                    "status": "Completed",
-                    "output": output_to_show,
-                    "verdict": result['verdict']
+                    "status": "Completed", "output": output_to_show, "verdict": result['verdict']
                 }), ex=600) 
-                
             else:
                 sub_id = submission_data.get('submission_id')
                 if sub_id:

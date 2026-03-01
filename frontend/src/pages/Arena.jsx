@@ -24,6 +24,8 @@ export default function Arena() {
   const [consoleOutput, setConsoleOutput] = useState('');
   const [leftTab, setLeftTab] = useState('description');
   const [history, setHistory] = useState([]);
+  
+  // Modal States
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -44,16 +46,11 @@ export default function Arena() {
     }
   };
 
-  const formatText = (text) => text ? text.replace(/\\n/g, '\n') : "";
-
-  const handleCopy = (text) => navigator.clipboard.writeText(formatText(text));
-
   const handleSubmit = async () => {
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     
     try {
-      // Matches Go SubmitRequest struct
       const response = await api.post('/submit', {
         problem_id: id,
         language: language,
@@ -78,7 +75,6 @@ export default function Arena() {
         setSubmitStatus(status);
         fetchHistory();
 
-        // Handle error displays for CE, RE, WA, TLE
         if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(status)) {
           setConsoleOutput(message || `Verdict: ${status}`);
           setActiveTab('output');
@@ -100,7 +96,6 @@ export default function Arena() {
     setIsConsoleOpen(true);
     
     try {
-      // Matches Go RunRequest struct
       const response = await api.post('/run', {
         language: language,
         source_code: code,
@@ -116,11 +111,9 @@ export default function Arena() {
   const pollRunStatus = async (runId) => {
     try {
       const res = await api.get(`/run/${runId}`);
-      
       if (res.data.status === 'Pending') {
         setTimeout(() => pollRunStatus(runId), 1000);
       } else {
-        // If there was an error (CE, RE), show the message, otherwise show output
         setConsoleOutput(res.data.output || res.data.message || "Program finished with no output.");
       }
     } catch (err) {
@@ -148,8 +141,9 @@ export default function Arena() {
   if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Arena...</div>;
 
   return (
-    <div className="flex h-[calc(100vh-61px)] w-full font-sans"> 
-      {/* LEFT PANE: Description & History */}
+    <div className="flex h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden"> 
+      
+      {/* --- LEFT PANE --- */}
       <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
         <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
           <button 
@@ -171,7 +165,7 @@ export default function Arena() {
                     <th className="p-4">Time</th>
                     <th className="p-4">Verdict</th>
                     <th className="p-4">Lang</th>
-                    <th className="p-4 text-right">Action</th> {/* 👈 NEW COLUMN */}
+                    <th className="p-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
@@ -227,9 +221,9 @@ export default function Arena() {
         </div>
       </div>
 
-      {/* RIGHT PANE: Monaco Editor & Console */}
-      <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border">
-        <div className="flex justify-between items-center p-2 bg-[#1e1e1e] border-b border-dark-border">
+      {/* --- RIGHT PANE --- */}
+      <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border relative">
+        <div className="flex justify-between items-center p-2 bg-[#1e1e1e] border-b border-dark-border z-10">
           <select 
             value={language}
             onChange={(e) => {
@@ -248,31 +242,36 @@ export default function Arena() {
           </div>
         </div>
 
-        <div className="flex-grow relative">
+        <div className="flex-grow relative pb-11">
           <Editor
             height="100%"
             language={language === 'cpp' ? 'cpp' : language}
             theme="vs-dark"
             value={code}
             onChange={setCode}
-            options={{ fontSize: 15, minimap: { enabled: false }, padding: { top: 20 } }}
+            options={{ 
+              fontSize: 15, 
+              minimap: { enabled: false }, 
+              padding: { top: 20 },
+              scrollBeyondLastLine: false 
+            }}
           />
         </div>
 
-        {/* CONSOLE AREA */}
-        <div className={`flex flex-col bg-[#1e1e1e] border-t border-dark-border transition-all ${isConsoleOpen ? 'h-72' : 'h-11'}`}>
-          <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" onClick={() => setIsConsoleOpen(!isConsoleOpen)}>
+        {/* FLOATING CONSOLE */}
+        <div className={`absolute bottom-0 left-0 w-full flex flex-col bg-[#1e1e1e]/95 backdrop-blur-sm border-t border-dark-border transition-all shadow-2xl z-20 ${isConsoleOpen ? 'h-72' : 'h-11'}`}>
+          <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-white/5 transition-colors" onClick={() => setIsConsoleOpen(!isConsoleOpen)}>
             <div className="flex space-x-6">
               <button onClick={(e) => { e.stopPropagation(); setActiveTab('input'); setIsConsoleOpen(true); }}
                 className={`text-xs font-black uppercase tracking-widest ${activeTab === 'input' && isConsoleOpen ? 'text-white' : 'text-gray-500'}`}>Input</button>
               <button onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsConsoleOpen(true); }}
                 className={`text-xs font-black uppercase tracking-widest ${activeTab === 'output' && isConsoleOpen ? 'text-white' : 'text-gray-500'}`}>Output</button>
             </div>
-            <span className="text-[10px] font-bold text-gray-600 uppercase">{isConsoleOpen ? 'Collapse' : 'Expand Console'}</span>
+            <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">{isConsoleOpen ? 'Collapse' : 'Expand Console'}</span>
           </div>
 
           {isConsoleOpen && (
-            <div className="flex-grow p-4 bg-[#0d0d0d]">
+            <div className="flex-grow p-4 bg-[#0d0d0d]/90">
               {activeTab === 'input' ? (
                 <textarea 
                   className="w-full h-full bg-transparent text-gray-300 font-mono text-sm outline-none resize-none"
@@ -289,6 +288,87 @@ export default function Arena() {
           )}
         </div>
       </div>
+
+      {/* --- SUBMISSION DETAILS MODAL --- */}
+      {isModalOpen && selectedSubmission && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 sm:p-8">
+          <div className="bg-[#1e1e1e] w-full max-w-5xl h-[85vh] rounded-xl border border-dark-border flex flex-col shadow-2xl animate-in fade-in zoom-in duration-200">
+            
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-5 border-b border-dark-border bg-[#252525]">
+              <div className="flex items-center space-x-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center space-x-3">
+                    <span>Submission Details</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-tighter ${
+                      ['AC', 'Accepted'].includes(selectedSubmission.status) ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {selectedSubmission.status}
+                    </span>
+                  </h3>
+                  <div className="flex items-center space-x-3 mt-1">
+                    <p className="text-[10px] text-gray-500 font-mono">ID: {selectedSubmission.submission_id}</p>
+                    <p className="text-[10px] text-gray-500 font-mono uppercase">Language: {selectedSubmission.language}</p>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
+                title="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            {/* Modal Body: Read-Only Monaco Editor */}
+            <div className="flex-grow relative bg-[#1e1e1e]">
+              <Editor
+                height="100%"
+                language={selectedSubmission.language === 'cpp' ? 'cpp' : selectedSubmission.language}
+                theme="vs-dark"
+                value={selectedSubmission.source_code}
+                options={{ 
+                  readOnly: true, 
+                  fontSize: 14, 
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  padding: { top: 20 }
+                }}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-dark-border bg-[#252525] flex justify-between items-center">
+              <div className="text-xs text-gray-500 italic">
+                {selectedSubmission.message && `Logs: ${selectedSubmission.message.substring(0, 70)}...`}
+              </div>
+              <div className="flex space-x-3">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  Close
+                </Button>
+                <Button 
+                  variant="success" 
+                  className="flex items-center space-x-2"
+                  onClick={() => {
+                    setCode(selectedSubmission.source_code);
+                    setLanguage(selectedSubmission.language);
+                    setIsModalOpen(false);
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                  <span>Restore to Editor</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -31,30 +31,36 @@ services:
     depends_on:
       - db
       - redis
+      - minio # 👈 Ensure MinIO starts before the API
     env_file:
       - ./.env
     environment:
       - DB_HOST=db       
       - REDIS_HOST=redis 
-    volumes:
-      - sandbox_volume:/sandbox_shared
+      # 👈 Inject MinIO connection details for the Go AWS SDK
+      - S3_ENDPOINT=http://minio:9000 
+      - S3_ACCESS_KEY=campus_admin
+      - S3_SECRET_KEY=campus_password
 
   # --- 4. PYTHON EXECUTION WORKER ---
   worker:
     build: 
-      context: ./worker        # Looks for a Dockerfile where queue_listener.py is
+      context: ./worker
     container_name: campus-worker
     depends_on:
       - db
       - redis
+      - minio # 👈 Ensure MinIO starts before the Worker
     volumes:
-      # Gives Python access to the host's Docker engine
       - /var/run/docker.sock:/var/run/docker.sock 
-      # Give the worker access to the shared sandbox drive
       - sandbox_volume:/sandbox_shared
     environment:
       - DB_HOST=db
       - REDIS_HOST=redis
+      # 👈 Inject MinIO connection details for boto3
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=campus_admin
+      - S3_SECRET_KEY=campus_password
 
   # --- 5. REACT FRONTEND ---
   frontend:
@@ -66,8 +72,22 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8080
 
-# Define the persistent storage for Postgres
+  # --- 6. MINIO STORAGE ---
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000" # API port
+      - "9001:9001" # Web UI port
+    environment:
+      MINIO_ROOT_USER: "campus_admin"
+      MINIO_ROOT_PASSWORD: "campus_password"
+    volumes:
+      - minio_data:/data
+
+# Define the persistent storage
 volumes:
   pgdata:
   sandbox_volume:
     name: sandbox_volume
+  minio_data: # 👈 ADDED: The missing root volume declaration

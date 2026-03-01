@@ -13,6 +13,7 @@ import (
 	"campuscompile/api/internal/handlers"
 	"campuscompile/api/internal/middleware"
 	redisPkg "campuscompile/api/internal/redis"
+	"campuscompile/api/internal/storage"
 )
 
 func main() {
@@ -31,6 +32,7 @@ func main() {
 	database.InitDB(dbHost)
 	redisPkg.InitRedis(redisHost)
 	handlers.InitOAuthConfig()
+	storage.InitS3()
 
 	// 3. SET UP GIN ROUTER
 	router := gin.Default()
@@ -75,11 +77,11 @@ func main() {
 		faculty := protected.Group("")
 		faculty.Use(middleware.RequireRole("professor", "admin"))
 		{
-			// The old manual creation
+			// Manual problem creation
 			faculty.POST("/problems", handlers.CreateProblem)
 
-			// The new Modality C Polygon Bulk Import
-			faculty.POST("/problems/import/polygon", handlers.ImportPolygonPackage)
+			// Stream massive test cases directly to MinIO (S3)
+			faculty.POST("/problems/testcases", handlers.UploadTestCase)
 		}
 	}
 	// 5. START SERVER

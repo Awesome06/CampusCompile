@@ -4,7 +4,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install the required Python packages for your worker
-RUN pip install redis psycopg2-binary docker
+RUN pip install redis psycopg2-binary docker boto3
 
 # Copy your worker scripts into the container
 COPY queue_listener.py runner.py ./

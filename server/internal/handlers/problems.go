@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"campuscompile/api/internal/database"
+	"campuscompile/api/internal/models"
 )
 
 // SampleTestCase defines the structure for the React frontend
@@ -72,10 +75,9 @@ func GetProblemByID(c *gin.Context) {
 
 	// 2. Fetch the File Paths for Public Samples ONLY
 	rows, err := database.Pool.Query(ctx, `
-		SELECT input_file_path, output_file_path 
+		SELECT input_s3_key, expected_s3_key 
 		FROM test_cases 
 		WHERE problem_id = $1 AND is_hidden = false
-		ORDER BY test_index ASC
 	`, problemID)
 
 	var samples []SampleTestCase
@@ -109,9 +111,33 @@ func GetProblemByID(c *gin.Context) {
 }
 
 func CreateProblem(c *gin.Context) {
-	// Modality C strictly enforces Polygon ZIP uploads.
-	// Manual problem creation via JSON payload is no longer supported to protect database integrity.
-	c.JSON(http.StatusMethodNotAllowed, gin.H{
-		"error": "Manual problem creation is disabled. Please use the Modality C (Polygon Bulk Import) endpoint.",
+	var req models.CreateProblemRequest
+
+	// 1. Parse the JSON from the React frontend
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	// 2. Generate a unique ID and a URL-friendly slug
+	problemID := uuid.New().String()
+	slug := strings.ToLower(strings.ReplaceAll(req.Title, " ", "-"))
+
+	// 3. Insert the new problem into PostgreSQL
+	// Adjust the column names if your database schema differs slightly
+	_, err := database.Pool.Exec(c.Request.Context(), `
+		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, problemID, req.Title, slug, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forge problem in database"})
+		return
+	}
+
+	// 4. Return success and the new ID back to the frontend
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Problem created successfully",
+		"problem_id": problemID,
 	})
 }
