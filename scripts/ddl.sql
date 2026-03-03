@@ -5,106 +5,128 @@ CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 
 
 -- 2. Create the Users Table
 CREATE TABLE users (
-    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    provider_id VARCHAR(255) UNIQUE,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(50) UNIQUE,
-    real_name VARCHAR(255),
-    batch VARCHAR(50),
-    section VARCHAR(50),
-    student_group VARCHAR(50),
-    course VARCHAR(100),
-    department VARCHAR(100),
-    graduation_year INTEGER,
-    role user_role NOT NULL DEFAULT 'student',
-    campus_rating INTEGER DEFAULT 1200,
-    is_onboarded BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    user_id         UUID               NOT NULL DEFAULT gen_random_uuid(),
+    provider_id     VARCHAR(255)       NULL,
+    email           VARCHAR(255)       NOT NULL,
+    username        VARCHAR(50)        NULL,
+    real_name       VARCHAR(255)       NULL,
+    batch           VARCHAR(50)        NULL,
+    "section"       VARCHAR(50)        NULL,
+    student_group   VARCHAR(50)        NULL,
+    course          VARCHAR(100)       NULL,
+    department      VARCHAR(100)       NULL,
+    graduation_year INTEGER            NULL,
+    "role"          "user_role"        NOT NULL DEFAULT 'student'::user_role,
+    campus_rating   INTEGER            NULL     DEFAULT 1200,
+    is_onboarded    BOOLEAN            NULL     DEFAULT FALSE,
+    created_at      TIMESTAMPTZ        NULL     DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT users_pkey 
+        PRIMARY KEY (user_id),
+
+    CONSTRAINT users_email_key 
+        UNIQUE (email),
+
+    CONSTRAINT users_provider_id_key 
+        UNIQUE (provider_id),
+
+    CONSTRAINT users_username_key 
+        UNIQUE (username)
 );
 
 -- 3. Create the Problems Table
 CREATE TABLE problems (
-    -- Primary Identification
-    problem_id      uuid DEFAULT gen_random_uuid() NOT NULL,
-    polygon_id      text, -- Unique ID from the Polygon package
-    title           varchar(255) NOT NULL,
-    slug            varchar(255) NOT NULL,
-    
-    -- Content and Metadata
-    description     text NOT NULL,
-    difficulty      public."problem_difficulty" NOT NULL,
-    
-    -- Resource Constraints (Standardized to Polygon Units)
-    time_limit_ms   int4 DEFAULT 2000 NOT NULL,
-    memory_limit_kb int4 DEFAULT 262144 NOT NULL,
-    
-    -- Modality C: Specialized Judging
-    has_checker     boolean DEFAULT FALSE, -- True if problem uses a checker.cpp
-    checker_path    text, -- Storage path for the compiled checker
-    
-    -- Ownership and Timestamps
-    author_id       uuid NULL,
-    created_at      timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-    
-    -- Constraints
-    CONSTRAINT problems_pkey PRIMARY KEY (problem_id),
-    CONSTRAINT problems_slug_key UNIQUE (slug)
+    problem_id      UUID                        NOT NULL DEFAULT gen_random_uuid(),
+    title           VARCHAR(255)                NOT NULL,
+    slug            VARCHAR(255)                NOT NULL,
+    description     TEXT                        NOT NULL,
+    difficulty      "problem_difficulty"        NOT NULL,
+    time_limit_ms   INTEGER                     NOT NULL DEFAULT 2000,
+    memory_limit_kb INTEGER                     NOT NULL DEFAULT 262144,
+    author_id       UUID                        NULL,
+    created_at      TIMESTAMPTZ                 NULL     DEFAULT CURRENT_TIMESTAMP,
+    has_checker     BOOLEAN                     NULL     DEFAULT FALSE,
+    checker_s3_key  TEXT                        NULL,
+
+    CONSTRAINT problems_pkey 
+        PRIMARY KEY (problem_id),
+
+    CONSTRAINT problems_slug_key 
+        UNIQUE (slug)
 );
 
 -- 4. Create the Test Cases Table
 CREATE TABLE test_cases (
-    -- Primary Identification
-    test_case_id      uuid DEFAULT gen_random_uuid() NOT NULL,
-    problem_id        uuid NOT NULL, -- Changed from NULL to NOT NULL for strict relation
-    
-    -- Ordering and Visibility
-    test_index        int4 NOT NULL, -- Required to maintain Polygon's 1, 2, 3 sequence
-    is_hidden         boolean DEFAULT true NOT NULL, -- Maps to Polygon: sample="true" means is_hidden=false
-    
-    -- Scalable File System Pointers (Replaces input_data & expected_output)
-    input_file_path   text NOT NULL,
-    output_file_path  text NOT NULL,
-    
-    -- Advanced Judging (Optional but highly recommended)
-    output_hash       varchar(64), -- SHA-256 hash of the output for lightning-fast wrong-answer rejections
-    
-    -- Constraints
-    CONSTRAINT test_cases_pkey PRIMARY KEY (test_case_id),
-    CONSTRAINT test_cases_problem_id_fkey FOREIGN KEY (problem_id) 
-        REFERENCES problems(problem_id) 
+    test_case_id    UUID         NOT NULL DEFAULT gen_random_uuid(),
+    problem_id      UUID         NULL,
+    input_data      TEXT         NULL,
+    expected_output TEXT         NULL,
+    is_hidden       BOOLEAN      NULL     DEFAULT TRUE,
+    input_s3_key    VARCHAR(512) NULL,
+    expected_s3_key VARCHAR(512) NULL,
+
+    CONSTRAINT test_cases_pkey 
+        PRIMARY KEY (test_case_id),
+
+    CONSTRAINT test_cases_problem_id_fkey 
+        FOREIGN KEY (problem_id) 
+        REFERENCES public.problems (problem_id) 
         ON DELETE CASCADE
 );
 
 -- 5. Create the Submissions Table
 CREATE TABLE submissions (
-    submission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
-    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
-    source_code TEXT NOT NULL,
-    language VARCHAR(50) NOT NULL,
-    status submission_status DEFAULT 'Pending',
-    error_logs TEXT, -- 👇 NEW: Stores the cc1plus or javac errors
-    execution_time_ms INT,
-    memory_used_kb INT,
-    submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    submission_id     UUID                       NOT NULL DEFAULT gen_random_uuid(),
+    user_id           UUID                       NULL,
+    problem_id        UUID                       NULL,
+    source_code       TEXT                       NOT NULL,
+    "language"        VARCHAR(50)                NOT NULL,
+    status            "submission_status"        NULL     DEFAULT 'Pending'::submission_status,
+    execution_time_ms INTEGER                    NULL,
+    memory_used_kb    INTEGER                    NULL,
+    submitted_at      TIMESTAMPTZ                NULL     DEFAULT CURRENT_TIMESTAMP,
+    error_logs        TEXT                       NULL,
+
+    CONSTRAINT submissions_pkey 
+        PRIMARY KEY (submission_id),
+
+    CONSTRAINT submissions_problem_id_fkey 
+        FOREIGN KEY (problem_id) 
+        REFERENCES public.problems (problem_id) 
+        ON DELETE CASCADE
 );
 
 -- 6. Create the Contests Table
 CREATE TABLE contests (
-    contest_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(255) NOT NULL,
-    host_organization VARCHAR(255),
-    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-    end_time TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    contest_id        UUID         NOT NULL DEFAULT gen_random_uuid(),
+    title             VARCHAR(255) NOT NULL,
+    host_organization VARCHAR(255) NULL,
+    start_time        TIMESTAMPTZ  NOT NULL,
+    end_time          TIMESTAMPTZ  NOT NULL,
+    created_at        TIMESTAMPTZ  NULL     DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT contests_pkey 
+        PRIMARY KEY (contest_id)
 );
 
 -- 7. Create the Contest Problems Mapping Table
 CREATE TABLE contest_problems (
-    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
-    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
-    points_value INT NOT NULL DEFAULT 100,
-    PRIMARY KEY (contest_id, problem_id)
+    contest_id   UUID    NOT NULL,
+    problem_id   UUID    NOT NULL,
+    points_value INTEGER NOT NULL DEFAULT 100,
+
+    CONSTRAINT contest_problems_pkey 
+        PRIMARY KEY (contest_id, problem_id),
+
+    CONSTRAINT contest_problems_contest_id_fkey 
+        FOREIGN KEY (contest_id) 
+        REFERENCES contests (contest_id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT contest_problems_problem_id_fkey 
+        FOREIGN KEY (problem_id) 
+        REFERENCES problems (problem_id) 
+        ON DELETE CASCADE
 );
 
 -- Optimize queries looking for a specific user's submissions
