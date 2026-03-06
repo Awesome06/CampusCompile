@@ -286,7 +286,7 @@ export default function AddProblem() {
                 }`}>{problemData.difficulty}</span>
               </div>
               <div className="prose prose-invert max-w-none text-gray-300 mb-8 whitespace-pre-wrap text-[15px] leading-relaxed">
-                <Latex>{problemData.description}</Latex>
+                <ReactMarkdown>{problemData.description}</ReactMarkdown>
               </div>
           </div>
         </div>
