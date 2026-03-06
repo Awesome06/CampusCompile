@@ -157,9 +157,16 @@ export default function EditProblem() {
         is_public: problemData.is_public
       });
 
-      // 2. Sync Test Cases
+      // 2. 🛡️ THE FIX: Format Test Cases to perfectly match the Go Struct
+      const formattedTestCases = testCases.map(tc => ({
+        input: tc.input || tc.input_data || '',
+        expectedOutput: tc.expectedOutput || tc.expected_output || '',
+        isHidden: tc.isHidden !== undefined ? tc.isHidden : (tc.is_hidden || false)
+      }));
+
+      // 3. Sync Test Cases
       await api.put(`/problems/${id}/testcases/sync`, {
-        test_cases: testCases
+        test_cases: formattedTestCases
       });
 
       setStatus({ type: 'success', message: 'Changes saved successfully! 🎉' });
