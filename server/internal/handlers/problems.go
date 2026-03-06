@@ -134,9 +134,9 @@ func CreateProblem(c *gin.Context) {
 
 	// 4. Insert the new problem into PostgreSQL, using the secure authorID
 	_, err := database.Pool.Exec(c.Request.Context(), `
-		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb, author_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, problemID, req.Title, slug, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, authorID)
+		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, problemID, req.Title, slug, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, authorID, req.IsPublic)
 
 	if err != nil {
 		fmt.Printf("[!] Failed to forge problem: %v\n", err)

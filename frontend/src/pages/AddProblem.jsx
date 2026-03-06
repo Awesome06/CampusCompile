@@ -152,6 +152,7 @@ export default function AddProblem() {
         difficulty: problemData.difficulty,
         time_limit: problemData.time_limit,
         memory_limit: problemData.memory_limit * 1024,
+        is_public: problemData.is_public
       };
       
       const probRes = await api.post('/problems', problemPayload);
