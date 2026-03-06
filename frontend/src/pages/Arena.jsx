@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
+import remarkGfm from 'remark-gfm';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -252,10 +253,10 @@ export default function Arena() {
               {/* Note: Removed 'whitespace-pre-wrap' so Markdown handles spacing naturally */}
               <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
                 <ReactMarkdown
-                  remarkPlugins={[remarkMath]}
+                  remarkPlugins={[remarkMath, remarkGfm]} // 👈 ADD IT HERE
                   rehypePlugins={[rehypeKatex]}
                 >
-                  {problem.description}
+                  {problem.description || problemData.description}
                 </ReactMarkdown>
               </div>
 

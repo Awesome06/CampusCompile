@@ -6,6 +6,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import JSZip from 'jszip';
+import remarkGfm from 'remark-gfm';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
 
@@ -283,7 +284,7 @@ export default function EditProblem() {
               </div>
               <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
                 <ReactMarkdown
-                  remarkPlugins={[remarkMath]}
+                  remarkPlugins={[remarkMath, remarkGfm]}
                   rehypePlugins={[rehypeKatex]}
                 >
                   {problemData.description}

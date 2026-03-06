@@ -8,6 +8,7 @@ import 'katex/dist/katex.min.css';
 import JSZip from 'jszip';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
+import remarkGfm from 'remark-gfm';
 
 const DEFAULT_DESCRIPTION = `### Problem Statement
 Write your problem statement here. CampusCompile supports inline math like $O(N \\log N)$ and block equations:
@@ -288,8 +289,13 @@ export default function AddProblem() {
                   problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 'border-red-800 bg-red-900/20 text-red-400'
                 }`}>{problemData.difficulty}</span>
               </div>
-              <div className="prose prose-invert max-w-none text-gray-300 mb-8 whitespace-pre-wrap text-[15px] leading-relaxed">
-                <ReactMarkdown>{problemData.description}</ReactMarkdown>
+              <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath, remarkGfm]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {problemData.description}
+                </ReactMarkdown>
               </div>
           </div>
         </div>
