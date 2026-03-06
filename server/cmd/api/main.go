@@ -72,21 +72,34 @@ func main() {
 		protected.GET("/submissions/:id", handlers.GetSubmissionStatus)
 		protected.GET("/submissions/history/:id", handlers.GetSubmissionHistory)
 
-		// --- FACULTY ONLY ROUTES ---
-		// This group chains RequireAuth -> RequireRole
+		// --- FACULTY & ADMIN ROUTES ---
+		// Both Professors and Admins can create and edit problems
 		faculty := protected.Group("")
-		faculty.Use(middleware.RequireRole("professor", "admin"))
+		faculty.Use(middleware.RequireRole("professor", "admin")) // 🛡️ Allows both
 		{
-			// Manual problem creation
+			// Problem Management
 			faculty.POST("/problems", handlers.CreateProblem)
-			router.POST("/problems/:id/testcases/batch", handlers.AddTestCasesBatch)
-			// Stream massive test cases directly to MinIO (S3)
-			faculty.POST("/problems/testcases", handlers.UploadTestCase)
 			faculty.PUT("/problems/:id", handlers.UpdateProblem)
+
+			// Test Cases
+			faculty.POST("/problems/:id/testcases/batch", handlers.AddTestCasesBatch)
+			faculty.PUT("/problems/:id/testcases/sync", handlers.SyncTestCasesBatch)
+			faculty.GET("/problems/:id/testcases/all", handlers.GetAllTestCasesForProblem)
+
+			// Dashboard
+			faculty.GET("/faculty/problems", handlers.GetFacultyProblems)
 		}
-		faculty.Use(middleware.RequireRole("admin"))
+
+		// --- ADMIN ONLY ROUTES ---
+		// Only Admins have the destructive power to delete problems
+		adminGroup := protected.Group("")
+		adminGroup.Use(middleware.RequireRole("admin")) // 🛡️ Strictly Admin only
 		{
-			faculty.DELETE("/problems/:id", handlers.DeleteProblem)
+			adminGroup.DELETE("/problems/:id", handlers.DeleteProblem)
+
+			// Future expansion:
+			// adminGroup.GET("/users", handlers.GetAllUsers)
+			// adminGroup.DELETE("/users/:id", handlers.BanUser)
 		}
 	}
 	// 5. START SERVER
