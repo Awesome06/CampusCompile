@@ -42,6 +42,7 @@ type CreateProblemRequest struct {
 	Difficulty  string `json:"difficulty"`
 	TimeLimit   int    `json:"time_limit"`
 	MemoryLimit int    `json:"memory_limit"`
+	IsPublic    bool   `json:"is_public"`
 }
 
 type Problem struct {

@@ -196,3 +196,63 @@ func AddTestCasesBatch(c *gin.Context) {
 		"message": "Test cases published successfully",
 	})
 }
+
+// EDIT PROBLEM: Only Author can edit
+func UpdateProblem(c *gin.Context) {
+	problemID := c.Param("id")
+	userID := c.MustGet("user_id").(string) // From RequireAuth middleware
+
+	// 1. Check if the user is the author
+	var authorID string
+	err := database.Pool.QueryRow(c.Request.Context(), "SELECT author_id FROM problems WHERE problem_id = $1", problemID).Scan(&authorID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
+		return
+	}
+
+	if userID != authorID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only the original author can edit this problem."})
+		return
+	}
+
+	// 2. Process the Update
+	var req models.CreateProblemRequest // Reusing struct, but ensure it includes IsPublic bool
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload"})
+		return
+	}
+
+	_, err = database.Pool.Exec(c.Request.Context(), `
+		UPDATE problems 
+		SET title = $1, description = $2, difficulty = $3, time_limit_ms = $4, memory_limit_kb = $5, is_public = $6
+		WHERE problem_id = $7
+	`, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic, problemID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update problem"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Problem updated successfully"})
+}
+
+// DELETE PROBLEM: Only Admins can delete
+func DeleteProblem(c *gin.Context) {
+	problemID := c.Param("id")
+	userRole := c.MustGet("role").(string) // From RequireAuth middleware
+
+	// 1. Strict Admin Check
+	if userRole != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only Administrators have clearance to delete problems."})
+		return
+	}
+
+	// 2. Delete (ON DELETE CASCADE in DB will handle test_cases and submissions)
+	_, err := database.Pool.Exec(c.Request.Context(), "DELETE FROM problems WHERE problem_id = $1", problemID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete problem"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Problem completely erased."})
+}

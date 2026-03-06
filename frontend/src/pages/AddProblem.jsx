@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 import Latex from 'react-latex-next';
+import JSZip from 'jszip';
 import 'katex/dist/katex.min.css';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
@@ -47,7 +48,8 @@ export default function AddProblem() {
     description: DEFAULT_DESCRIPTION,
     difficulty: 'Easy',
     time_limit: 2000,
-    memory_limit: 256
+    memory_limit: 256,
+    is_public: false
   });
 
   // Step 2: Dynamic Test Cases
@@ -79,6 +81,64 @@ export default function AddProblem() {
     const updated = [...testCases];
     updated[index][field] = value;
     setTestCases(updated);
+  };
+
+  const handleZipUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setStatus({ type: 'info', message: 'Extracting test cases from ZIP...' });
+    
+    try {
+      const zip = new JSZip();
+      const loadedZip = await zip.loadAsync(file);
+      
+      const inputs = {};
+      const outputs = {};
+      
+      // 1. Read all files in the ZIP
+      for (const [relativePath, zipEntry] of Object.entries(loadedZip.files)) {
+        if (zipEntry.dir) continue; // Skip folders
+        
+        const content = await zipEntry.async("string");
+        const cleanName = relativePath.split('/').pop().toLowerCase();
+        
+        // Extract the base number/name (e.g., "1.in" -> "1", "input_5.txt" -> "5")
+        const baseMatch = cleanName.match(/(\d+)/); 
+        const baseName = baseMatch ? baseMatch[0] : cleanName.split('.')[0];
+        
+        if (cleanName.includes('in')) inputs[baseName] = content;
+        if (cleanName.includes('out')) outputs[baseName] = content;
+      }
+
+      // 2. Pair them up
+      const newTestCases = [];
+      Object.keys(inputs).forEach(key => {
+        if (outputs[key]) {
+          newTestCases.push({
+            input: inputs[key].trim(),
+            expectedOutput: outputs[key].trim(),
+            isHidden: true // Bulk uploads default to hidden
+          });
+        }
+      });
+
+      if (newTestCases.length === 0) {
+        setStatus({ type: 'error', message: 'No matching input/output files found in ZIP. Ensure files have "in" and "out" in their names.' });
+        return;
+      }
+
+      // 3. Append to existing state (PREVENTS OVERWRITES)
+      setTestCases(prev => [...prev, ...newTestCases]);
+      setStatus({ type: 'success', message: `Successfully appended ${newTestCases.length} test cases!` });
+      setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+
+    } catch (err) {
+      console.error(err);
+      setStatus({ type: 'error', message: 'Failed to process ZIP file.' });
+    }
+    // Reset input so they can upload another zip if needed
+    e.target.value = null; 
   };
 
   const handlePublish = async () => {
@@ -192,6 +252,19 @@ export default function AddProblem() {
                 <textarea required className="w-full flex-1 min-h-[300px] bg-dark-bg text-gray-300 p-4 rounded border border-dark-border font-mono text-sm outline-none focus:border-dark-accent resize-none custom-scrollbar"
                   value={problemData.description} onChange={e => setProblemData({...problemData, description: e.target.value})} />
               </div>
+              <div className="flex items-center space-x-3 bg-[#121212] p-3 rounded border border-dark-border mt-4">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex-1">Visibility Status</label>
+                <div className="flex bg-[#1e1e1e] rounded p-1 border border-dark-border">
+                  <button onClick={() => setProblemData({...problemData, is_public: false})}
+                    className={`px-4 py-1.5 text-xs font-bold rounded transition-colors ${!problemData.is_public ? 'bg-yellow-900/30 text-yellow-500' : 'text-gray-500 hover:text-white'}`}>
+                    DRAFT (Hidden)
+                  </button>
+                  <button onClick={() => setProblemData({...problemData, is_public: true})}
+                    className={`px-4 py-1.5 text-xs font-bold rounded transition-colors ${problemData.is_public ? 'bg-green-900/30 text-green-500' : 'text-gray-500 hover:text-white'}`}>
+                    PUBLIC (Live)
+                  </button>
+                </div>
+              </div>
               <div className="flex justify-end pt-4 border-t border-dark-border">
                 <Button onClick={() => setStep(2)} variant="primary" disabled={!problemData.title || !problemData.description}>
                   Next: Setup Test Cases →
@@ -269,12 +342,22 @@ export default function AddProblem() {
             </div>
 
             <div className="mt-8 flex justify-between items-center bg-[#1e1e1e] p-5 rounded-lg border border-dark-border sticky bottom-4 shadow-2xl z-10">
-              <Button onClick={handleAddTestCase} variant="secondary" className="flex items-center space-x-2 border-dashed">
-                <span className="text-lg leading-none">+</span><span>Add Another Case</span>
-              </Button>
+              <div className="flex space-x-3">
+                <Button onClick={handleAddTestCase} variant="secondary" className="flex items-center space-x-2 border-dashed">
+                  <span className="text-lg leading-none">+</span><span>Add Manually</span>
+                </Button>
+                
+                {/* NEW: ZIP Upload Button */}
+                <label className="flex items-center justify-center space-x-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 px-4 py-2 rounded text-sm font-bold border border-dark-border cursor-pointer transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  <span>Bulk Upload (.zip)</span>
+                  <input type="file" accept=".zip" className="hidden" onChange={handleZipUpload} />
+                </label>
+              </div>
+
               <Button onClick={handlePublish} variant="success" className="px-8 shadow-lg shadow-green-900/20" 
                 disabled={isSubmitting || testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())}>
-                {isSubmitting ? 'Publishing to Arena...' : 'Finalize & Publish'}
+                {isSubmitting ? 'Syncing to Database...' : 'Finalize & Publish'}
               </Button>
             </div>
           </div>

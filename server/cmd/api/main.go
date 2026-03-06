@@ -82,6 +82,11 @@ func main() {
 			router.POST("/problems/:id/testcases/batch", handlers.AddTestCasesBatch)
 			// Stream massive test cases directly to MinIO (S3)
 			faculty.POST("/problems/testcases", handlers.UploadTestCase)
+			faculty.PUT("/problems/:id", handlers.UpdateProblem)
+		}
+		faculty.Use(middleware.RequireRole("admin"))
+		{
+			faculty.DELETE("/problems/:id", handlers.DeleteProblem)
 		}
 	}
 	// 5. START SERVER
