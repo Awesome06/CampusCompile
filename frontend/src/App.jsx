@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import Landing from './pages/Landing';         
 import ProblemList from './pages/ProblemList'; 
 import AddProblem from './pages/AddProblem';
+import EditProblem from './pages/EditProblem'; // 👈 Added EditProblem import
 import OAuthSuccess from './pages/OAuthSuccess';
 import Onboarding from './pages/Onboarding';
 
@@ -64,6 +65,10 @@ function App() {
           <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
           <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
           <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
+          
+          {/* 👈 Added the new Edit Problem route */}
+          <Route path="/edit-problem/:id" element={<ProtectedRoute><EditProblem /></ProtectedRoute>} />
+          
         </Routes>
         
       </div>
