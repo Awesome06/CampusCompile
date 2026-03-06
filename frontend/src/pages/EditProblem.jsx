@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
-import Latex from 'react-latex-next';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import JSZip from 'jszip';
 import api from '../services/api'; 
@@ -279,8 +281,13 @@ export default function EditProblem() {
                   problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 'border-red-800 bg-red-900/20 text-red-400'
                 }`}>{problemData.difficulty}</span>
               </div>
-              <div className="prose prose-invert max-w-none text-gray-300 mb-8 whitespace-pre-wrap text-[15px] leading-relaxed">
-                <ReactMarkdown>{problemData.description}</ReactMarkdown>
+              <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {problemData.description}
+                </ReactMarkdown>
               </div>
           </div>
         </div>

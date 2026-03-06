@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
-import Latex from 'react-latex-next';
-import JSZip from 'jszip';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import JSZip from 'jszip';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
 
