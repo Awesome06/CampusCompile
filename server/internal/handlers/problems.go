@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +13,6 @@ import (
 	"campuscompile/api/internal/models"
 )
 
-// SampleTestCase defines the structure for the React frontend
 type SampleTestCase struct {
 	Input  string `json:"input"`
 	Output string `json:"output"`
@@ -73,9 +71,9 @@ func GetProblemByID(c *gin.Context) {
 		return
 	}
 
-	// 2. Fetch the File Paths for Public Samples ONLY
+	// 2. Fetch the Public Samples directly from the DB text columns
 	rows, err := database.Pool.Query(ctx, `
-		SELECT input_s3_key, expected_s3_key 
+		SELECT input_data, expected_output 
 		FROM test_cases 
 		WHERE problem_id = $1 AND is_hidden = false
 	`, problemID)
@@ -84,15 +82,11 @@ func GetProblemByID(c *gin.Context) {
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var inPath, outPath string
-			if err := rows.Scan(&inPath, &outPath); err == nil {
-				// Read the physical files from the disk
-				inData, _ := os.ReadFile(inPath)
-				outData, _ := os.ReadFile(outPath)
-
+			var inData, outData string
+			if err := rows.Scan(&inData, &outData); err == nil {
 				samples = append(samples, SampleTestCase{
-					Input:  string(inData),
-					Output: string(outData),
+					Input:  inData,
+					Output: outData,
 				})
 			}
 		}
@@ -113,31 +107,92 @@ func GetProblemByID(c *gin.Context) {
 func CreateProblem(c *gin.Context) {
 	var req models.CreateProblemRequest
 
-	// 1. Parse the JSON from the React frontend
+	// 1. Parse the JSON from the React frontend (Title, Description, etc.)
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
 		return
 	}
 
-	// 2. Generate a unique ID and a URL-friendly slug
+	// 🛡️ 2. ZERO-TRUST: Retrieve the verified UUID from the middleware context
+	authorID, exists := c.Get("user_id") // Matches the key set in jwt.go
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User identity not found in request context"})
+		return
+	}
+
+	// 3. Generate a unique ID and a URL-friendly slug
 	problemID := uuid.New().String()
 	slug := strings.ToLower(strings.ReplaceAll(req.Title, " ", "-"))
 
-	// 3. Insert the new problem into PostgreSQL
-	// Adjust the column names if your database schema differs slightly
+	// 4. Insert the new problem into PostgreSQL, using the secure authorID
 	_, err := database.Pool.Exec(c.Request.Context(), `
-		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, problemID, req.Title, slug, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit)
+		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb, author_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, problemID, req.Title, slug, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, authorID)
 
 	if err != nil {
+		fmt.Printf("[!] Failed to forge problem: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forge problem in database"})
 		return
 	}
 
-	// 4. Return success and the new ID back to the frontend
+	// 5. Return success and the new ID back to the frontend
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "Problem created successfully",
 		"problem_id": problemID,
+	})
+}
+
+func AddTestCasesBatch(c *gin.Context) {
+	problemID := c.Param("id")
+
+	var req models.BatchTestCasesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid test cases payload format"})
+		return
+	}
+
+	if len(req.TestCases) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one test case is required"})
+		return
+	}
+
+	ctx := context.Background()
+
+	// Begin a database transaction
+	tx, err := database.Pool.Begin(ctx)
+	if err != nil {
+		fmt.Printf("[!] Failed to start transaction: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+	// Automatically rollback if the transaction isn't committed
+	defer tx.Rollback(ctx)
+
+	// Iterate and insert each test case
+	for _, tc := range req.TestCases {
+		tcID := uuid.New().String()
+
+		_, err := tx.Exec(ctx, `
+			INSERT INTO test_cases (test_case_id, problem_id, input_data, expected_output, is_hidden)
+			VALUES ($1, $2, $3, $4, $5)
+		`, tcID, problemID, tc.Input, tc.ExpectedOutput, tc.IsHidden)
+
+		if err != nil {
+			fmt.Printf("[!] Failed to insert test case %s: %v\n", tcID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save test cases to database"})
+			return
+		}
+	}
+
+	// Commit the transaction if all inserts succeed
+	if err := tx.Commit(ctx); err != nil {
+		fmt.Printf("[!] Failed to commit test case transaction: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to finalize test cases"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Test cases published successfully",
 	})
 }

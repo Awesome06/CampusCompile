@@ -37,13 +37,11 @@ type OnboardRequest struct {
 
 // --- PROBLEM STRUCTS ---
 type CreateProblemRequest struct {
-	Title        string  `json:"title"`
-	Description  string  `json:"description"`
-	Difficulty   string  `json:"difficulty"`
-	TimeLimit    float64 `json:"time_limit"`
-	MemoryLimit  int     `json:"memory_limit"`
-	SampleInput  string  `json:"sample_input"`
-	SampleOutput string  `json:"sample_output"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Difficulty  string `json:"difficulty"`
+	TimeLimit   int    `json:"time_limit"`
+	MemoryLimit int    `json:"memory_limit"`
 }
 
 type Problem struct {
@@ -76,4 +74,15 @@ type SubmissionHistoryEntry struct {
 	Language    string    `json:"language"`
 	Status      string    `json:"status"`
 	SubmittedAt time.Time `json:"submitted_at"`
+}
+
+// Add to models/requests.go or at the top of problems.go
+type TestCasePayload struct {
+	Input          string `json:"input"`
+	ExpectedOutput string `json:"expectedOutput"`
+	IsHidden       bool   `json:"isHidden"`
+}
+
+type BatchTestCasesRequest struct {
+	TestCases []TestCasePayload `json:"test_cases"`
 }

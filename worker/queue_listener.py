@@ -41,45 +41,35 @@ def process_submission(submission_id):
             print(f"[!] Submission {submission_id} not found in database.")
             return
 
-        # 💡 UPDATED: Fetching S3 keys instead of local Polygon paths
+        # Fetch all test cases, including their IDs to act as cache references
         cursor.execute("""
-            SELECT input_data, expected_output, input_s3_key, expected_s3_key
+            SELECT test_case_id, input_data, expected_output, input_s3_key, expected_s3_key
             FROM test_cases 
             WHERE problem_id = %s
         """, (submission.get('problem_id'),))
         test_cases = cursor.fetchall()
 
         if len(test_cases) == 0:
-            cursor.execute("UPDATE submissions SET status = 'SE - No Test Cases' WHERE submission_id = %s", (submission_id,))
+            cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'No Test Cases' WHERE submission_id = %s", (submission_id,))
             conn.commit()
             print(f"[!] System Error: No test cases found for Problem {submission.get('problem_id')}")
             return
 
-        final_verdict = 'AC'
-        final_message = 'All test cases passed! 🏆'
+        print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
         
-        for idx, tc in enumerate(test_cases):
-            print(f"[-] Running Test Case {idx + 1}/{len(test_cases)}...")
-            
-            # 💡 UPDATED: Passing memory limits and S3 keys to the runner
-            result = grade_submission(
-                language=submission.get('language'),
-                source_code=submission.get('source_code'),
-                input_data=tc.get('input_data'),
-                expected_output=tc.get('expected_output'),
-                time_limit_ms=submission.get('time_limit_ms'),
-                memory_limit_kb=submission.get('memory_limit_kb'),
-                input_s3_key=tc.get('input_s3_key'),
-                expected_s3_key=tc.get('expected_s3_key')
-            )
-            
-            if result['verdict'] != 'AC':
-                final_verdict = result['verdict']
-                if final_verdict == 'WA':
-                    final_message = f"Wrong Answer on Test Case {idx + 1}.\nTest data is hidden to prevent hardcoding."
-                else:
-                    final_message = result.get('message', f"Verdict: {final_verdict} on Test Case {idx + 1}")
-                break
+        # Pass the entire batch to the runner (compiles once, caches test cases)
+        result = grade_submission(
+            submission_id=submission_id,
+            problem_id=submission.get('problem_id'),
+            language=submission.get('language'),
+            source_code=submission.get('source_code'),
+            test_cases=test_cases,
+            time_limit_ms=submission.get('time_limit_ms', 2000),
+            memory_limit_kb=submission.get('memory_limit_kb', 256000)
+        )
+
+        final_verdict = result['verdict']
+        final_message = result.get('message', 'All test cases passed! 🏆') if final_verdict == 'AC' else result.get('message', f'Verdict: {final_verdict}')
 
         cursor.execute(
             """
@@ -105,19 +95,32 @@ def start_worker():
         queue, message = redis_client.brpop(QUEUE_NAME)
         if message:
             submission_data = json.loads(message)
+            
             if submission_data.get('is_custom'):
                 run_id = submission_data.get('run_id')
                 print(f"\n[+] Processing Custom Run: {run_id}")
+                
+                # Format custom run to match the batch runner signature
+                custom_tc = [{
+                    "test_case_id": "custom",
+                    "input_data": submission_data.get('custom_input', ''),
+                    "expected_output": ""
+                }]
+                
                 result = grade_submission(
+                    submission_id=run_id,
+                    problem_id="custom",
                     language=submission_data.get('language'),
                     source_code=submission_data.get('source_code'),
-                    input_data=submission_data.get('custom_input', ''),
-                    expected_output="", 
-                    time_limit_ms=2000
+                    test_cases=custom_tc,
+                    time_limit_ms=2000,
+                    memory_limit_kb=256000
                 )
+                
                 output_to_show = result.get('actual_output')
                 if result['verdict'] in ['CE', 'RE', 'TLE', 'SE']:
                     output_to_show = result.get('message', f"Error: {result['verdict']}")
+                    
                 redis_client.set(f"run_result:{run_id}", json.dumps({
                     "status": "Completed", "output": output_to_show, "verdict": result['verdict']
                 }), ex=600) 

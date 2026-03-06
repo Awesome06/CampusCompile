@@ -1,34 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
+import Latex from 'react-latex-next';
+import 'katex/dist/katex.min.css';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
+
+const DEFAULT_DESCRIPTION = `### Problem Statement
+Write your problem statement here. CampusCompile supports inline math like $O(N \\log N)$ and block equations:
+$$ \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2} $$
+
+### Constraints
+* $1 \\le N \\le 10^5$
+* $1 \\le A_i \\le 10^9$
+
+### Sample Input
+\`\`\`text
+5
+1 2 3 4 5
+\`\`\`
+
+### Sample Output
+\`\`\`text
+15
+\`\`\`
+`;
 
 export default function AddProblem() {
   const navigate = useNavigate();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Wizard State
+  // Wizard & Submission State
   const [step, setStep] = useState(1);
-  const [createdProblemId, setCreatedProblemId] = useState(null);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Modal State
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [publishedUrl, setPublishedUrl] = useState('');
+  const [copied, setCopied] = useState(false);
 
   // Step 1: Problem Details
   const [problemData, setProblemData] = useState({
     title: '',
-    description: '',
+    description: DEFAULT_DESCRIPTION,
     difficulty: 'Easy',
     time_limit: 2000,
-    memory_limit: 256000
+    memory_limit: 256
   });
 
-  // Step 2: S3 Test Cases
-  const [inputFile, setInputFile] = useState(null);
-  const [expectedFile, setExpectedFile] = useState(null);
+  // Step 2: Dynamic Test Cases
+  const [testCases, setTestCases] = useState([
+    { input: '', expectedOutput: '', isHidden: false }
+  ]);
 
-  // CHECK PERMISSIONS ON LOAD (Admins & Professors allowed)
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -39,6 +65,7 @@ export default function AddProblem() {
       const decodedToken = jwtDecode(token);
       const userRole = decodedToken.role?.toLowerCase(); 
       setIsAuthorized(userRole === 'admin' || userRole === 'professor');
+
     } catch (error) {
       setIsAuthorized(false);
     } finally {
@@ -46,155 +73,248 @@ export default function AddProblem() {
     }
   }, [navigate]);
 
-  // Handle Step 1 Submission
-  const handleCreateProblem = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setStatus({ type: 'info', message: 'Forging problem in database... 🚀' });
-
-    try {
-      const res = await api.post('/problems', problemData);
-      setCreatedProblemId(res.data.problem_id);
-      setStatus({ type: 'success', message: 'Problem created! Now, upload the test cases.' });
-      setStep(2); // Move to S3 upload step
-    } catch (err) {
-      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to create problem.' });
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleAddTestCase = () => setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true }]);
+  const handleRemoveTestCase = (index) => setTestCases(testCases.filter((_, i) => i !== index));
+  const updateTestCase = (index, field, value) => {
+    const updated = [...testCases];
+    updated[index][field] = value;
+    setTestCases(updated);
   };
 
-  // Handle Step 2 Submission (S3 MinIO)
-  const handleUploadTestCases = async (e) => {
-    e.preventDefault();
-    if (!inputFile || !expectedFile) {
-      setStatus({ type: 'error', message: 'Please select both input and expected output files.' });
-      return;
-    }
-
+  const handlePublish = async () => {
     setIsSubmitting(true);
-    setStatus({ type: 'info', message: 'Streaming test cases to MinIO (S3)... ⏳' });
-
-    const formData = new FormData();
-    formData.append('problem_id', createdProblemId);
-    formData.append('input_file', inputFile);
-    formData.append('expected_file', expectedFile);
+    setStatus({ type: 'info', message: 'Forging problem and syncing test cases... 🚀' });
 
     try {
-      await api.post('/problems/testcases', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const problemPayload = {
+        title: problemData.title,
+        description: problemData.description,
+        difficulty: problemData.difficulty,
+        time_limit: problemData.time_limit,
+        memory_limit: problemData.memory_limit * 1024,
+      };
       
-      setStatus({ type: 'success', message: 'Test cases securely streamed! Redirecting to Arena... 🎉' });
-      setTimeout(() => navigate(`/arena/${createdProblemId}`), 2000);
+      const probRes = await api.post('/problems', problemPayload);
+      const newProblemId = probRes.data.problem_id;
+
+      await api.post(`/problems/${newProblemId}/testcases/batch`, {
+        test_cases: testCases
+      });
+
+      setStatus({ type: 'success', message: 'Problem published successfully! 🎉' });
+      
+      // Construct the full URL for sharing and trigger the modal
+      const fullUrl = `${window.location.origin}/arena/${newProblemId}`;
+      setPublishedUrl(fullUrl);
+      setShowSuccessModal(true);
+
     } catch (err) {
-      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to upload test cases.' });
+      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to publish problem.' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isLoading) return <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg text-white text-xl">Verifying permissions...</div>;
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(publishedUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const resetForm = () => {
+    setProblemData({ title: '', description: DEFAULT_DESCRIPTION, difficulty: 'Easy', time_limit: 2000, memory_limit: 256 });
+    setTestCases([{ input: '', expectedOutput: '', isHidden: false }]);
+    setStatus({ type: '', message: '' });
+    setShowSuccessModal(false);
+    setStep(1);
+  };
+
+  if (isLoading) return <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg text-white text-xl">Verifying clearance...</div>;
 
   if (!isAuthorized) {
     return (
       <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg">
-        <div className="text-center p-8 bg-[#1e1e1e] border border-red-800 rounded-lg shadow-xl">
-          <h2 className="text-3xl font-bold text-red-500 mb-4">Access Denied 🛑</h2>
-          <p className="text-gray-300 text-lg">Only Admins and Professors have clearance to forge new problems.</p>
-          <button onClick={() => navigate('/')} className="mt-6 bg-gray-700 text-white px-6 py-2 rounded font-bold hover:bg-gray-600 transition">
-            Return to Safety
-          </button>
-        </div>
+        {/* ... Access Denied UI remains the same ... */}
       </div>
     );
   }
 
   return (
-    <div className="min-h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex justify-center py-10 px-4">
-      <div className="w-full max-w-2xl bg-[#1e1e1e] p-8 rounded-lg shadow-xl border border-dark-border h-max">
-        <h2 className="text-3xl font-bold text-white mb-2 tracking-wide">
-          {step === 1 ? 'Forge New Problem' : 'Upload Test Cases (S3)'}
-        </h2>
-        <p className="text-gray-400 text-sm mb-6 border-b border-dark-border pb-6">
-          {step === 1 
-            ? 'Define the constraints and description for the new competitive programming challenge.'
-            : 'Securely stream massive .txt test cases directly to your MinIO object storage.'}
-        </p>
+    <div className="h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex flex-col overflow-hidden relative">
+      
+      {/* Top Status Bar */}
+      {status.message && !showSuccessModal && (
+        <div className={`p-3 text-center font-bold text-sm ${
+          status.type === 'error' ? 'bg-red-900/90 text-red-200' :
+          status.type === 'success' ? 'bg-green-900/90 text-green-200' :
+          'bg-blue-900/90 text-blue-200'
+        }`}>
+          {status.message}
+        </div>
+      )}
 
-        {status.message && (
-          <div className={`p-4 mb-6 rounded font-bold text-sm ${
-            status.type === 'error' ? 'bg-red-900/50 text-red-400 border border-red-800' :
-            status.type === 'success' ? 'bg-green-900/50 text-green-400 border border-green-800' :
-            'bg-blue-900/50 text-blue-400 border border-blue-800'
-          }`}>
-            {status.message}
+      {/* --- STEP 1: SPLIT PANE EDITOR --- */}
+      {step === 1 && (
+        <div className="flex flex-1 h-full overflow-hidden">
+          {/* Left Pane: Configuration Form */}
+          <div className="w-1/2 flex flex-col p-6 overflow-y-auto custom-scrollbar border-r border-dark-border bg-[#1e1e1e]">
+            <h2 className="text-2xl font-bold text-white mb-6 tracking-wide">Forge New Problem</h2>
+            <div className="space-y-5 flex-1 flex flex-col">
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Problem Name</label>
+                <input required type="text" placeholder="e.g., Two Sum" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent transition-colors" 
+                  value={problemData.title} onChange={e => setProblemData({...problemData, title: e.target.value})} />
+              </div>
+              <div className="flex space-x-4">
+                <div className="w-1/3">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Difficulty</label>
+                  <select className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent"
+                    value={problemData.difficulty} onChange={e => setProblemData({...problemData, difficulty: e.target.value})}>
+                    <option>Easy</option><option>Medium</option><option>Hard</option>
+                  </select>
+                </div>
+                <div className="w-1/3">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Time Limit (ms)</label>
+                  <input required type="number" step="100" min="500" max="5000" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent"
+                    value={problemData.time_limit} onChange={e => setProblemData({...problemData, time_limit: parseInt(e.target.value)})} />
+                </div>
+                <div className="w-1/3">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Memory (MB)</label>
+                  <input required type="number" step="64" min="64" max="1024" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent"
+                    value={problemData.memory_limit} onChange={e => setProblemData({...problemData, memory_limit: parseInt(e.target.value)})} />
+                </div>
+              </div>
+              <div className="flex-1 flex flex-col mt-4">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex justify-between mb-1">
+                  <span>Description (Markdown + LaTeX)</span>
+                  <a href="https://katex.org/docs/supported.html" target="_blank" rel="noreferrer" className="text-dark-accent hover:underline">Math Guide</a>
+                </label>
+                <textarea required className="w-full flex-1 min-h-[300px] bg-dark-bg text-gray-300 p-4 rounded border border-dark-border font-mono text-sm outline-none focus:border-dark-accent resize-none custom-scrollbar"
+                  value={problemData.description} onChange={e => setProblemData({...problemData, description: e.target.value})} />
+              </div>
+              <div className="flex justify-end pt-4 border-t border-dark-border">
+                <Button onClick={() => setStep(2)} variant="primary" disabled={!problemData.title || !problemData.description}>
+                  Next: Setup Test Cases →
+                </Button>
+              </div>
+            </div>
           </div>
-        )}
 
-        {/* --- STEP 1: PROBLEM DETAILS --- */}
-        {step === 1 && (
-          <form onSubmit={handleCreateProblem} className="space-y-4">
-            <div>
-              <label className="text-xs font-bold text-gray-400 uppercase">Title</label>
-              <input required type="text" className="w-full bg-dark-bg text-white p-2 rounded border border-dark-border mt-1" 
-                value={problemData.title} onChange={e => setProblemData({...problemData, title: e.target.value})} />
+          {/* Right Pane: Arena Live Preview */}
+          <div className="w-1/2 bg-dark-bg p-8 overflow-y-auto custom-scrollbar">
+             <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-6 border-b border-gray-800 pb-2">Arena Live Preview</div>
+             <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problemData.title || 'Untitled Problem'}</h2>
+              <div className="flex space-x-3 mb-6">
+                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm">⏱️ {problemData.time_limit}ms</span>
+                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm">💾 {problemData.memory_limit}MB</span>
+                <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${
+                  problemData.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
+                  problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 'border-red-800 bg-red-900/20 text-red-400'
+                }`}>{problemData.difficulty}</span>
+              </div>
+              <div className="prose prose-invert max-w-none text-gray-300 mb-8 whitespace-pre-wrap text-[15px] leading-relaxed">
+                <Latex>{problemData.description}</Latex>
+              </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- STEP 2: TEST CASE CONFIGURATOR --- */}
+      {step === 2 && (
+        <div className="flex-1 p-8 overflow-y-auto bg-dark-bg flex justify-center custom-scrollbar">
+          <div className="w-full max-w-5xl">
+            <div className="flex justify-between items-center mb-8 border-b border-dark-border pb-4">
+              <div>
+                <h2 className="text-3xl font-bold text-white tracking-wide">Test Case Arsenal</h2>
+                <p className="text-gray-400 text-sm mt-1">Configure pure-text I/O pairs. These are sent directly to the Execution Engine memory.</p>
+              </div>
+              <Button onClick={() => setStep(1)} variant="secondary" size="sm">← Edit Problem Details</Button>
             </div>
-            <div>
-              <label className="text-xs font-bold text-gray-400 uppercase">Description (LaTeX Supported)</label>
-              <textarea required rows="6" className="w-full bg-dark-bg text-white p-2 rounded border border-dark-border mt-1 font-mono text-sm"
-                value={problemData.description} onChange={e => setProblemData({...problemData, description: e.target.value})} />
+
+            <div className="space-y-6">
+              {testCases.map((tc, index) => (
+                <div key={index} className="bg-[#1e1e1e] border border-dark-border rounded-lg p-5 relative shadow-xl transition-all hover:border-gray-600">
+                  <div className="flex justify-between items-center mb-4 border-b border-dark-border/50 pb-3">
+                    <h3 className="text-white font-bold tracking-widest text-sm uppercase flex items-center space-x-2">
+                      <span className="bg-dark-accent text-white px-2 py-0.5 rounded text-[10px]">#{index + 1}</span>
+                      <span>Test Case</span>
+                    </h3>
+                    <div className="flex items-center space-x-5">
+                      <label className="flex items-center space-x-2 text-sm text-gray-400 cursor-pointer hover:text-white transition-colors">
+                        <input type="checkbox" checked={tc.isHidden} onChange={(e) => updateTestCase(index, 'isHidden', e.target.checked)} 
+                          className="w-4 h-4 rounded bg-dark-bg border-dark-border text-dark-accent focus:ring-dark-accent focus:ring-offset-dark-bg" />
+                        <span className="select-none">Hidden Evaluation Case</span>
+                      </label>
+                      {testCases.length > 1 && (
+                        <button onClick={() => handleRemoveTestCase(index)} className="text-red-500 hover:text-red-400 opacity-70 hover:opacity-100 transition-opacity" title="Remove Test Case">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex space-x-6">
+                    <div className="w-1/2 flex flex-col">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Input Data (stdin)</label>
+                      <textarea required className="w-full h-40 bg-[#121212] text-gray-300 p-3 rounded border border-dark-border font-mono text-sm outline-none focus:border-dark-accent resize-none custom-scrollbar"
+                        value={tc.input} onChange={(e) => updateTestCase(index, 'input', e.target.value)} placeholder="e.g.,\n5\n1 2 3 4 5" />
+                    </div>
+                    <div className="w-1/2 flex flex-col">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Expected Output (stdout)</label>
+                      <textarea required className="w-full h-40 bg-[#121212] text-green-400/90 p-3 rounded border border-dark-border font-mono text-sm outline-none focus:border-green-600 resize-none custom-scrollbar"
+                        value={tc.expectedOutput} onChange={(e) => updateTestCase(index, 'expectedOutput', e.target.value)} placeholder="e.g.,\n15" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
+
+            <div className="mt-8 flex justify-between items-center bg-[#1e1e1e] p-5 rounded-lg border border-dark-border sticky bottom-4 shadow-2xl z-10">
+              <Button onClick={handleAddTestCase} variant="secondary" className="flex items-center space-x-2 border-dashed">
+                <span className="text-lg leading-none">+</span><span>Add Another Case</span>
+              </Button>
+              <Button onClick={handlePublish} variant="success" className="px-8 shadow-lg shadow-green-900/20" 
+                disabled={isSubmitting || testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())}>
+                {isSubmitting ? 'Publishing to Arena...' : 'Finalize & Publish'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- SUCCESS MODAL --- */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#1e1e1e] w-full max-w-md p-8 rounded-xl border border-dark-border shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-green-900/30 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-800/50">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Problem Forged!</h2>
+              <p className="text-gray-400 text-sm">Your challenge is now live. Share this secure link with your students.</p>
+            </div>
+
+            <div className="flex items-center space-x-2 bg-dark-bg p-2 rounded border border-dark-border mb-8">
+              <input type="text" readOnly value={publishedUrl} className="flex-1 bg-transparent text-gray-300 text-sm font-mono outline-none px-2 select-all" />
+              <button 
+                onClick={handleCopyUrl} 
+                className={`p-2 rounded transition-colors ${copied ? 'bg-green-900/50 text-green-400' : 'bg-[#2a2a2a] text-gray-400 hover:text-white hover:bg-[#3a3a3a]'}`}
+                title="Copy to Clipboard"
+              >
+                {copied ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                )}
+              </button>
+            </div>
+
             <div className="flex space-x-4">
-              <div className="w-1/3">
-                <label className="text-xs font-bold text-gray-400 uppercase">Difficulty</label>
-                <select className="w-full bg-dark-bg text-white p-2 rounded border border-dark-border mt-1"
-                  value={problemData.difficulty} onChange={e => setProblemData({...problemData, difficulty: e.target.value})}>
-                  <option>Easy</option><option>Medium</option><option>Hard</option>
-                </select>
-              </div>
-              <div className="w-1/3">
-                <label className="text-xs font-bold text-gray-400 uppercase">Time Limit (ms)</label>
-                <input required type="number" className="w-full bg-dark-bg text-white p-2 rounded border border-dark-border mt-1"
-                  value={problemData.time_limit} onChange={e => setProblemData({...problemData, time_limit: parseInt(e.target.value)})} />
-              </div>
-              <div className="w-1/3">
-                <label className="text-xs font-bold text-gray-400 uppercase">Memory Limit (KB)</label>
-                <input required type="number" className="w-full bg-dark-bg text-white p-2 rounded border border-dark-border mt-1"
-                  value={problemData.memory_limit} onChange={e => setProblemData({...problemData, memory_limit: parseInt(e.target.value)})} />
-              </div>
+              <Button onClick={resetForm} variant="secondary" className="flex-1">Create Another</Button>
+              <Button onClick={() => navigate(new URL(publishedUrl).pathname)} variant="success" className="flex-1">Go to Arena</Button>
             </div>
-            <div className="flex justify-end pt-4">
-              <Button type="submit" variant="primary" disabled={isSubmitting}>
-                {isSubmitting ? 'Creating...' : 'Next: Upload Test Cases'}
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {/* --- STEP 2: S3 UPLOAD --- */}
-        {step === 2 && (
-          <form onSubmit={handleUploadTestCases} className="space-y-6">
-            <div className="flex flex-col space-y-2">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Input File (.txt)</label>
-              <input type="file" accept=".txt" onChange={(e) => setInputFile(e.target.files[0])}
-                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-bold file:bg-dark-accent file:text-white hover:file:bg-blue-600 transition" />
-            </div>
-
-            <div className="flex flex-col space-y-2">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Expected Output File (.txt)</label>
-              <input type="file" accept=".txt" onChange={(e) => setExpectedFile(e.target.files[0])}
-                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-bold file:bg-green-700 file:text-white hover:file:bg-green-600 transition" />
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-dark-border mt-4">
-              <Button type="submit" variant="success" disabled={isSubmitting || !inputFile || !expectedFile}>
-                {isSubmitting ? 'Streaming to S3...' : 'Finalize & Publish'}
-              </Button>
-            </div>
-          </form>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

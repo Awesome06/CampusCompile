@@ -79,7 +79,7 @@ func main() {
 		{
 			// Manual problem creation
 			faculty.POST("/problems", handlers.CreateProblem)
-
+			router.POST("/problems/:id/testcases/batch", handlers.AddTestCasesBatch)
 			// Stream massive test cases directly to MinIO (S3)
 			faculty.POST("/problems/testcases", handlers.UploadTestCase)
 		}
