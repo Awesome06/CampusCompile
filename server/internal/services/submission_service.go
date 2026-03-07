@@ -1,11 +1,18 @@
 package services
 
 import (
-	"campuscompile/api/internal/models"
-	"campuscompile/api/internal/repositories"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
 
+	"campuscompile/api/internal/models"
+	"campuscompile/api/internal/repositories"
+	"campuscompile/api/internal/storage"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	redisClient "github.com/redis/go-redis/v9"
 )
@@ -30,13 +37,29 @@ func NewSubmissionService(repo repositories.SubmissionRepository, redis *redisCl
 func (s *submissionService) ProcessSubmission(ctx context.Context, req models.SubmitRequest, userID string) (string, error) {
 	submissionID := uuid.New().String()
 
-	// 1. Save to DB via Repo
-	err := s.repo.CreateSubmission(ctx, submissionID, userID, req.ProblemID, req.Language, req.SourceCode)
+	// 1. Generate S3 Key
+	s3Key := fmt.Sprintf("submissions/%s/source.%s", submissionID, req.Language)
+
+	// 👇 CHANGED: Use strings.NewReader instead of bytes.NewBufferString
+	codeReader := strings.NewReader(req.SourceCode)
+
+	_, err := storage.S3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(storage.BucketName),
+		Key:         aws.String(s3Key),
+		Body:        codeReader, // 👈 Pass the seekable reader here
+		ContentType: aws.String("text/plain"),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload source code to S3: %w", err)
+	}
+
+	// 3. Save ONLY the S3 key to the database
+	err = s.repo.CreateSubmission(ctx, submissionID, userID, req.ProblemID, req.Language, s3Key)
 	if err != nil {
 		return "", err
 	}
 
-	// 2. Queue in Redis
+	// 4. Queue in Redis
 	payload := models.OfficialSubmissionPayload{
 		SubmissionID: submissionID,
 	}
@@ -44,7 +67,7 @@ func (s *submissionService) ProcessSubmission(ctx context.Context, req models.Su
 
 	err = s.redis.LPush(ctx, "submission_queue", jsonPayload).Err()
 	if err != nil {
-		return "", err // Note: Consider compensating transactions here later!
+		return "", err
 	}
 
 	return submissionID, nil
@@ -53,7 +76,8 @@ func (s *submissionService) ProcessSubmission(ctx context.Context, req models.Su
 func (s *submissionService) ProcessRun(ctx context.Context, req models.RunRequest) (string, error) {
 	runID := uuid.New().String()
 
-	// 1. Maintain the precise "is_custom" structure for the Python worker
+	// 1. For Custom Runs, we still pass the raw source code in the payload
+	// because we do not save custom runs to the database or S3.
 	payload := models.CustomRunPayload{
 		IsCustom:    true,
 		RunID:       runID,
@@ -64,7 +88,6 @@ func (s *submissionService) ProcessRun(ctx context.Context, req models.RunReques
 
 	jsonPayload, _ := json.Marshal(payload)
 
-	// 2. Queue in Redis
 	err := s.redis.LPush(ctx, "submission_queue", jsonPayload).Err()
 	if err != nil {
 		return "", err
@@ -90,18 +113,35 @@ func (s *submissionService) FetchRunStatus(ctx context.Context, runID string) (m
 }
 
 func (s *submissionService) FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error) {
-	status, language, message, code, err := s.repo.GetSubmissionStatus(ctx, submissionID)
+	// Note: You must update the GetSubmissionStatus method in your SubmissionRepository
+	// to return the `s3Key` instead of the raw code.
+	status, language, message, s3Key, err := s.repo.GetSubmissionStatus(ctx, submissionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Construct the exact map the frontend expects
+	// Fetch code from MinIO using the retrieved key
+	var sourceCode string
+	if s3Key != "" {
+		result, err := storage.S3Client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(storage.BucketName),
+			Key:    aws.String(s3Key),
+		})
+		if err == nil {
+			defer result.Body.Close()
+			bodyBytes, err := io.ReadAll(result.Body)
+			if err == nil {
+				sourceCode = string(bodyBytes)
+			}
+		}
+	}
+
 	return map[string]interface{}{
 		"submission_id": submissionID,
 		"language":      language,
 		"status":        status,
 		"message":       message,
-		"source_code":   code,
+		"source_code":   sourceCode,
 	}, nil
 }
 

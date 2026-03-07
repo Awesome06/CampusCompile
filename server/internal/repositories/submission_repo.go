@@ -8,8 +8,8 @@ import (
 )
 
 type SubmissionRepository interface {
-	CreateSubmission(ctx context.Context, submissionID, userID, problemID, language, sourceCode string) error
-	GetSubmissionStatus(ctx context.Context, submissionID string) (status, language, message, sourceCode string, err error)
+	CreateSubmission(ctx context.Context, submissionID, userID, problemID, language, s3Key string) error
+	GetSubmissionStatus(ctx context.Context, submissionID string) (status, language, message, s3Key string, err error)
 	GetSubmissionHistory(ctx context.Context, userID, problemID string) ([]models.SubmissionHistoryEntry, error)
 }
 
@@ -21,39 +21,38 @@ func NewSubmissionRepository(db *pgxpool.Pool) SubmissionRepository {
 	return &submissionRepo{db: db}
 }
 
-func (r *submissionRepo) CreateSubmission(ctx context.Context, submissionID, userID, problemID, language, sourceCode string) error {
+func (r *submissionRepo) CreateSubmission(ctx context.Context, submissionID, userID, problemID, language, s3Key string) error {
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO submissions (submission_id, user_id, problem_id, language, source_code, status) 
+		`INSERT INTO submissions (submission_id, user_id, problem_id, language, source_code_s3_key, status) 
 		 VALUES ($1, $2, $3, $4, $5, 'Pending')`,
-		submissionID, userID, problemID, language, sourceCode)
+		submissionID, userID, problemID, language, s3Key)
 	return err
 }
 
 func (r *submissionRepo) GetSubmissionStatus(ctx context.Context, submissionID string) (string, string, string, string, error) {
 	var status, language string
-	var errorLogs, sourceCode *string
+	var errorLogs, s3Key *string
 
 	err := r.db.QueryRow(ctx, `
-		SELECT status, language, error_logs, source_code 
+		SELECT status, language, error_logs, source_code_s3_key 
 		FROM submissions WHERE submission_id = $1
-	`, submissionID).Scan(&status, &language, &errorLogs, &sourceCode)
+	`, submissionID).Scan(&status, &language, &errorLogs, &s3Key)
 
 	if err != nil {
 		return "", "", "", "", err
 	}
 
-	// Safely handle NULL pointers from the database
 	message := ""
 	if errorLogs != nil {
 		message = *errorLogs
 	}
 
-	code := ""
-	if sourceCode != nil {
-		code = *sourceCode
+	key := ""
+	if s3Key != nil {
+		key = *s3Key
 	}
 
-	return status, language, message, code, nil
+	return status, language, message, key, nil
 }
 
 func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, problemID string) ([]models.SubmissionHistoryEntry, error) {
