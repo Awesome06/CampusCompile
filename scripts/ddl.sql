@@ -71,26 +71,17 @@ CREATE TABLE test_cases (
 
 -- 5. Create the Submissions Table
 CREATE TABLE submissions (
-    submission_id     UUID                       NOT NULL DEFAULT gen_random_uuid(),
-    user_id           UUID                       NULL,
-    problem_id        UUID                       NULL,
-    source_code       TEXT                       NOT NULL,
-    "language"        VARCHAR(50)                NOT NULL,
-    status            "submission_status"        NULL     DEFAULT 'Pending'::submission_status,
-    execution_time_ms INTEGER                    NULL,
-    memory_used_kb    INTEGER                    NULL,
-    submitted_at      TIMESTAMPTZ                NULL     DEFAULT CURRENT_TIMESTAMP,
-    error_logs        TEXT                       NULL,
-
-    CONSTRAINT submissions_pkey 
-        PRIMARY KEY (submission_id),
-
-    CONSTRAINT submissions_problem_id_fkey 
-        FOREIGN KEY (problem_id) 
-        REFERENCES public.problems (problem_id) 
-        ON DELETE CASCADE
+    submission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    language VARCHAR(50) NOT NULL,
+    status submission_status DEFAULT 'Pending',
+    execution_time_ms INTEGER,
+    memory_used_kb INTEGER,
+    submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    error_logs TEXT,
+    source_code_s3_key VARCHAR(512)
 );
-
 -- 6. Create the Contests Table
 CREATE TABLE contests (
     contest_id        UUID         NOT NULL DEFAULT gen_random_uuid(),

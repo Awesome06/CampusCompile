@@ -28,8 +28,9 @@ def process_submission(submission_id):
         cursor.execute("UPDATE submissions SET status = 'Running' WHERE submission_id = %s", (submission_id,))
         conn.commit()
 
+        # 👇 CHANGED: Fetch source_code_s3_key instead of source_code
         cursor.execute("""
-            SELECT s.source_code, s.language, s.problem_id, 
+            SELECT s.source_code_s3_key, s.language, s.problem_id, 
                    p.time_limit_ms, p.memory_limit_kb 
             FROM submissions s
             JOIN problems p ON s.problem_id = p.problem_id
@@ -41,7 +42,6 @@ def process_submission(submission_id):
             print(f"[!] Submission {submission_id} not found in database.")
             return
 
-        # Fetch all test cases, including their IDs to act as cache references
         cursor.execute("""
             SELECT test_case_id, input_data, expected_output, input_s3_key, expected_s3_key
             FROM test_cases 
@@ -57,12 +57,13 @@ def process_submission(submission_id):
 
         print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
         
-        # Pass the entire batch to the runner (compiles once, caches test cases)
+        # 👇 CHANGED: Pass None for source_code, pass the S3 key instead
         result = grade_submission(
             submission_id=submission_id,
             problem_id=submission.get('problem_id'),
             language=submission.get('language'),
-            source_code=submission.get('source_code'),
+            source_code=None, 
+            source_s3_key=submission.get('source_code_s3_key'), # 👈 NEW PARAMETER
             test_cases=test_cases,
             time_limit_ms=submission.get('time_limit_ms', 2000),
             memory_limit_kb=submission.get('memory_limit_kb', 256000)
@@ -88,7 +89,7 @@ def process_submission(submission_id):
     finally:
         cursor.close()
         conn.close()
-
+        
 def start_worker():
     print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
     while True:
@@ -107,11 +108,13 @@ def start_worker():
                     "expected_output": ""
                 }]
                 
+                # 👇 CHANGED: Added source_s3_key=None to match the updated signature
                 result = grade_submission(
                     submission_id=run_id,
                     problem_id="custom",
                     language=submission_data.get('language'),
                     source_code=submission_data.get('source_code'),
+                    source_s3_key=None, # 👈 THE FIX
                     test_cases=custom_tc,
                     time_limit_ms=2000,
                     memory_limit_kb=256000

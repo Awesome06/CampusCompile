@@ -3,6 +3,7 @@ package controllers
 import (
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,9 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	// Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
+		// 👇 ADD THIS LINE TO PRINT THE REAL ERROR TO YOUR TERMINAL
+		fmt.Printf("[!] SUBMISSION CRASH: %v\n", err)
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process submission"})
 		return
 	}

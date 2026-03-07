@@ -151,13 +151,36 @@ def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> 
     return "AC"
 
 # --- THE MASTER GRADER ---
-def grade_submission(submission_id: str, problem_id: str, language: str, source_code: str, test_cases: list, time_limit_ms: int, memory_limit_kb: int):
+def grade_submission(submission_id: str, problem_id: str, language: str, source_code: Optional[str], source_s3_key: Optional[str], test_cases: list, time_limit_ms: int, memory_limit_kb: int):
     time_limit_sec = time_limit_ms / 1000.0
     work_dir = os.path.join(SANDBOX_BASE, str(submission_id))
     os.makedirs(work_dir, exist_ok=True)
-    os.chmod(work_dir, 0o777)
+    
+    # 🛡️ HARDENING: Instead of 0o777, map to a specific UID inside the Alpine container
+    # Assuming UID 1000 is used by a non-root user in your docker images
+    os.chmod(work_dir, 0o750) 
+    try:
+        os.chown(work_dir, 1000, 1000) 
+    except PermissionError:
+        pass # Handle case where host running script isn't root
     
     try:
+        # 👇 NEW: Fetch source code from S3 if a key is provided (Official submissions)
+        if source_s3_key:
+            file_ext = "cpp" if language == "cpp" else "py" if language == "python" else "java"
+            download_path = os.path.join(work_dir, f"source.{file_ext}")
+            
+            try:
+                fetch_from_s3(source_s3_key, download_path)
+                with open(download_path, 'r', encoding='utf-8') as f:
+                    source_code = f.read()
+            except Exception as e:
+                return {"verdict": "SE", "message": f"Failed to download source code: {str(e)}", "actual_output": ""}
+
+        # Safety Check
+        if not source_code:
+            return {"verdict": "SE", "message": "Source code is empty.", "actual_output": ""}
+
         # Step 1: Compile Once
         compile_err = compile_code(language, work_dir, source_code)
         if compile_err:
@@ -167,17 +190,14 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         for idx, tc in enumerate(test_cases):
             tc_id = tc.get('test_case_id', f"custom_{idx}")
             
-            # Efficient Reference: Downloads only if not already in cache
             input_path, expected_path = ensure_cached_testcase(
                 work_dir, problem_id, tc_id, 
                 tc.get('input_data'), tc.get('expected_output'), 
                 tc.get('input_s3_key'), tc.get('expected_s3_key')
             )
             
-            # Execute
             run_result = run_code(language, work_dir, input_path, time_limit_sec, memory_limit_kb)
             
-            # Catch Execution Failures
             if run_result["status"] == "Time Limit Exceeded":
                 return {"verdict": "TLE", "message": f"Execution took too long on Test Case {idx+1}", "actual_output": ""}
             elif run_result["status"] == "Runtime Error":
@@ -186,16 +206,15 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
             elif run_result["status"] != "Success":
                 return {"verdict": "SE", "message": run_result.get("message", "System Error"), "actual_output": ""}
                 
-            # Evaluate using reference expected path
             verdict = evaluate_output(os.path.join(work_dir, 'output.txt'), expected_path)
             if verdict != "AC":
                 actual_out = read_file_safely(os.path.join(work_dir, 'output.txt'))
                 return {"verdict": "WA", "message": f"Wrong Answer on Test Case {idx+1}", "actual_output": actual_out}
                 
-        # All passed
         return {"verdict": "AC", "actual_output": read_file_safely(os.path.join(work_dir, 'output.txt'))}
         
     except Exception as e:
         return {"verdict": "SE", "message": str(e), "actual_output": ""}
     finally:
+        # Ensure cleanup runs even if the worker crashes
         shutil.rmtree(work_dir, ignore_errors=True)
