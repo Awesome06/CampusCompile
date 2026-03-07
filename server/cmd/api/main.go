@@ -8,11 +8,13 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
-	// Import your newly created internal packages
+	"campuscompile/api/internal/controllers"
 	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/handlers"
 	"campuscompile/api/internal/middleware"
 	redisPkg "campuscompile/api/internal/redis"
+	"campuscompile/api/internal/repositories"
+	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/storage"
 )
 
@@ -38,6 +40,16 @@ func main() {
 	router := gin.Default()
 	router.SetTrustedProxies(nil)
 
+	// --- Initialize Submissions Domain ---
+	submissionRepo := repositories.NewSubmissionRepository(database.Pool)
+	submissionService := services.NewSubmissionService(submissionRepo, redisPkg.Client)
+	submissionController := controllers.NewSubmissionController(submissionService)
+
+	// --- Initialize Problems Domain ---
+	problemRepo := repositories.NewProblemRepository(database.Pool)
+	problemService := services.NewProblemService(problemRepo)
+	problemController := controllers.NewProblemController(problemService)
+
 	// Configure CORS for the React frontend
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
@@ -56,7 +68,7 @@ func main() {
 		authGroup.GET("/login", handlers.HandleAzureLogin)
 		authGroup.GET("/callback", handlers.HandleAzureCallback)
 	}
-	router.GET("/api/problems", handlers.GetProblems)
+	router.GET("/api/problems", problemController.GetProblems) // Updated
 
 	// --- PROTECTED ROUTES (Requires JWT) ---
 	protected := router.Group("/api")
@@ -65,41 +77,38 @@ func main() {
 		protected.POST("/auth/onboard", handlers.CompleteOnboarding)
 
 		// Public Problem Access & Execution (Students + Faculty)
-		protected.GET("/problems/:id", handlers.GetProblemByID)
-		protected.POST("/submit", handlers.SubmitCode)
-		protected.POST("/run", handlers.RunCode)
-		protected.GET("/run/:id", handlers.GetRunStatus)
-		protected.GET("/submissions/:id", handlers.GetSubmissionStatus)
-		protected.GET("/submissions/history/:id", handlers.GetSubmissionHistory)
+		protected.GET("/problems/:id", problemController.GetProblemByID) // Updated
+
+		// Submissions
+		protected.POST("/submit", submissionController.SubmitCode)
+		protected.POST("/run", submissionController.RunCode)                                 // Updated
+		protected.GET("/run/:id", submissionController.GetRunStatus)                         // Updated
+		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)          // Updated
+		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory) // Updated
 
 		// --- FACULTY & ADMIN ROUTES ---
 		// Both Professors and Admins can create and edit problems
 		faculty := protected.Group("")
-		faculty.Use(middleware.RequireRole("professor", "admin")) // 🛡️ Allows both
+		faculty.Use(middleware.RequireRole("professor", "admin"))
 		{
 			// Problem Management
-			faculty.POST("/problems", handlers.CreateProblem)
-			faculty.PUT("/problems/:id", handlers.UpdateProblem)
+			faculty.POST("/problems", problemController.CreateProblem)    // Updated
+			faculty.PUT("/problems/:id", problemController.UpdateProblem) // Updated
 
 			// Test Cases
-			faculty.POST("/problems/:id/testcases/batch", handlers.AddTestCasesBatch)
-			faculty.PUT("/problems/:id/testcases/sync", handlers.SyncTestCasesBatch)
-			faculty.GET("/problems/:id/testcases/all", handlers.GetAllTestCasesForProblem)
+			faculty.POST("/problems/:id/testcases/batch", problemController.AddTestCasesBatch)      // Updated
+			faculty.PUT("/problems/:id/testcases/sync", problemController.SyncTestCasesBatch)       // Updated
+			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem) // Updated
 
 			// Dashboard
-			faculty.GET("/faculty/problems", handlers.GetFacultyProblems)
+			faculty.GET("/faculty/problems", problemController.GetFacultyProblems) // Updated
 		}
 
 		// --- ADMIN ONLY ROUTES ---
-		// Only Admins have the destructive power to delete problems
 		adminGroup := protected.Group("")
-		adminGroup.Use(middleware.RequireRole("admin")) // 🛡️ Strictly Admin only
+		adminGroup.Use(middleware.RequireRole("admin"))
 		{
-			adminGroup.DELETE("/problems/:id", handlers.DeleteProblem)
-
-			// Future expansion:
-			// adminGroup.GET("/users", handlers.GetAllUsers)
-			// adminGroup.DELETE("/users/:id", handlers.BanUser)
+			adminGroup.DELETE("/problems/:id", problemController.DeleteProblem) // Updated
 		}
 	}
 	// 5. START SERVER
