@@ -1,22 +1,29 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
+import { AuthProvider, useAuth } from './context/AuthContext'; // 👈 Imported Context
 
 import Navbar from './components/Navbar';
 
 // Page Imports
-import Arena from './pages/Arena';
+import Arena from './pages/Arena/Arena';
 import Login from './pages/Login';
 import Landing from './pages/Landing';         
 import ProblemList from './pages/ProblemList'; 
 import AddProblem from './pages/AddProblem';
-import EditProblem from './pages/EditProblem'; // 👈 Added EditProblem import
+import EditProblem from './pages/EditProblem'; 
 import OAuthSuccess from './pages/OAuthSuccess';
 import Onboarding from './pages/Onboarding';
 
 // The Bouncer
 const ProtectedRoute = ({ children, requireOnboarding = true }) => {
-  const token = localStorage.getItem('token');
+  const { token, isLoading } = useAuth(); // 👈 Now pulling from Context
+
+  // Prevent redirect flickering while context initializes
+  if (isLoading) {
+    return <div className="flex h-screen items-center justify-center bg-dark-bg text-white font-mono">Loading Session...</div>;
+  }
+
   if (!token) return <Navigate to="/login" replace />;
 
   try {
@@ -42,37 +49,37 @@ const ProtectedRoute = ({ children, requireOnboarding = true }) => {
 
 function App() {
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-dark-bg text-dark-text font-sans">
-        
-        {/* 👇 Drop the Navbar right here! */}
-        <Navbar />
+    // 👇 Wrap the entire app in the AuthProvider
+    <AuthProvider>
+      <BrowserRouter>
+        <div className="min-h-screen bg-dark-bg text-dark-text font-sans">
+          
+          <Navbar />
 
-        {/* Route Configuration */}
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/oauth-success" element={<OAuthSuccess />} />
-          
-          {/* Onboarding doesn't require "onboarding" to be true, but requires a token */}
-          <Route path="/onboarding" element={
-            <ProtectedRoute requireOnboarding={false}>
-              <Onboarding />
-            </ProtectedRoute>
-          } />
+          {/* Route Configuration */}
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/oauth-success" element={<OAuthSuccess />} />
+            
+            {/* Onboarding doesn't require "onboarding" to be true, but requires a token */}
+            <Route path="/onboarding" element={
+              <ProtectedRoute requireOnboarding={false}>
+                <Onboarding />
+              </ProtectedRoute>
+            } />
 
-          {/* These strictly require the user to be onboarded */}
-          <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
-          <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
-          <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
+            {/* These strictly require the user to be onboarded */}
+            <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
+            <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
+            <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
+            <Route path="/edit-problem/:id" element={<ProtectedRoute><EditProblem /></ProtectedRoute>} />
+            
+          </Routes>
           
-          {/* 👈 Added the new Edit Problem route */}
-          <Route path="/edit-problem/:id" element={<ProtectedRoute><EditProblem /></ProtectedRoute>} />
-          
-        </Routes>
-        
-      </div>
-    </BrowserRouter>
+        </div>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 
