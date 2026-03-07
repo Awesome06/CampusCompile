@@ -8,3 +8,5 @@ Passwords.txt
 .env
 
 /frontend/node_modules
+
+repomix-output.xml

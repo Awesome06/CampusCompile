@@ -36,23 +36,18 @@ CREATE TABLE users (
 
 -- 3. Create the Problems Table
 CREATE TABLE problems (
-    problem_id      UUID                        NOT NULL DEFAULT gen_random_uuid(),
-    title           VARCHAR(255)                NOT NULL,
-    slug            VARCHAR(255)                NOT NULL,
-    description     TEXT                        NOT NULL,
-    difficulty      "problem_difficulty"        NOT NULL,
-    time_limit_ms   INTEGER                     NOT NULL DEFAULT 2000,
-    memory_limit_kb INTEGER                     NOT NULL DEFAULT 262144,
-    author_id       UUID                        NULL,
-    created_at      TIMESTAMPTZ                 NULL     DEFAULT CURRENT_TIMESTAMP,
-    has_checker     BOOLEAN                     NULL     DEFAULT FALSE,
-    checker_s3_key  TEXT                        NULL,
-
-    CONSTRAINT problems_pkey 
-        PRIMARY KEY (problem_id),
-
-    CONSTRAINT problems_slug_key 
-        UNIQUE (slug)
+    problem_id        UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title             VARCHAR(255) NOT NULL,
+    slug              VARCHAR(255) NOT NULL UNIQUE,
+    description       TEXT NOT NULL,
+    difficulty        public.problem_difficulty NOT NULL,
+    time_limit_ms     INTEGER DEFAULT 2000 NOT NULL,
+    memory_limit_kb   INTEGER DEFAULT 262144 NOT NULL,
+    author_id         UUID, REFERENCES users(user_id) ON DELETE SET NULL
+    created_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    has_checker       BOOLEAN DEFAULT FALSE,
+    checker_s3_key    TEXT,
+    is_public         BOOLEAN DEFAULT FALSE
 );
 
 -- 4. Create the Test Cases Table
