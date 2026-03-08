@@ -104,9 +104,7 @@ func main() {
 			arena.POST("/register", contestController.RegisterForContest)
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
 			arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
-
-			// We will uncomment this one as soon as we build the Contest-to-Problem DB query!
-			// arena.GET("/problems", contestController.GetContestProblems)
+			arena.GET("/problems", contestController.GetContestProblems)
 		}
 
 		// --- FACULTY & ADMIN ROUTES ---

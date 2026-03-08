@@ -111,3 +111,15 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 
 	c.JSON(http.StatusOK, leaderboard)
 }
+
+func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
+	contestID := c.Param("id")
+
+	problems, err := ctrl.service.FetchContestProblems(c.Request.Context(), contestID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contest problems"})
+		return
+	}
+
+	c.JSON(http.StatusOK, problems)
+}

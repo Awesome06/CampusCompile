@@ -16,6 +16,7 @@ type ContestRepository interface {
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
 	GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error)
+	GetContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
 }
 
 type contestRepo struct {
@@ -132,4 +133,39 @@ func (r *contestRepo) GetUsernames(ctx context.Context, userIDs []string) (map[s
 		}
 	}
 	return usernames, nil
+}
+
+func (r *contestRepo) GetContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT p.problem_id, p.title, p.difficulty, cp.points_value 
+		FROM contest_problems cp
+		JOIN problems p ON cp.problem_id = p.problem_id
+		WHERE cp.contest_id = $1
+		ORDER BY p.created_at ASC
+	`, contestID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var problems []map[string]interface{}
+	for rows.Next() {
+		var id, title, difficulty string
+		var points int
+		if err := rows.Scan(&id, &title, &difficulty, &points); err == nil {
+			problems = append(problems, map[string]interface{}{
+				"problem_id":   id,
+				"title":        title,
+				"difficulty":   difficulty,
+				"points_value": points, // Useful if you ever want custom weighting
+			})
+		}
+	}
+
+	if problems == nil {
+		problems = []map[string]interface{}{}
+	}
+
+	return problems, nil
 }

@@ -25,6 +25,7 @@ type ContestService interface {
 	FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error)
 	StartLeaderboardTicker(ctx context.Context, contestID string)
 	FetchEnrichedLeaderboard(ctx context.Context, contestID string) ([]map[string]interface{}, error)
+	FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
 }
 
 type contestService struct {
@@ -176,4 +177,8 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		})
 	}
 	return enriched, nil
+}
+
+func (s *contestService) FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error) {
+	return s.repo.GetContestProblems(ctx, contestID)
 }
