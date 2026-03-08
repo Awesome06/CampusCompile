@@ -11,12 +11,14 @@ import (
 
 type ContestRepository interface {
 	CreateContest(ctx context.Context, contest models.Contest) error
-	GetContests(ctx context.Context) ([]models.Contest, error)
 	GetContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
 	GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error)
 	GetContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
+	GetPublicContests(ctx context.Context) ([]models.Contest, error)
+	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
+	GetAllContests(ctx context.Context) ([]models.Contest, error)
 }
 
 type contestRepo struct {
@@ -46,11 +48,29 @@ func (r *contestRepo) CreateContest(ctx context.Context, contest models.Contest)
 	return err
 }
 
-func (r *contestRepo) GetContests(ctx context.Context) ([]models.Contest, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT contest_id, title, host_organization, start_time, end_time, created_at
+func (r *contestRepo) GetPublicContests(ctx context.Context) ([]models.Contest, error) {
+	return r.fetchContestsWithQuery(ctx, `
+		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
+		FROM contests WHERE is_public = true ORDER BY start_time DESC
+	`)
+}
+
+func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error) {
+	return r.fetchContestsWithQuery(ctx, `
+		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
+		FROM contests WHERE is_public = true OR author_id = $1 ORDER BY start_time DESC
+	`, authorID)
+}
+
+func (r *contestRepo) GetAllContests(ctx context.Context) ([]models.Contest, error) {
+	return r.fetchContestsWithQuery(ctx, `
+		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
 		FROM contests ORDER BY start_time DESC
 	`)
+}
+
+func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, args ...interface{}) ([]models.Contest, error) {
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -59,11 +79,18 @@ func (r *contestRepo) GetContests(ctx context.Context) ([]models.Contest, error)
 	var contests []models.Contest
 	for rows.Next() {
 		var c models.Contest
-		if err := rows.Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &c.CreatedAt); err == nil {
+		var rulesJSON []byte
+
+		if err := rows.Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.AuthorID, &c.IsPublic, &c.CreatedAt); err == nil {
+			if rulesJSON != nil {
+				var rules models.ContestAccessRules
+				if err := json.Unmarshal(rulesJSON, &rules); err == nil {
+					c.AccessRules = &rules
+				}
+			}
 			contests = append(contests, c)
 		}
 	}
-
 	if contests == nil {
 		contests = []models.Contest{}
 	}

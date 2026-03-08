@@ -57,11 +57,29 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 
 // GetContests fetches the high-level list of all contests
 func (ctrl *ContestController) GetContests(c *gin.Context) {
-	contests, err := ctrl.service.FetchContests(c.Request.Context())
+	// 1. Extract the raw JWT claims
+	userRole, _ := c.Get("role")
+	userID, _ := c.Get("user_id")
+
+	// 2. Safely extract demographics (will be empty for Admins/Professors, which is fine)
+	demo := services.UserDemographics{
+		Role:           userRole.(string),
+		UserID:         userID.(string),
+		Course:         getString(c, "course"),
+		Department:     getString(c, "department"),
+		Batch:          getString(c, "batch"),
+		Section:        getString(c, "section"),
+		StudentGroup:   getString(c, "student_group"),
+		GraduationYear: getInt(c, "graduation_year"),
+	}
+
+	// 3. Fetch cleanly filtered contests
+	contests, err := ctrl.service.FetchContests(c.Request.Context(), demo)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contests"})
 		return
 	}
+
 	c.JSON(http.StatusOK, contests)
 }
 
@@ -122,4 +140,22 @@ func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, problems)
+}
+
+func getString(c *gin.Context, key string) string {
+	val, exists := c.Get(key)
+	if !exists {
+		return ""
+	}
+	str, _ := val.(string)
+	return str
+}
+
+func getInt(c *gin.Context, key string) int {
+	val, exists := c.Get(key)
+	if !exists {
+		return 0
+	}
+	num, _ := val.(int)
+	return num
 }

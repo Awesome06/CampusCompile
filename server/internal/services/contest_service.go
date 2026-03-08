@@ -15,9 +15,20 @@ import (
 	"campuscompile/api/internal/repositories"
 )
 
+type UserDemographics struct {
+	Role           string
+	UserID         string
+	Course         string
+	Department     string
+	Batch          string
+	Section        string
+	StudentGroup   string
+	GraduationYear int
+}
+
 type ContestService interface {
 	ForgeContest(ctx context.Context, req models.Contest) (string, error)
-	FetchContests(ctx context.Context) ([]models.Contest, error)
+	FetchContests(ctx context.Context, user UserDemographics) ([]models.Contest, error)
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
@@ -50,8 +61,40 @@ func (s *contestService) ForgeContest(ctx context.Context, req models.Contest) (
 	return req.ID, nil
 }
 
-func (s *contestService) FetchContests(ctx context.Context) ([]models.Contest, error) {
-	return s.repo.GetContests(ctx)
+func (s *contestService) FetchContests(ctx context.Context, user UserDemographics) ([]models.Contest, error) {
+	var rawContests []models.Contest
+	var err error
+
+	// 1. Fetch based on Role Visibility
+	if user.Role == "admin" {
+		rawContests, err = s.repo.GetAllContests(ctx)
+	} else if user.Role == "professor" {
+		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID)
+	} else {
+		rawContests, err = s.repo.GetPublicContests(ctx)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. The Smart Filter: Students only see what they are allowed to enter
+	if user.Role == "student" {
+		var filtered []models.Contest
+		for _, c := range rawContests {
+			if c.AccessRules == nil {
+				filtered = append(filtered, c) // Global contest, no restrictions
+				continue
+			}
+			if isEligible(c.AccessRules, user) {
+				filtered = append(filtered, c)
+			}
+		}
+		return filtered, nil
+	}
+
+	// Admins and Professors see everything fetched
+	return rawContests, nil
 }
 
 func (s *contestService) FetchContestByID(ctx context.Context, contestID string) (models.Contest, error) {
@@ -181,4 +224,50 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 
 func (s *contestService) FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error) {
 	return s.repo.GetContestProblems(ctx, contestID)
+}
+
+func isEligible(rules *models.ContestAccessRules, user UserDemographics) bool {
+	if !containsStr(rules.AllowedCourses, user.Course) {
+		return false
+	}
+	if !containsStr(rules.AllowedDepartments, user.Department) {
+		return false
+	}
+	if !containsStr(rules.AllowedBatches, user.Batch) {
+		return false
+	}
+	if !containsStr(rules.AllowedSections, user.Section) {
+		return false
+	}
+	if !containsStr(rules.AllowedStudentGroups, user.StudentGroup) {
+		return false
+	}
+	if !containsInt(rules.AllowedGraduationYears, user.GraduationYear) {
+		return false
+	}
+	return true
+}
+
+func containsStr(slice []string, val string) bool {
+	if len(slice) == 0 {
+		return true
+	} // Empty array means ANY is allowed
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
+}
+
+func containsInt(slice []int, val int) bool {
+	if len(slice) == 0 {
+		return true
+	}
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
 }
