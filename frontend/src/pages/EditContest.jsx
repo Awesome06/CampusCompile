@@ -6,6 +6,7 @@ import Button from '../components/ui/Button';
 export default function EditContest() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const userRole = localStorage.getItem('role');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,6 +122,20 @@ export default function EditContest() {
       alert("Error updating contest. Check console.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm("CRITICAL WARNING: Are you sure you want to permanently destroy this contest? Student submissions will be preserved as unranked practice runs.")) {
+      setSaving(true);
+      try {
+        await api.delete(`/contests/${id}`);
+        navigate('/contests');
+      } catch (error) {
+        console.error("Failed to delete contest", error);
+        alert("Error deleting contest. Check console.");
+        setSaving(false);
+      }
     }
   };
 
@@ -256,9 +271,18 @@ export default function EditContest() {
 
         {/* Form Navigation Controls */}
         <div className="flex justify-between mt-8 pt-6 border-t border-dark-border">
-          {step > 1 ? (
-            <Button onClick={() => setStep(step - 1)} variant="secondary">Back</Button>
-          ) : <div></div>}
+          <div className="flex gap-4">
+            {step > 1 ? (
+              <Button onClick={() => setStep(step - 1)} variant="secondary">Back</Button>
+            ) : <div></div>}
+
+            {/* 👇 The Admin-Only Kill Switch */}
+            {userRole === 'admin' && (
+              <Button onClick={handleDelete} variant="danger" disabled={saving} className="bg-red-900/50 border border-red-600 text-red-500 hover:bg-red-600 hover:text-white transition">
+                Delete Arena
+              </Button>
+            )}
+          </div>
           
           {step < 3 ? (
             <Button onClick={() => setStep(step + 1)} variant="primary">Next Step</Button>

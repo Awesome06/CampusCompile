@@ -63,7 +63,7 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	// 2. Safely extract demographics (will be empty for Admins/Professors, which is fine)
-	demo := services.UserDemographics{
+	demo := models.UserDemographics{
 		Role:           userRole.(string),
 		UserID:         userID.(string),
 		Course:         getString(c, "course"),
@@ -218,6 +218,18 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Arena configurations updated successfully"})
+}
+
+func (ctrl *ContestController) DeleteContest(c *gin.Context) {
+	contestID := c.Param("id")
+
+	err := ctrl.service.DeleteContest(c.Request.Context(), contestID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete contest"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Arena permanently destroyed"})
 }
 
 func getString(c *gin.Context, key string) string {

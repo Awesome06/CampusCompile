@@ -13,20 +13,9 @@ import (
 	"campuscompile/api/internal/repositories"
 )
 
-type UserDemographics struct {
-	Role           string
-	UserID         string
-	Course         string
-	Department     string
-	Batch          string
-	Section        string
-	StudentGroup   string
-	GraduationYear int
-}
-
 type ContestService interface {
 	CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error)
-	FetchContests(ctx context.Context, user UserDemographics) ([]models.Contest, error)
+	FetchContests(ctx context.Context, user models.UserDemographics) ([]models.Contest, error)
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
@@ -36,6 +25,7 @@ type ContestService interface {
 	FetchEnrichedLeaderboard(ctx context.Context, contestID string) ([]map[string]interface{}, error)
 	FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
 	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
+	DeleteContest(ctx context.Context, contestID string) error
 }
 
 type contestService struct {
@@ -56,7 +46,7 @@ func (s *contestService) CreateContest(ctx context.Context, contest models.Conte
 	return s.repo.CreateContest(ctx, contest, problems)
 }
 
-func (s *contestService) FetchContests(ctx context.Context, user UserDemographics) ([]models.Contest, error) {
+func (s *contestService) FetchContests(ctx context.Context, user models.UserDemographics) ([]models.Contest, error) {
 	var rawContests []models.Contest
 	var err error
 
@@ -221,7 +211,7 @@ func (s *contestService) FetchContestProblems(ctx context.Context, contestID str
 	return s.repo.GetContestProblems(ctx, contestID)
 }
 
-func isEligible(rules *models.ContestAccessRules, user UserDemographics) bool {
+func isEligible(rules *models.ContestAccessRules, user models.UserDemographics) bool {
 	if !containsStr(rules.AllowedCourses, user.Course) {
 		return false
 	}
@@ -241,6 +231,11 @@ func isEligible(rules *models.ContestAccessRules, user UserDemographics) bool {
 		return false
 	}
 	return true
+}
+
+// Add the implementation:
+func (s *contestService) DeleteContest(ctx context.Context, contestID string) error {
+	return s.repo.DeleteContest(ctx, contestID)
 }
 
 func containsStr(slice []string, val string) bool {

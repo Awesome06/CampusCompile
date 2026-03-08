@@ -42,6 +42,17 @@ type OnboardRequest struct {
 	StudentGroup   string `json:"student_group" binding:"required"`
 }
 
+type UserDemographics struct {
+	Role           string
+	UserID         string
+	Course         string
+	Department     string
+	Batch          string
+	Section        string
+	StudentGroup   string
+	GraduationYear int
+}
+
 // ==========================================
 // 3. CONTEST STRUCTS (PHASE 3)
 // ==========================================

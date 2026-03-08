@@ -20,6 +20,7 @@ type ContestRepository interface {
 	GetPublicContests(ctx context.Context) ([]models.Contest, error)
 	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
 	GetAllContests(ctx context.Context) ([]models.Contest, error)
+	DeleteContest(ctx context.Context, contestID string) error
 }
 
 type contestRepo struct {
@@ -268,5 +269,34 @@ func (r *contestRepo) UpdateContest(ctx context.Context, contestID string, conte
 	}
 
 	// 4. Commit the transaction
+	return tx.Commit(ctx)
+}
+
+func (r *contestRepo) DeleteContest(ctx context.Context, contestID string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1. Preserve student work: Unlink submissions from this contest
+	_, err = tx.Exec(ctx, `UPDATE submissions SET contest_id = NULL WHERE contest_id = $1`, contestID)
+	if err != nil {
+		return err
+	}
+
+	// 2. Destroy the problem mappings
+	_, err = tx.Exec(ctx, `DELETE FROM contest_problems WHERE contest_id = $1`, contestID)
+	if err != nil {
+		return err
+	}
+
+	// 3. Destroy the actual contest record
+	_, err = tx.Exec(ctx, `DELETE FROM contests WHERE contest_id = $1`, contestID)
+	if err != nil {
+		return err
+	}
+
+	// Commit the transaction
 	return tx.Commit(ctx)
 }

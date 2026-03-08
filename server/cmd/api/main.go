@@ -128,6 +128,7 @@ func main() {
 		adminGroup.Use(middleware.RequireRole("admin"))
 		{
 			adminGroup.DELETE("/problems/:id", problemController.DeleteProblem)
+			adminGroup.DELETE("/contests/:id", contestController.DeleteContest)
 		}
 	}
 	// 5. START SERVER
