@@ -4,10 +4,11 @@ FROM python:3.11-alpine
 # Set the working directory inside the container
 WORKDIR /sandbox
 
-# CRITICAL SECURITY: Create a non-root user
-# If a student writes a script to delete the file system, it will fail because 
-# the 'student' user lacks root privileges.
-RUN adduser -D student
+# CRITICAL SECURITY: Explicitly map the student user to UID 1001 to match runner.py
+RUN addgroup -g 1001 student_group && \
+    adduser -D -u 1001 -G student_group student
+
+# Drop root privileges
 USER student
 
 # The container will sit idle until we pass a command to it
