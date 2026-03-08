@@ -79,6 +79,16 @@ type ContestProblem struct {
 	PointsValue int    `json:"points_value"`
 }
 
+type CreateContestInput struct {
+	Title            string                   `json:"title" binding:"required"`
+	HostOrganization string                   `json:"host_organization"`
+	StartTime        time.Time                `json:"start_time" binding:"required"`
+	EndTime          time.Time                `json:"end_time" binding:"required"`
+	IsPublic         bool                     `json:"is_public"`
+	AccessRules      *ContestAccessRules      `json:"access_rules"`
+	Problems         []map[string]interface{} `json:"problems"`
+}
+
 // ==========================================
 // 4. PROBLEM & TEST CASE STRUCTS
 // ==========================================

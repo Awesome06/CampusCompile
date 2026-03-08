@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	redisClient "github.com/redis/go-redis/v9"
 
 	"campuscompile/api/internal/models"
@@ -27,7 +25,7 @@ type UserDemographics struct {
 }
 
 type ContestService interface {
-	ForgeContest(ctx context.Context, req models.Contest) (string, error)
+	CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error)
 	FetchContests(ctx context.Context, user UserDemographics) ([]models.Contest, error)
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
@@ -48,17 +46,9 @@ func NewContestService(repo repositories.ContestRepository, redis *redisClient.C
 	return &contestService{repo: repo, redis: redis}
 }
 
-func (s *contestService) ForgeContest(ctx context.Context, req models.Contest) (string, error) {
-	req.ID = uuid.New().String()
-
-	// Normalize slug formatting for the title
-	req.Title = strings.TrimSpace(req.Title)
-
-	err := s.repo.CreateContest(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	return req.ID, nil
+func (s *contestService) CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error) {
+	// Future validation could go here (e.g., if contest.EndTime.Before(contest.StartTime) return error)
+	return s.repo.CreateContest(ctx, contest, problems)
 }
 
 func (s *contestService) FetchContests(ctx context.Context, user UserDemographics) ([]models.Contest, error) {

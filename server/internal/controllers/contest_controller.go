@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 )
 
@@ -140,6 +141,38 @@ func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, problems)
+}
+
+func (ctrl *ContestController) CreateContest(c *gin.Context) {
+	var input models.CreateContestInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		return
+	}
+
+	// Securely grab the professor/admin's ID from the JWT
+	userID := c.MustGet("user_id").(string)
+
+	contest := models.Contest{
+		Title:            input.Title,
+		HostOrganization: input.HostOrganization,
+		StartTime:        input.StartTime,
+		EndTime:          input.EndTime,
+		IsPublic:         input.IsPublic,
+		AccessRules:      input.AccessRules,
+		AuthorID:         &userID,
+	}
+
+	contestID, err := ctrl.service.CreateContest(c.Request.Context(), contest, input.Problems)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forge contest in database"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":    "Contest successfully forged",
+		"contest_id": contestID,
+	})
 }
 
 func getString(c *gin.Context, key string) string {

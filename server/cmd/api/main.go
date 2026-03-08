@@ -119,7 +119,7 @@ func main() {
 			faculty.GET("/faculty/problems", problemController.GetFacultyProblems)
 
 			// Faculty Contest Management
-			// faculty.POST("/contests", contestController.CreateContest)
+			faculty.POST("/contests", contestController.CreateContest)
 			// faculty.PUT("/contests/:id", contestController.UpdateContest)
 		}
 

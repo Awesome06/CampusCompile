@@ -10,7 +10,7 @@ import (
 )
 
 type ContestRepository interface {
-	CreateContest(ctx context.Context, contest models.Contest) error
+	CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error)
 	GetContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
@@ -29,23 +29,51 @@ func NewContestRepository(db *pgxpool.Pool) ContestRepository {
 	return &contestRepo{db: db}
 }
 
-func (r *contestRepo) CreateContest(ctx context.Context, contest models.Contest) error {
-	var rulesJSON []byte
-	var err error
+func (r *contestRepo) CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error) {
+	// 1. Begin Database Transaction
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	// Defer a rollback in case anything panics or fails before the commit
+	defer tx.Rollback(ctx)
 
+	// Safely marshal the demographics JSONB rules
+	var rulesJSON []byte
 	if contest.AccessRules != nil {
-		rulesJSON, err = json.Marshal(contest.AccessRules)
+		rulesJSON, _ = json.Marshal(contest.AccessRules)
+	}
+
+	// 2. Insert the Contest
+	var contestID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO contests (title, host_organization, start_time, end_time, access_rules, author_id, is_public)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING contest_id
+	`, contest.Title, contest.HostOrganization, contest.StartTime, contest.EndTime, rulesJSON, contest.AuthorID, contest.IsPublic).Scan(&contestID)
+
+	if err != nil {
+		return "", err
+	}
+
+	// 3. Map the Selected Problems
+	for _, p := range problems {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO contest_problems (contest_id, problem_id, points_value)
+			VALUES ($1, $2, $3)
+		`, contestID, p["problem_id"], p["points_value"])
+
 		if err != nil {
-			return err
+			return "", err // This triggers the defer tx.Rollback()
 		}
 	}
 
-	_, err = r.db.Exec(ctx, `
-		INSERT INTO contests (contest_id, title, host_organization, start_time, end_time, access_rules)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, contest.ID, contest.Title, contest.HostOrganization, contest.StartTime, contest.EndTime, rulesJSON)
+	// 4. Commit the Transaction
+	if err = tx.Commit(ctx); err != nil {
+		return "", err
+	}
 
-	return err
+	return contestID, nil
 }
 
 func (r *contestRepo) GetPublicContests(ctx context.Context) ([]models.Contest, error) {
