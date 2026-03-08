@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -14,14 +14,12 @@ func RequireAuth(c *gin.Context) {
 	var tokenString string
 	authHeader := c.GetHeader("Authorization")
 
-	if authHeader != "" {
-		fmt.Sscanf(authHeader, "Bearer %s", &tokenString)
-		if tokenString == "" {
-			tokenString = authHeader
-		}
-	} else {
-		// 👇 NEW: Fallback to URL query parameter for SSE streams
+	if authHeader == "" {
+		// 👇 NEW: Fallback to URL query parameter strictly for SSE streams
 		tokenString = c.Query("token")
+	} else {
+		// Strip the "Bearer " prefix if it came from the HTTP header
+		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 
 	if tokenString == "" {
@@ -44,6 +42,7 @@ func RequireAuth(c *gin.Context) {
 		c.Set("user_id", claims["user_id"])
 		c.Set("role", claims["role"])
 
+		// Extract demographic context if the user is onboarded
 		if isOnboarded, _ := claims["is_onboarded"].(bool); isOnboarded {
 			if course, ok := claims["course"].(string); ok {
 				c.Set("course", course)
