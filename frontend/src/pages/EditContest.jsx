@@ -7,6 +7,7 @@ export default function EditContest() {
   const { id } = useParams();
   const navigate = useNavigate();
   const userRole = localStorage.getItem('role');
+  const isTimeLocked = formData.start_time && new Date(formData.start_time) <= new Date() && userRole !== 'admin';
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -111,15 +112,26 @@ export default function EditContest() {
     }));
   };
 
-  const handleSubmit = async () => {
+const handleSubmit = async () => {
     setSaving(true);
     try {
+      // Create a cloned payload and force the dates into full ISO strings for Go
+      const payload = {
+        ...formData,
+        start_time: new Date(formData.start_time).toISOString(),
+        end_time: new Date(formData.end_time).toISOString(),
+      };
+
       // Send the updated payload to the Go backend via PUT
-      await api.put(`/contests/${id}`, formData);
+      await api.put(`/contests/${id}`, payload);
       navigate('/contests');
     } catch (error) {
-      console.error("Failed to update contest", error);
-      alert("Error updating contest. Check console.");
+      // Log the EXACT error message the Go backend sends back
+      console.error("Failed to update contest:", error.response?.data || error.message);
+      
+      // Show the exact Gin validation error in the alert
+      const errorMsg = error.response?.data?.error || "Unknown Error. Check console.";
+      alert(`Backend Error: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -270,28 +282,37 @@ export default function EditContest() {
         )}
 
         {/* Form Navigation Controls */}
-        <div className="flex justify-between mt-8 pt-6 border-t border-dark-border">
-          <div className="flex gap-4">
-            {step > 1 ? (
-              <Button onClick={() => setStep(step - 1)} variant="secondary">Back</Button>
-            ) : <div></div>}
+          <div className="flex justify-between mt-8 pt-6 border-t border-dark-border">
+          
+            {/* If Time Locked, show a warning instead of buttons */}
+            {isTimeLocked ? (
+              <div className="w-full text-center p-3 bg-red-900/20 border border-red-800/50 rounded text-red-400 font-bold">
+                🔒 Time Lock Active: This contest has already started and cannot be modified.
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-4">
+                  {step > 1 ? (
+                    <Button onClick={() => setStep(step - 1)} variant="secondary">Back</Button>
+                  ) : <div></div>}
 
-            {/* 👇 The Admin-Only Kill Switch */}
-            {userRole === 'admin' && (
-              <Button onClick={handleDelete} variant="danger" disabled={saving} className="bg-red-900/50 border border-red-600 text-red-500 hover:bg-red-600 hover:text-white transition">
-                Delete Arena
-              </Button>
+                  {userRole === 'admin' && (
+                    <Button onClick={handleDelete} variant="danger" disabled={saving} className="bg-red-900/50 border border-red-600 text-red-500 hover:bg-red-600 hover:text-white transition">
+                      Delete Arena
+                    </Button>
+                  )}
+                </div>
+                
+                {step < 3 ? (
+                  <Button onClick={() => setStep(step + 1)} variant="primary">Next Step</Button>
+                ) : (
+                  <Button onClick={handleSubmit} variant="success" disabled={saving} className="border border-green-600">
+                    {saving ? 'Saving Arena...' : 'Update Contest'}
+                  </Button>
+                )}
+              </>
             )}
           </div>
-          
-          {step < 3 ? (
-            <Button onClick={() => setStep(step + 1)} variant="primary">Next Step</Button>
-          ) : (
-            <Button onClick={handleSubmit} variant="success" disabled={saving} className="border border-green-600">
-              {saving ? 'Saving Arena...' : 'Update Contest'}
-            </Button>
-          )}
-        </div>
 
       </div>
     </div>

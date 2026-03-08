@@ -87,12 +87,23 @@ export default function AddContest() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // Send the payload to the Go backend
-      await api.post('/contests', formData);
+      // Create a cloned payload and force the dates into full ISO strings for Go
+      const payload = {
+        ...formData,
+        start_time: new Date(formData.start_time).toISOString(),
+        end_time: new Date(formData.end_time).toISOString(),
+      };
+
+      // Send the formatted payload
+      await api.post('/contests', payload);
       navigate('/contests');
     } catch (error) {
-      console.error("Failed to create contest", error);
-      alert("Error creating contest. Check console.");
+      // Log the EXACT error message the Go backend sends back
+      console.error("Failed to create contest:", error.response?.data || error.message);
+      
+      // Show the exact Gin validation error in the alert
+      const errorMsg = error.response?.data?.error || "Unknown Error. Check console.";
+      alert(`Backend Error: ${errorMsg}`);
     } finally {
       setLoading(false);
     }

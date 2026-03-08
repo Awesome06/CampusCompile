@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -180,13 +181,14 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 	userID := c.MustGet("user_id").(string)
 	userRole := c.MustGet("role").(string)
 
-	// 1. Security Check: Ensure the user actually owns this contest
+	// 1. Fetch the existing contest to check ownership and time
 	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
 		return
 	}
 
+	// 2. Security Check: Ownership Check
 	if userRole != "admin" {
 		if existingContest.AuthorID == nil || *existingContest.AuthorID != userID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this contest"})
@@ -194,7 +196,13 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 		}
 	}
 
-	// 2. Parse the payload (We can reuse the CreateContestInput struct here!)
+	// 3. 🔒 NEW: TIME LOCK CHECK 🔒
+	if time.Now().After(existingContest.StartTime) && userRole != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Time Lock Active: You cannot modify an arena that has already started."})
+		return
+	}
+
+	// 4. Parse the payload
 	var input models.CreateContestInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
@@ -210,7 +218,7 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 		AccessRules:      input.AccessRules,
 	}
 
-	// 3. Execute the update
+	// 5. Execute the update
 	err = ctrl.service.UpdateContest(c.Request.Context(), contestID, contest, input.Problems)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contest"})
@@ -222,8 +230,22 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 
 func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 	contestID := c.Param("id")
+	userRole := c.MustGet("role").(string)
 
-	err := ctrl.service.DeleteContest(c.Request.Context(), contestID)
+	// Fetch the contest to check its timing
+	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
+		return
+	}
+
+	// 🔒 NEW: TIME LOCK CHECK 🔒
+	if time.Now().After(existingContest.StartTime) && userRole != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Time Lock Active: You cannot delete a contest that has already started."})
+		return
+	}
+
+	err = ctrl.service.DeleteContest(c.Request.Context(), contestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete contest"})
 		return
