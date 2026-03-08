@@ -35,6 +35,7 @@ type ContestService interface {
 	StartLeaderboardTicker(ctx context.Context, contestID string)
 	FetchEnrichedLeaderboard(ctx context.Context, contestID string) ([]map[string]interface{}, error)
 	FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
+	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 }
 
 type contestService struct {
@@ -44,6 +45,10 @@ type contestService struct {
 
 func NewContestService(repo repositories.ContestRepository, redis *redisClient.Client) ContestService {
 	return &contestService{repo: repo, redis: redis}
+}
+
+func (s *contestService) UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error {
+	return s.repo.UpdateContest(ctx, contestID, contest, problems)
 }
 
 func (s *contestService) CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error) {

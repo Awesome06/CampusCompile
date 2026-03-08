@@ -175,6 +175,51 @@ func (ctrl *ContestController) CreateContest(c *gin.Context) {
 	})
 }
 
+func (ctrl *ContestController) UpdateContest(c *gin.Context) {
+	contestID := c.Param("id")
+	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string)
+
+	// 1. Security Check: Ensure the user actually owns this contest
+	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
+		return
+	}
+
+	if userRole != "admin" {
+		if existingContest.AuthorID == nil || *existingContest.AuthorID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this contest"})
+			return
+		}
+	}
+
+	// 2. Parse the payload (We can reuse the CreateContestInput struct here!)
+	var input models.CreateContestInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		return
+	}
+
+	contest := models.Contest{
+		Title:            input.Title,
+		HostOrganization: input.HostOrganization,
+		StartTime:        input.StartTime,
+		EndTime:          input.EndTime,
+		IsPublic:         input.IsPublic,
+		AccessRules:      input.AccessRules,
+	}
+
+	// 3. Execute the update
+	err = ctrl.service.UpdateContest(c.Request.Context(), contestID, contest, input.Problems)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contest"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Arena configurations updated successfully"})
+}
+
 func getString(c *gin.Context, key string) string {
 	val, exists := c.Get(key)
 	if !exists {

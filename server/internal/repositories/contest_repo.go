@@ -11,6 +11,7 @@ import (
 
 type ContestRepository interface {
 	CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error)
+	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 	GetContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
@@ -223,4 +224,49 @@ func (r *contestRepo) GetContestProblems(ctx context.Context, contestID string) 
 	}
 
 	return problems, nil
+}
+
+func (r *contestRepo) UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var rulesJSON []byte
+	if contest.AccessRules != nil {
+		rulesJSON, _ = json.Marshal(contest.AccessRules)
+	}
+
+	// 1. Update the main contest record
+	_, err = tx.Exec(ctx, `
+		UPDATE contests 
+		SET title = $1, host_organization = $2, start_time = $3, end_time = $4, access_rules = $5, is_public = $6
+		WHERE contest_id = $7
+	`, contest.Title, contest.HostOrganization, contest.StartTime, contest.EndTime, rulesJSON, contest.IsPublic, contestID)
+
+	if err != nil {
+		return err
+	}
+
+	// 2. Clear out the old problem mappings
+	_, err = tx.Exec(ctx, `DELETE FROM contest_problems WHERE contest_id = $1`, contestID)
+	if err != nil {
+		return err
+	}
+
+	// 3. Insert the newly selected problem mappings
+	for _, p := range problems {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO contest_problems (contest_id, problem_id, points_value)
+			VALUES ($1, $2, $3)
+		`, contestID, p["problem_id"], p["points_value"])
+
+		if err != nil {
+			return err
+		}
+	}
+
+	// 4. Commit the transaction
+	return tx.Commit(ctx)
 }

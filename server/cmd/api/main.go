@@ -120,7 +120,7 @@ func main() {
 
 			// Faculty Contest Management
 			faculty.POST("/contests", contestController.CreateContest)
-			// faculty.PUT("/contests/:id", contestController.UpdateContest)
+			faculty.PUT("/contests/:id", contestController.UpdateContest)
 		}
 
 		// --- ADMIN ONLY ROUTES ---
