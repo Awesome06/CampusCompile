@@ -95,3 +95,52 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, history)
 }
+
+func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
+	submissionID := c.Param("id")
+
+	// 1. Subscribe to the specific Redis channel for this submission
+	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), "submission_updates:"+submissionID)
+	defer cleanup()
+
+	// 2. Set headers required for Server-Sent Events
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Flush()
+
+	// 3. Listen for events and push them to the frontend
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return // Client disconnected/closed the tab
+		case msg := <-ch:
+			c.SSEvent("message", msg.Payload)
+			c.Writer.Flush() // Force the data down the wire immediately
+
+			// If we want, we could parse the JSON and break the loop on terminal states,
+			// but it's easier to let the React frontend call EventSource.close()
+		}
+	}
+}
+
+func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
+	runID := c.Param("id")
+	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), "run_updates:"+runID)
+	defer cleanup()
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Flush()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case msg := <-ch:
+			c.SSEvent("message", msg.Payload)
+			c.Writer.Flush()
+		}
+	}
+}

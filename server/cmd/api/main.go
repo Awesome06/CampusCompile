@@ -86,6 +86,9 @@ func main() {
 		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)          // Updated
 		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory) // Updated
 
+		protected.GET("/submissions/stream/:id", submissionController.StreamSubmissionStatus)
+		protected.GET("/run/stream/:id", submissionController.StreamRunStatus)
+
 		// --- FACULTY & ADMIN ROUTES ---
 		// Both Professors and Admins can create and edit problems
 		faculty := protected.Group("")
