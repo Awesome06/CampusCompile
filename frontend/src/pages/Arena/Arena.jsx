@@ -55,34 +55,43 @@ export default function Arena() {
     setIsConsoleOpen(false);
     try {
       const response = await api.post('/submit', { problem_id: id, language, source_code: code });
-      pollSubmissionStatus(response.data.submission_id);
+      
+      // 👇 NEW: Start SSE Stream
+      const token = localStorage.getItem('token');
+      const sse = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
+      
+      sse.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const status = data.status;
+        
+        if (status === 'Running') {
+          setSubmitStatus('Running... ⚙️');
+        } else {
+          // Terminal state reached
+          setSubmitStatus(status);
+          fetchHistory();
+          
+          if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(status)) {
+            setConsoleOutput(data.message || `Verdict: ${status}`);
+            setActiveTab('output');
+            setIsConsoleOpen(true);
+          } else if (status === 'AC' || status === 'Accepted') {
+            setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
+            setActiveTab('output');
+            setIsConsoleOpen(true);
+          }
+          
+          sse.close(); // Close connection
+        }
+      };
+
+      sse.onerror = () => {
+        console.error("SSE connection lost.");
+        sse.close();
+      };
+
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
-    }
-  };
-
-  const pollSubmissionStatus = async (submissionId) => {
-    try {
-      const res = await api.get(`/submissions/${submissionId}`);
-      const { status, message } = res.data;
-      if (status === 'Pending' || status === 'Running') {
-        setSubmitStatus(status === 'Running' ? 'Running... ⚙️' : 'Pending... ⏳');
-        setTimeout(() => pollSubmissionStatus(submissionId), 1000);
-      } else {
-        setSubmitStatus(status);
-        fetchHistory();
-        if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(status)) {
-          setConsoleOutput(message || `Verdict: ${status}`);
-          setActiveTab('output');
-          setIsConsoleOpen(true);
-        } else if (status === 'AC' || status === 'Accepted') {
-          setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
-          setActiveTab('output');
-          setIsConsoleOpen(true);
-        }
-      }
-    } catch (err) {
-      setSubmitStatus('Error fetching status');
     }
   };
 
@@ -92,22 +101,29 @@ export default function Arena() {
     setIsConsoleOpen(true);
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
-      pollRunStatus(response.data.run_id);
+      
+      // 👇 NEW: Start SSE Stream for Custom Run
+      const token = localStorage.getItem('token');
+      const sse = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
+      
+      sse.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.status === 'Running') {
+          setConsoleOutput('Running... ⚙️');
+        } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
+          setConsoleOutput(data.output || data.message || "Program finished with no output.");
+          sse.close(); // Close connection
+        }
+      };
+
+      sse.onerror = () => {
+        setConsoleOutput('Error streaming execution status.');
+        sse.close();
+      };
+
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
-    }
-  };
-
-  const pollRunStatus = async (runId) => {
-    try {
-      const res = await api.get(`/run/${runId}`);
-      if (res.data.status === 'Pending') {
-        setTimeout(() => pollRunStatus(runId), 1000);
-      } else {
-        setConsoleOutput(res.data.output || res.data.message || "Program finished with no output.");
-      }
-    } catch (err) {
-      setConsoleOutput('Error polling execution status.');
     }
   };
 

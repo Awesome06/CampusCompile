@@ -23,6 +23,7 @@ type SubmissionService interface {
 	FetchRunStatus(ctx context.Context, runID string) (map[string]interface{}, error)
 	FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error)
 	FetchSubmissionHistory(ctx context.Context, userID, problemID string) ([]models.SubmissionHistoryEntry, error)
+	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
 }
 
 type submissionService struct {
@@ -147,4 +148,9 @@ func (s *submissionService) FetchSubmissionStatus(ctx context.Context, submissio
 
 func (s *submissionService) FetchSubmissionHistory(ctx context.Context, userID, problemID string) ([]models.SubmissionHistoryEntry, error) {
 	return s.repo.GetSubmissionHistory(ctx, userID, problemID)
+}
+
+func (s *submissionService) SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func()) {
+	pubsub := s.redis.Subscribe(ctx, channel)
+	return pubsub.Channel(), func() { pubsub.Close() }
 }

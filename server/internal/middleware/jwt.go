@@ -8,22 +8,26 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// In production, load this from os.Getenv("SESSION_SECRET") instead of hardcoding
 var JwtSecret = []byte("super_secret_campus_key_change_me")
 
-// RequireAuth is the bouncer that protects secure routes
 func RequireAuth(c *gin.Context) {
+	var tokenString string
 	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
-		c.Abort()
-		return
+
+	if authHeader != "" {
+		fmt.Sscanf(authHeader, "Bearer %s", &tokenString)
+		if tokenString == "" {
+			tokenString = authHeader
+		}
+	} else {
+		// 👇 NEW: Fallback to URL query parameter for SSE streams
+		tokenString = c.Query("token")
 	}
 
-	var tokenString string
-	fmt.Sscanf(authHeader, "Bearer %s", &tokenString)
 	if tokenString == "" {
-		tokenString = authHeader
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization token"})
+		c.Abort()
+		return
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
