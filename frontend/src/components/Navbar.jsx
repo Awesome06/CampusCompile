@@ -1,21 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { jwtDecode } from 'jwt-decode'; //
+import { jwtDecode } from 'jwt-decode';
 
 export default function Navbar() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
   const [userRole, setUserRole] = useState(localStorage.getItem('role'));
-  const [isOnboarded, setIsOnboarded] = useState(false); //
+  const [isOnboarded, setIsOnboarded] = useState(false);
 
-  // Function to derive onboarding status from the current token
   const checkOnboardingStatus = () => {
     const token = localStorage.getItem('token');
     if (token) {
       try {
         const decoded = jwtDecode(token);
-        setIsOnboarded(!!decoded.is_onboarded); //
+        setIsOnboarded(!!decoded.is_onboarded); 
       } catch (e) {
-        setIsOnboarded(false); //
+        setIsOnboarded(false); 
       }
     } else {
       setIsOnboarded(false);
@@ -23,13 +22,12 @@ export default function Navbar() {
   };
 
   useEffect(() => {
-    // Initial check on mount
     checkOnboardingStatus();
 
     const syncAuthState = () => {
       setIsLoggedIn(!!localStorage.getItem('token'));
       setUserRole(localStorage.getItem('role'));
-      checkOnboardingStatus(); // Re-check status when storage changes
+      checkOnboardingStatus(); 
     };
 
     window.addEventListener('storage', syncAuthState);
@@ -53,17 +51,15 @@ export default function Navbar() {
           CampusCompile
         </Link>
         
-        {/* 👇 CRITICAL CHANGE: 
-            Navigation links are ONLY visible if the user is logged in AND onboarded.
-            This prevents students from clicking "Problems" to escape the onboarding screen. 
-        */}
         {isLoggedIn && isOnboarded && (
-          <div className="flex space-x-6 text-sm font-semibold text-gray-300">
-            <Link to="/problems" className="hover:text-white transition">Problems</Link>
+          <div className="flex space-x-6 text-sm font-semibold text-gray-300 items-center">
+            {/* NEW: Contests is now the primary navigation link */}
+            <Link to="/contests" className="text-white border-b-2 border-dark-accent pb-1 transition">Contests</Link>
+            <Link to="/problems" className="hover:text-white transition">Problem Bank</Link>
             
             {hasElevatedAccess && (
-              <Link to="/add-problem" className="text-green-400 hover:text-green-300 transition flex items-center gap-1">
-                <span>+</span> Forge Problem
+              <Link to="/add-contest" className="ml-4 text-green-400 hover:text-green-300 transition flex items-center gap-1 bg-green-900/20 px-3 py-1 rounded border border-green-800/50">
+                <span>+</span> Create Contest
               </Link>
             )}
           </div>
