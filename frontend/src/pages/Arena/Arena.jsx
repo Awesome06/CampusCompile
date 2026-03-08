@@ -39,7 +39,7 @@ export default function Arena() {
     fetchHistory();
   }, [id]);
 
-  const canEdit = currentUser && problem && (currentUser.role === 'admin' || currentUser.id === problem.author_id);
+  const canEdit = currentUser && problem && (currentUser.role === 'admin' || (currentUser.role === 'professor' && currentUser.id === problem.author_id));
 
   const fetchHistory = async () => {
     try {

@@ -16,6 +16,7 @@ import OAuthSuccess from './pages/OAuthSuccess';
 import Onboarding from './pages/Onboarding';
 import ContestList from './pages/ContestList';
 import EditContest from './pages/EditContest';
+import AddContest from './pages/AddContest';
 
 // The Bouncer
 const ProtectedRoute = ({ children, requireOnboarding = true }) => {
@@ -72,12 +73,15 @@ function App() {
             } />
 
             {/* These strictly require the user to be onboarded */}
-            <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
-            <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
-            <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
             <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
+
+            <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
             <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
             <Route path="/edit-problem/:id" element={<ProtectedRoute><EditProblem /></ProtectedRoute>} />
+
+            <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
+            <Route path="/add-contest" element={<ProtectedRoute><AddContest /></ProtectedRoute>} />
+            <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
             
           </Routes>
           
