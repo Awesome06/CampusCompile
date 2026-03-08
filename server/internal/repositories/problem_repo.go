@@ -5,26 +5,20 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-)
 
-type TestCaseToInsert struct {
-	ID             string
-	ProblemID      string
-	InputData      string
-	ExpectedOutput string
-	IsHidden       bool
-}
+	"campuscompile/api/internal/models"
+)
 
 type ProblemRepository interface {
 	CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error
-	AddTestCasesInTx(ctx context.Context, testCases []TestCaseToInsert) error
+	AddTestCasesInTx(ctx context.Context, testCases []models.TestCaseToInsert) error
 	GetProblems(ctx context.Context) ([]map[string]interface{}, error)
 	GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error)
 	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
 	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool) error
 	DeleteProblem(ctx context.Context, problemID string) error
 	GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
-	SyncTestCasesInTx(ctx context.Context, problemID string, testCases []TestCaseToInsert) error
+	SyncTestCasesInTx(ctx context.Context, problemID string, testCases []models.TestCaseToInsert) error
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 }
 
@@ -36,7 +30,6 @@ func NewProblemRepository(db *pgxpool.Pool) ProblemRepository {
 	return &problemRepo{db: db}
 }
 
-// Fixed: Added the missing CreateProblem implementation
 func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error {
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public)
@@ -45,7 +38,7 @@ func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug,
 	return err
 }
 
-func (r *problemRepo) AddTestCasesInTx(ctx context.Context, testCases []TestCaseToInsert) error {
+func (r *problemRepo) AddTestCasesInTx(ctx context.Context, testCases []models.TestCaseToInsert) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -167,7 +160,7 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string) (
 	return problems, nil
 }
 
-func (r *problemRepo) SyncTestCasesInTx(ctx context.Context, problemID string, testCases []TestCaseToInsert) error {
+func (r *problemRepo) SyncTestCasesInTx(ctx context.Context, problemID string, testCases []models.TestCaseToInsert) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
