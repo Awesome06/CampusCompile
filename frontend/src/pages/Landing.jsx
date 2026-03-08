@@ -3,9 +3,6 @@ import { Link } from 'react-router-dom';
 
 export default function Landing() {
   const token = localStorage.getItem('token');
-  const role = localStorage.getItem('role');
-
-  const hasElevatedAccess = role?.toLowerCase() === 'admin' || role?.toLowerCase() === 'professor';
 
   return (
     <div className="flex flex-col items-center justify-center h-[calc(100vh-61px)] px-4">
@@ -31,17 +28,12 @@ export default function Landing() {
           </Link>
         ) : (
           <>
-            {/* UPDATED: Funnel students to the Contest Hub */}
             <Link to="/contests" className="bg-dark-accent text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-600 transition shadow-lg">
-              View Contests
+              Contests
             </Link>
-            
-            {/* UPDATED: Funnel faculty to the Contest Forge */}
-            {hasElevatedAccess && (
-              <Link to="/add-contest" className="bg-green-700 text-white px-8 py-3 rounded-lg font-bold hover:bg-green-600 transition shadow-lg border border-green-600 hover:border-green-500 flex items-center gap-2">
-                <span>+</span> Create Contest
-              </Link>
-            )}
+            <Link to="/problems" className="bg-dark-surface border border-dark-border text-white px-8 py-3 rounded-lg font-bold hover:bg-[#2a2a2a] transition shadow-lg">
+              Problems
+            </Link>
           </>
         )}
         

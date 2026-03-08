@@ -42,8 +42,6 @@ export default function Navbar() {
     window.location.href = '/login'; 
   };
 
-  const hasElevatedAccess = userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'professor';
-
   return (
     <nav className="p-4 bg-dark-surface border-b border-dark-border flex justify-between items-center shadow-md">
       <div className="flex items-center space-x-8">
@@ -53,15 +51,8 @@ export default function Navbar() {
         
         {isLoggedIn && isOnboarded && (
           <div className="flex space-x-6 text-sm font-semibold text-gray-300 items-center">
-            {/* NEW: Contests is now the primary navigation link */}
-            <Link to="/contests" className="text-white border-b-2 border-dark-accent pb-1 transition">Contests</Link>
-            <Link to="/problems" className="hover:text-white transition">Problem Bank</Link>
-            
-            {hasElevatedAccess && (
-              <Link to="/add-contest" className="ml-4 text-green-400 hover:text-green-300 transition flex items-center gap-1 bg-green-900/20 px-3 py-1 rounded border border-green-800/50">
-                <span>+</span> Create Contest
-              </Link>
-            )}
+            <Link to="/contests" className="hover:text-white transition">Contests</Link>
+            <Link to="/problems" className="hover:text-white transition">Problems</Link>
           </div>
         )}
       </div>

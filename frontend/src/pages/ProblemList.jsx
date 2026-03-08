@@ -47,7 +47,7 @@ export default function ProblemList() {
               onClick={() => setViewMode('faculty')}
               className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'faculty' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
             >
-              My Workspace (Drafts)
+              Problems Created
             </button>
           </div>
         ) : (
