@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -52,4 +53,61 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 			c.Writer.Flush()
 		}
 	}
+}
+
+// GetContests fetches the high-level list of all contests
+func (ctrl *ContestController) GetContests(c *gin.Context) {
+	contests, err := ctrl.service.FetchContests(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contests"})
+		return
+	}
+	c.JSON(http.StatusOK, contests)
+}
+
+// GetContestDetails fetches specific metadata and checks if the current user is registered
+func (ctrl *ContestController) GetContestDetails(c *gin.Context) {
+	contestID := c.Param("id")
+	userID := c.MustGet("user_id").(string)
+
+	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
+		return
+	}
+
+	// Check if this specific user has clicked "Join Arena" yet
+	isRegistered, _ := ctrl.service.IsUserEnrolled(c.Request.Context(), contestID, userID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"contest":       contest,
+		"is_registered": isRegistered,
+	})
+}
+
+// RegisterForContest handles the user opting into the arena and initializing their Redis score
+func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
+	contestID := c.Param("id")
+	userID := c.MustGet("user_id").(string)
+
+	err := ctrl.service.EnrollUser(c.Request.Context(), contestID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register for contest"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully entered the arena!"})
+}
+
+// GetLeaderboard provides the initial static snapshot of the leaderboard before the SSE stream takes over
+func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
+	contestID := c.Param("id")
+
+	leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load leaderboard"})
+		return
+	}
+
+	c.JSON(http.StatusOK, leaderboard)
 }

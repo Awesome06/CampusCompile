@@ -15,6 +15,7 @@ type ContestRepository interface {
 	GetContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
+	GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error)
 }
 
 type contestRepo struct {
@@ -106,4 +107,29 @@ func (r *contestRepo) CheckRegistration(ctx context.Context, contestID, userID s
 		SELECT EXISTS(SELECT 1 FROM contest_registrations WHERE contest_id = $1 AND user_id = $2)
 	`, contestID, userID).Scan(&exists)
 	return exists, err
+}
+
+func (r *contestRepo) GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error) {
+	if len(userIDs) == 0 {
+		return map[string]string{}, nil
+	}
+
+	// Bulk fetch using Postgres ANY() array operator
+	rows, err := r.db.Query(ctx, `
+		SELECT user_id, username FROM users WHERE user_id = ANY($1)
+	`, userIDs)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	usernames := make(map[string]string)
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err == nil {
+			usernames[id] = name
+		}
+	}
+	return usernames, nil
 }

@@ -51,9 +51,9 @@ func main() {
 	problemController := controllers.NewProblemController(problemService)
 
 	// --- Initialize Contests Domain (Phase 3) ---
-	// contestRepo := repositories.NewContestRepository(database.Pool)
-	// contestService := services.NewContestService(contestRepo, redisPkg.Client)
-	// contestController := controllers.NewContestController(contestService)
+	contestRepo := repositories.NewContestRepository(database.Pool)
+	contestService := services.NewContestService(contestRepo, redisPkg.Client)
+	contestController := controllers.NewContestController(contestService)
 
 	// Configure CORS for the React frontend
 	router.Use(cors.New(cors.Config{
@@ -94,20 +94,20 @@ func main() {
 
 		// 👇 --- CONTEST ROUTES (PHASE 3) ---
 		// ANY logged-in user can view the list of upcoming/past contests
-		// protected.GET("/contests", contestController.GetContests)
+		protected.GET("/contests", contestController.GetContests)
 
 		// The Bouncer: You must pass demographic clearance to enter the arena or view the leaderboard
-		/*
-			arena := protected.Group("/contests/:id")
-			arena.Use(middleware.RequireContestClearance())
-			{
-				arena.GET("", contestController.GetContestDetails)
-				arena.POST("/register", contestController.RegisterForContest)
-				arena.GET("/problems", contestController.GetContestProblems)
-				arena.GET("/leaderboard", contestController.GetLeaderboard)
-				arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
-			}
-		*/
+		arena := protected.Group("/contests/:id")
+		arena.Use(middleware.RequireContestClearance())
+		{
+			arena.GET("", contestController.GetContestDetails)
+			arena.POST("/register", contestController.RegisterForContest)
+			arena.GET("/leaderboard", contestController.GetLeaderboard)
+			arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
+
+			// We will uncomment this one as soon as we build the Contest-to-Problem DB query!
+			// arena.GET("/problems", contestController.GetContestProblems)
+		}
 
 		// --- FACULTY & ADMIN ROUTES ---
 		faculty := protected.Group("")
