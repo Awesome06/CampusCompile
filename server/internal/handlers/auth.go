@@ -106,7 +106,7 @@ func HandleAzureCallback(c *gin.Context) {
 		assignedRole = "professor"
 	}
 
-	//Admin Set Up
+	// Admin Set Up
 	if emailLower == "mrigank.bhatnagar@bennett.edu.in" {
 		assignedRole = "admin"
 	}
@@ -116,30 +116,60 @@ func HandleAzureCallback(c *gin.Context) {
 		initialOnboarded = true // Auto-skip onboarding for faculty
 	}
 
+	// 👇 NEW: Define pointers to handle PostgreSQL NULL values safely
 	var userID, finalRole string
 	var isOnboarded bool
+	var course, department, batch, section, studentGroup *string
+	var graduationYear *int
 
+	// 👇 NEW: Expanded RETURNING clause to fetch demographic data on login
 	err = database.Pool.QueryRow(reqCtx, `
-    INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
-    VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
-    ON CONFLICT (email) 
-    DO UPDATE 
-		SET provider_id = EXCLUDED.provider_id, 
-		real_name = EXCLUDED.real_name
-    RETURNING user_id, role::text, is_onboarded;
-`, msUser.ID, emailLower, msUser.DisplayName, assignedRole, initialOnboarded).Scan(&userID, &finalRole, &isOnboarded)
+		INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
+		VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
+		ON CONFLICT (email) 
+		DO UPDATE 
+			SET provider_id = EXCLUDED.provider_id, 
+			real_name = EXCLUDED.real_name
+		RETURNING user_id, role::text, is_onboarded, course, department, graduation_year, batch, section, student_group;
+	`, msUser.ID, emailLower, msUser.DisplayName, assignedRole, initialOnboarded).Scan(
+		&userID, &finalRole, &isOnboarded,
+		&course, &department, &graduationYear, &batch, &section, &studentGroup,
+	)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login"})
 		return
 	}
 
-	ccToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	// 👇 NEW: Dynamically build the JWT claims
+	claims := jwt.MapClaims{
 		"user_id":      userID,
 		"role":         finalRole,
 		"is_onboarded": isOnboarded,
 		"exp":          time.Now().Add(time.Hour * 72).Unix(),
-	})
+	}
+
+	// Only attach demographic claims if they are NOT null (Admins/Professors will bypass this)
+	if course != nil {
+		claims["course"] = *course
+	}
+	if department != nil {
+		claims["department"] = *department
+	}
+	if graduationYear != nil {
+		claims["graduation_year"] = *graduationYear
+	}
+	if batch != nil {
+		claims["batch"] = *batch
+	}
+	if section != nil {
+		claims["section"] = *section
+	}
+	if studentGroup != nil {
+		claims["student_group"] = *studentGroup
+	}
+
+	ccToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	tokenString, err := ccToken.SignedString(middleware.JwtSecret)
 	if err != nil {
@@ -173,11 +203,18 @@ func CompleteOnboarding(c *gin.Context) {
 	}
 
 	// 👇 1. Generate the NEW token immediately
+	// 👇 1. Generate the NEW token immediately, now packed with demographic claims
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id":      userID,
-		"role":         "student",
-		"is_onboarded": true, // 👈 This is the key to unlocking the app
-		"exp":          time.Now().Add(time.Hour * 72).Unix(),
+		"user_id":         userID,
+		"role":            "student",
+		"is_onboarded":    true,
+		"course":          req.Course,
+		"department":      req.Department,
+		"graduation_year": req.GraduationYear,
+		"batch":           req.Batch,
+		"section":         req.Section,
+		"student_group":   req.StudentGroup,
+		"exp":             time.Now().Add(time.Hour * 72).Unix(),
 	})
 
 	tokenString, err := newToken.SignedString(middleware.JwtSecret)

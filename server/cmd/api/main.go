@@ -11,7 +11,7 @@ import (
 	"campuscompile/api/internal/controllers"
 	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/handlers"
-	"campuscompile/api/internal/middleware"
+	"campuscompile/api/internal/middleware" // Make sure this is imported
 	redisPkg "campuscompile/api/internal/redis"
 	"campuscompile/api/internal/repositories"
 	"campuscompile/api/internal/services"
@@ -50,6 +50,11 @@ func main() {
 	problemService := services.NewProblemService(problemRepo)
 	problemController := controllers.NewProblemController(problemService)
 
+	// --- Initialize Contests Domain (Phase 3) ---
+	// contestRepo := repositories.NewContestRepository(database.Pool)
+	// contestService := services.NewContestService(contestRepo, redisPkg.Client)
+	// contestController := controllers.NewContestController(contestService)
+
 	// Configure CORS for the React frontend
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
@@ -68,50 +73,63 @@ func main() {
 		authGroup.GET("/login", handlers.HandleAzureLogin)
 		authGroup.GET("/callback", handlers.HandleAzureCallback)
 	}
-	router.GET("/api/problems", problemController.GetProblems) // Updated
+	router.GET("/api/problems", problemController.GetProblems)
 
 	// --- PROTECTED ROUTES (Requires JWT) ---
 	protected := router.Group("/api")
 	protected.Use(middleware.RequireAuth)
 	{
 		protected.POST("/auth/onboard", handlers.CompleteOnboarding)
-
-		// Public Problem Access & Execution (Students + Faculty)
-		protected.GET("/problems/:id", problemController.GetProblemByID) // Updated
+		protected.GET("/problems/:id", problemController.GetProblemByID)
 
 		// Submissions
 		protected.POST("/submit", submissionController.SubmitCode)
-		protected.POST("/run", submissionController.RunCode)                                 // Updated
-		protected.GET("/run/:id", submissionController.GetRunStatus)                         // Updated
-		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)          // Updated
-		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory) // Updated
+		protected.POST("/run", submissionController.RunCode)
+		protected.GET("/run/:id", submissionController.GetRunStatus)
+		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)
+		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory)
 
 		protected.GET("/submissions/stream/:id", submissionController.StreamSubmissionStatus)
 		protected.GET("/run/stream/:id", submissionController.StreamRunStatus)
 
+		// 👇 --- CONTEST ROUTES (PHASE 3) ---
+		// ANY logged-in user can view the list of upcoming/past contests
+		// protected.GET("/contests", contestController.GetContests)
+
+		// The Bouncer: You must pass demographic clearance to enter the arena or view the leaderboard
+		/*
+			arena := protected.Group("/contests/:id")
+			arena.Use(middleware.RequireContestClearance())
+			{
+				arena.GET("", contestController.GetContestDetails)
+				arena.POST("/register", contestController.RegisterForContest)
+				arena.GET("/problems", contestController.GetContestProblems)
+				arena.GET("/leaderboard", contestController.GetLeaderboard)
+				arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
+			}
+		*/
+
 		// --- FACULTY & ADMIN ROUTES ---
-		// Both Professors and Admins can create and edit problems
 		faculty := protected.Group("")
 		faculty.Use(middleware.RequireRole("professor", "admin"))
 		{
-			// Problem Management
-			faculty.POST("/problems", problemController.CreateProblem)    // Updated
-			faculty.PUT("/problems/:id", problemController.UpdateProblem) // Updated
+			faculty.POST("/problems", problemController.CreateProblem)
+			faculty.PUT("/problems/:id", problemController.UpdateProblem)
+			faculty.POST("/problems/:id/testcases/batch", problemController.AddTestCasesBatch)
+			faculty.PUT("/problems/:id/testcases/sync", problemController.SyncTestCasesBatch)
+			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem)
+			faculty.GET("/faculty/problems", problemController.GetFacultyProblems)
 
-			// Test Cases
-			faculty.POST("/problems/:id/testcases/batch", problemController.AddTestCasesBatch)      // Updated
-			faculty.PUT("/problems/:id/testcases/sync", problemController.SyncTestCasesBatch)       // Updated
-			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem) // Updated
-
-			// Dashboard
-			faculty.GET("/faculty/problems", problemController.GetFacultyProblems) // Updated
+			// Faculty Contest Management
+			// faculty.POST("/contests", contestController.CreateContest)
+			// faculty.PUT("/contests/:id", contestController.UpdateContest)
 		}
 
 		// --- ADMIN ONLY ROUTES ---
 		adminGroup := protected.Group("")
 		adminGroup.Use(middleware.RequireRole("admin"))
 		{
-			adminGroup.DELETE("/problems/:id", problemController.DeleteProblem) // Updated
+			adminGroup.DELETE("/problems/:id", problemController.DeleteProblem)
 		}
 	}
 	// 5. START SERVER
