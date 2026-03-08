@@ -14,6 +14,7 @@ import AddProblem from './pages/AddProblem';
 import EditProblem from './pages/EditProblem'; 
 import OAuthSuccess from './pages/OAuthSuccess';
 import Onboarding from './pages/Onboarding';
+import ContestList from './pages/ContestList';
 
 // The Bouncer
 const ProtectedRoute = ({ children, requireOnboarding = true }) => {
@@ -70,6 +71,7 @@ function App() {
             } />
 
             {/* These strictly require the user to be onboarded */}
+            <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
             <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
             <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
             <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
