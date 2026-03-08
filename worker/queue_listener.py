@@ -2,6 +2,7 @@ import redis
 import json
 import psycopg2
 import os
+from datetime import timezone
 from psycopg2.extras import RealDictCursor
 from runner import grade_submission
 
@@ -32,11 +33,14 @@ def process_submission(submission_id):
             "status": "Running", "message": "Compiling and executing..."
         }))
 
+        # 👇 MODIFIED: We now fetch user_id, contest_id, submitted_at, and the contest's start_time
         cursor.execute("""
-            SELECT s.source_code_s3_key, s.language, s.problem_id, 
-                   p.time_limit_ms, p.memory_limit_kb 
+            SELECT s.source_code_s3_key, s.language, s.problem_id, s.user_id, s.contest_id, s.submitted_at,
+                   p.time_limit_ms, p.memory_limit_kb,
+                   c.start_time as contest_start
             FROM submissions s
             JOIN problems p ON s.problem_id = p.problem_id
+            LEFT JOIN contests c ON s.contest_id = c.contest_id
             WHERE s.submission_id = %s
         """, (submission_id,))
         submission = cursor.fetchone()
@@ -60,13 +64,12 @@ def process_submission(submission_id):
 
         print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
         
-        # 👇 CHANGED: Pass None for source_code, pass the S3 key instead
         result = grade_submission(
             submission_id=submission_id,
             problem_id=submission.get('problem_id'),
             language=submission.get('language'),
             source_code=None, 
-            source_s3_key=submission.get('source_code_s3_key'), # 👈 NEW PARAMETER
+            source_s3_key=submission.get('source_code_s3_key'),
             test_cases=test_cases,
             time_limit_ms=submission.get('time_limit_ms', 2000),
             memory_limit_kb=submission.get('memory_limit_kb', 256000)
@@ -75,13 +78,55 @@ def process_submission(submission_id):
         final_verdict = result['verdict']
         final_message = result.get('message', 'All test cases passed! 🏆') if final_verdict == 'AC' else result.get('message', f'Verdict: {final_verdict}')
 
+        # 1. Save the verdict to PostgreSQL
         cursor.execute(
             "UPDATE submissions SET status = %s, error_logs = %s WHERE submission_id = %s",
             (final_verdict, final_message, submission_id)
         )
         conn.commit()
         
-        # 👇 2. PUBLISH Final Verdict to Redis
+        # 👇 NEW: Phase 3 ICPC Leaderboard Engine
+        if final_verdict == 'AC' and submission.get('contest_id'):
+            contest_id = submission['contest_id']
+            user_id = submission['user_id']
+            problem_id = submission['problem_id']
+            submitted_at = submission['submitted_at']
+            contest_start = submission['contest_start']
+
+            # Check if this user already solved this problem (no extra points for duplicate ACs)
+            cursor.execute("""
+                SELECT COUNT(*) as solved 
+                FROM submissions 
+                WHERE user_id = %s AND problem_id = %s AND contest_id = %s 
+                  AND status = 'AC' AND submission_id != %s
+            """, (user_id, problem_id, contest_id, submission_id))
+            
+            if cursor.fetchone()['solved'] == 0:
+                # Count "Ghost Penalties" (WA, TLE, RE) prior to this AC
+                cursor.execute("""
+                    SELECT COUNT(*) as fails 
+                    FROM submissions 
+                    WHERE user_id = %s AND problem_id = %s AND contest_id = %s 
+                      AND status IN ('WA', 'TLE', 'RE', 'MLE', 'SE', 'CE') 
+                      AND submitted_at < %s
+                """, (user_id, problem_id, contest_id, submitted_at))
+                fails = cursor.fetchone()['fails']
+
+                # Calculate ICPC Penalty Minutes
+                elapsed_minutes = max(0, (submitted_at - contest_start).total_seconds() / 60.0)
+                penalty_minutes = elapsed_minutes + (fails * 20)
+
+                # Redis Math: $1 - (\text{Penalty} / 100000.0)$
+                score_increment = 1.0 - (penalty_minutes / 100000.0)
+
+                # Atomically increment their score in the ZSET
+                redis_client.zincrby(f"contest:leaderboard:{contest_id}", score_increment, user_id)
+                
+                # Flag the contest as dirty so the Go server broadcasts the update
+                redis_client.set(f"contest:{contest_id}:is_dirty", "true")
+                print(f"[+] ICPC Score Updated for {user_id}. (+1 Solve, {penalty_minutes:.2f} Penalty Mins)")
+
+        # 2. Publish Final Verdict to Redis for the specific student's Execution Console
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": final_verdict, "message": final_message
         }))
@@ -91,7 +136,6 @@ def process_submission(submission_id):
     except Exception as e:
         print(f"[!] Database/Execution Error: {str(e)}")
         conn.rollback()
-        # Publish error so frontend doesn't hang
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": "SE", "message": "System Error during execution"
         }))
@@ -112,20 +156,18 @@ def start_worker():
 
                 redis_client.publish(f"run_updates:{run_id}", json.dumps({"status": "Running"}))
                 
-                # Format custom run to match the batch runner signature
                 custom_tc = [{
                     "test_case_id": "custom",
                     "input_data": submission_data.get('custom_input', ''),
                     "expected_output": ""
                 }]
                 
-                # 👇 CHANGED: Added source_s3_key=None to match the updated signature
                 result = grade_submission(
                     submission_id=run_id,
                     problem_id="custom",
                     language=submission_data.get('language'),
                     source_code=submission_data.get('source_code'),
-                    source_s3_key=None, # 👈 THE FIX
+                    source_s3_key=None, 
                     test_cases=custom_tc,
                     time_limit_ms=2000,
                     memory_limit_kb=256000
