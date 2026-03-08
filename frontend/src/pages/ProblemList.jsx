@@ -41,7 +41,7 @@ export default function ProblemList() {
               onClick={() => setViewMode('public')}
               className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'public' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
             >
-              Public Arena
+              Published Problems
             </button>
             <button 
               onClick={() => setViewMode('faculty')}
