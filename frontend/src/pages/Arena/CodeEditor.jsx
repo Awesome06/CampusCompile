@@ -1,41 +1,41 @@
 import React, { useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import Button from '../../components/ui/Button';
-import useAntiCheat from '../../hooks/useAntiCheat'; // <-- Import the new hook
+import useAntiCheat from '../../hooks/useAntiCheat'; 
+import { RefreshCw } from 'lucide-react'; // 👈 Import the refresh icon
 
 export default function CodeEditor({ 
   code, setCode, language, setLanguage, boilerplates, 
   onRun, onSubmit, isContest, contestId 
 }) {
   
-  // Initialize the traps
   const { logPasteAttempt, logKeystroke } = useAntiCheat(contestId, isContest);
   const editorRef = useRef(null);
 
-  // This fires once the Monaco Editor is fully loaded
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
 
-    // Intercept deep keypresses directly inside Monaco
     editor.onKeyDown((e) => {
-      logKeystroke(); // Log every keypress for the AutoTyper math
+      logKeystroke(); 
 
-      // Check for Paste combinations: Ctrl+V (Windows/Linux) or Cmd+V (Mac)
       if ((e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV) {
         if (isContest) {
-          e.preventDefault();   // Stop the paste
-          e.stopPropagation();  // Stop event bubbling
-          logPasteAttempt();    // Fire telemetry to the Go backend
-          
-          // Optional: You can show a local toast/alert here to the user
-          // alert("Pasting is strictly disabled during active contests.");
+          e.preventDefault();   
+          e.stopPropagation();  
+          logPasteAttempt();    
         }
       }
     });
 
-    // Disable right-click context menu entirely during contests
     if (isContest) {
       editor.updateOptions({ contextmenu: false });
+    }
+  };
+
+  // 👇 Handle Reset Logic
+  const handleReset = () => {
+    if (window.confirm("Are you sure you want to reset the editor? Your current code will be permanently lost.")) {
+      setCode(boilerplates[language]);
     }
   };
 
@@ -56,9 +56,17 @@ export default function CodeEditor({
             <option value="java">Java 17</option>
           </select>
           
-          {/* Visual indicator so students know they are being monitored */}
+          {/* 👇 Reset Button */}
+          <button
+            onClick={handleReset}
+            className="p-1.5 text-gray-400 hover:text-white bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-dark-border rounded transition-colors shadow-sm"
+            title="Reset to boilerplate"
+          >
+            <RefreshCw size={16} />
+          </button>
+
           {isContest && (
-            <span className="text-[10px] font-bold text-red-500 bg-red-900/20 px-2 py-1 rounded border border-red-800 animate-pulse">
+            <span className="text-[10px] font-bold text-red-500 bg-red-900/20 px-2 py-1 rounded border border-red-800 animate-pulse ml-2">
               ● CONTEST MODE SECURED
             </span>
           )}
@@ -77,7 +85,7 @@ export default function CodeEditor({
           theme="vs-dark"
           value={code}
           onChange={setCode}
-          onMount={handleEditorMount} // <-- Wire up the interceptors
+          onMount={handleEditorMount} 
           options={{ 
             fontSize: 15, 
             minimap: { enabled: false }, 
