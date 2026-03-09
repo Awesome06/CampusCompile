@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -31,6 +31,43 @@ export default function Arena() {
   const [activeTab, setActiveTab] = useState('input');
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
+
+  // --- DRAFT LOGIC ---
+  const draftKey = currentUser ? `draft_${currentUser.id}_${id}` : null;
+
+  // 1. Load Draft on Mount
+  useEffect(() => {
+    if (draftKey) {
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          setLanguage(parsed.language);
+          setCode(parsed.code);
+          return; 
+        } catch (e) {
+          console.error("Failed to parse draft", e);
+        }
+      }
+    }
+    // Fallback to boilerplate if no draft exists
+    setCode(boilerplates['cpp']);
+  }, [id, draftKey]);
+
+  // 2. Save Draft on Change (Debounced)
+  useEffect(() => {
+    if (!draftKey || !code) return;
+
+    // Wait 1 second after the user stops typing before saving to localStorage
+    const timer = setTimeout(() => {
+      // Don't save if they haven't modified the boilerplate
+      if (code !== boilerplates[language]) {
+         localStorage.setItem(draftKey, JSON.stringify({ language, code }));
+      }
+    }, 1000); 
+
+    return () => clearTimeout(timer);
+  }, [code, language, draftKey]);
 
   useEffect(() => {
     api.get(`/problems/${id}`)
@@ -79,6 +116,11 @@ export default function Arena() {
             setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
             setActiveTab('output');
             setIsConsoleOpen(true);
+            
+            // 3. Clear Draft on Accepted Answer
+            if (draftKey) {
+              localStorage.removeItem(draftKey);
+            }
           }
           
           sse.close(); // Close connection
@@ -150,7 +192,8 @@ export default function Arena() {
       <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border relative">
         <CodeEditor 
           code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
-          boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit} 
+          boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
+          isContest={isContest} contestId={id}
         />
         <ExecutionConsole 
           isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}
