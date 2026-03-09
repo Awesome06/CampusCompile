@@ -275,32 +275,12 @@ func (r *contestRepo) UpdateContest(ctx context.Context, contestID string, conte
 }
 
 func (r *contestRepo) DeleteContest(ctx context.Context, contestID string) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	// 1. Preserve student work: Unlink submissions from this contest
-	_, err = tx.Exec(ctx, `UPDATE submissions SET contest_id = NULL WHERE contest_id = $1`, contestID)
-	if err != nil {
-		return err
-	}
-
-	// 2. Destroy the problem mappings
-	_, err = tx.Exec(ctx, `DELETE FROM contest_problems WHERE contest_id = $1`, contestID)
-	if err != nil {
-		return err
-	}
-
-	// 3. Destroy the actual contest record
-	_, err = tx.Exec(ctx, `DELETE FROM contests WHERE contest_id = $1`, contestID)
-	if err != nil {
-		return err
-	}
-
-	// Commit the transaction
-	return tx.Commit(ctx)
+	// Because of our schema's ON DELETE CASCADE constraints, deleting the contest
+	// will automatically destroy all linked submissions, telemetry, plagiarism reports,
+	// registrations, and contest_problems mappings.
+	// The problems themselves remain perfectly safe in the 'problems' table.
+	_, err := r.db.Exec(ctx, `DELETE FROM contests WHERE contest_id = $1`, contestID)
+	return err
 }
 
 func (r *contestRepo) LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error {

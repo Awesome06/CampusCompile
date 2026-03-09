@@ -152,7 +152,7 @@ const handleSubmit = async () => {
   };
 
   const handleDelete = async () => {
-    if (window.confirm("CRITICAL WARNING: Are you sure you want to permanently destroy this contest? Student submissions will be preserved as unranked practice runs.")) {
+    if (window.confirm("CRITICAL WARNING: Are you sure you want to permanently destroy this contest? ALL contest history, including student submissions, live leaderboards, and anti-cheat telemetry, will be permanently deleted. Linked problems will safely remain in your repository.")) {
       setSaving(true);
       try {
         await api.delete(`/contests/${id}`);

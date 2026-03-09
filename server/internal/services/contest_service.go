@@ -249,7 +249,15 @@ func isEligible(rules *models.ContestAccessRules, user models.UserDemographics) 
 }
 
 func (s *contestService) DeleteContest(ctx context.Context, contestID string) error {
-	return s.repo.DeleteContest(ctx, contestID)
+	err := s.repo.DeleteContest(ctx, contestID)
+
+	if err == nil {
+		// Nuke all Redis tracking keys associated with this contest
+		s.redis.Del(ctx, fmt.Sprintf("contest:leaderboard:%s", contestID))
+		s.redis.Del(ctx, fmt.Sprintf("contest:%s:is_dirty", contestID))
+	}
+
+	return err
 }
 
 func (s *contestService) LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error {
