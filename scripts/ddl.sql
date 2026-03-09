@@ -4,6 +4,7 @@
 CREATE TYPE user_role AS ENUM ('student', 'professor', 'admin');
 CREATE TYPE problem_difficulty AS ENUM ('Easy', 'Medium', 'Hard');
 CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE');
+CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected');
 
 -- ==========================================
 -- 2. CORE ENTITIES
@@ -104,7 +105,35 @@ CREATE TABLE test_cases (
 );
 
 -- ==========================================
--- 4. INDEXES
+-- 4. ANTI-CHEAT & TELEMETRY
+-- ==========================================
+
+-- Contest Telemetry: Logs suspicious browser and editor activity
+CREATE TABLE contest_telemetry (
+    telemetry_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    event_type telemetry_event_type NOT NULL,
+    -- JSONB is perfect here to store flexible data like keystroke variance 
+    -- standard deviations or exact time-out durations for later analysis.
+    metadata JSONB, 
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Plagiarism Reports: Stores MOSS audit results from the Python worker
+CREATE TABLE plagiarism_reports (
+    report_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    user_1_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    user_2_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    similarity_score NUMERIC(5,2) NOT NULL, -- e.g., 85.50 for 85.5% match
+    moss_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 5. INDEXES
 -- ==========================================
 
 -- Contests
@@ -119,3 +148,8 @@ CREATE INDEX idx_submissions_contest_id ON submissions(contest_id);
 CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);
 CREATE INDEX idx_submissions_user_id ON submissions(user_id);
 CREATE INDEX idx_submissions_status ON submissions(status);
+
+-- query this table grouped by user_id for a specific contest_id.
+CREATE INDEX idx_telemetry_contest_user ON contest_telemetry(contest_id, user_id);
+-- Speeds up queries when a professor wants to see all flagged pairs for a specific problem.
+CREATE INDEX idx_plagiarism_contest_problem ON plagiarism_reports(contest_id, problem_id);
