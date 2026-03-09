@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Trophy, Clock, CheckCircle } from 'lucide-react'; // Assuming you use lucide-react for icons
+import { Trophy, Clock, CheckCircle, AlertTriangle } from 'lucide-react'; 
 
 export default function Leaderboard() {
   const { id: contestId } = useParams();
@@ -9,7 +9,6 @@ export default function Leaderboard() {
   const [connectionError, setConnectionError] = useState(false);
 
   useEffect(() => {
-    // Grab the JWT from storage to authenticate the SSE connection
     const token = localStorage.getItem('token');
     if (!token) {
       setConnectionError(true);
@@ -17,7 +16,6 @@ export default function Leaderboard() {
       return;
     }
 
-    // Connect to the Go SSE Ticker endpoint
     const sseUrl = `http://localhost:8080/api/contests/${contestId}/leaderboard/stream?token=${token}`;
     const source = new EventSource(sseUrl);
 
@@ -34,11 +32,9 @@ export default function Leaderboard() {
 
     source.onerror = (err) => {
       console.error("SSE Connection Error. Retrying...", err);
-      // EventSource automatically attempts to reconnect, but we can flag the UI
       setConnectionError(true);
     };
 
-    // Clean up the connection when the user leaves the arena page
     return () => {
       source.close();
     };
@@ -53,14 +49,13 @@ export default function Leaderboard() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-3xl font-bold text-white flex items-center gap-3">
           <Trophy className="text-yellow-500" size={32} />
           Live Standings
         </h2>
         
-        {/* Connection Status Indicator */}
         <div className="flex items-center gap-2 font-mono text-sm">
           <span className="text-gray-400">STATUS:</span>
           {connectionError ? (
@@ -77,13 +72,16 @@ export default function Leaderboard() {
       <div className="bg-[#1e1e1e] border border-dark-border rounded-lg shadow-2xl overflow-hidden">
         {/* Table Header */}
         <div className="grid grid-cols-12 gap-4 bg-[#2a2a2a] p-4 border-b border-dark-border text-xs font-bold text-gray-400 uppercase tracking-wider">
-          <div className="col-span-2 text-center">Rank</div>
-          <div className="col-span-6">Participant</div>
+          <div className="col-span-1 text-center">Rank</div>
+          <div className="col-span-5">Participant</div>
           <div className="col-span-2 text-center flex items-center justify-center gap-1">
             <CheckCircle size={14} /> Solves
           </div>
           <div className="col-span-2 text-center flex items-center justify-center gap-1">
             <Clock size={14} /> Penalty
+          </div>
+          <div className="col-span-2 text-center flex items-center justify-center gap-1">
+            Integrity
           </div>
         </div>
 
@@ -104,7 +102,7 @@ export default function Leaderboard() {
                 }`}
               >
                 {/* Rank */}
-                <div className="col-span-2 text-center font-mono text-lg font-bold">
+                <div className="col-span-1 text-center font-mono text-lg font-bold">
                   {player.rank === 1 ? <span className="text-yellow-500">🏆 1</span> :
                    player.rank === 2 ? <span className="text-gray-300">🥈 2</span> :
                    player.rank === 3 ? <span className="text-amber-600">🥉 3</span> :
@@ -112,7 +110,7 @@ export default function Leaderboard() {
                 </div>
 
                 {/* Username */}
-                <div className="col-span-6 font-semibold text-white text-lg truncate">
+                <div className="col-span-5 font-semibold text-white text-lg truncate">
                   {player.username}
                 </div>
 
@@ -125,6 +123,53 @@ export default function Leaderboard() {
                 <div className="col-span-2 text-center font-mono text-gray-400">
                   {player.penalty} <span className="text-xs text-gray-600">min</span>
                 </div>
+
+                {/* Integrity / Alerts Column */}
+                <div className="col-span-2 text-center flex items-center justify-center relative group">
+                  {player.alerts && player.alerts.total > 0 && (
+                    <>
+                      {/* The Warning Icon */}
+                      <AlertTriangle className="text-red-500 cursor-help animate-pulse" size={22} />
+                      
+                      {/* The Hover Tooltip */}
+                      <div className="absolute bottom-full mb-2 hidden group-hover:block w-56 bg-[#2a2a2a] text-gray-300 text-sm rounded border border-red-800/50 shadow-2xl z-50 p-3 transform -translate-x-1/4">
+                        <div className="font-bold text-red-400 border-b border-dark-border mb-2 pb-1 text-left uppercase tracking-wider text-xs">
+                          Telemetry Flags ({player.alerts.total})
+                        </div>
+                        
+                        <div className="space-y-1">
+                          {player.alerts.blur > 0 && (
+                            <div className="flex justify-between">
+                              <span>Tab Switches:</span> 
+                              <span className="font-mono text-red-400">{player.alerts.blur}</span>
+                            </div>
+                          )}
+                          {player.alerts.paste_attempt > 0 && (
+                            <div className="flex justify-between">
+                              <span>Paste Attempts:</span> 
+                              <span className="font-mono text-red-400">{player.alerts.paste_attempt}</span>
+                            </div>
+                          )}
+                          {player.alerts.autotyper_suspected > 0 && (
+                            <div className="flex justify-between">
+                              <span>AutoTyper:</span> 
+                              <span className="font-mono text-red-400">{player.alerts.autotyper_suspected}</span>
+                            </div>
+                          )}
+                          {player.alerts.visibility_spoof_suspected > 0 && (
+                            <div className="flex justify-between">
+                              <span>Visibility Spoof:</span> 
+                              <span className="font-mono text-red-400">{player.alerts.visibility_spoof_suspected}</span>
+                            </div>
+                          )}
+                        </div>
+                        {/* Little triangle pointer for the tooltip */}
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-[#2a2a2a]"></div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
               </div>
             ))
           )}
