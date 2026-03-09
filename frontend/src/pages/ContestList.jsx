@@ -176,9 +176,29 @@ export default function ContestList() {
                   Configure
                 </Link>
               )}
-              <Link to={`/contests/${contest.contest_id}/arena`} className="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500 transition text-sm font-bold shadow-sm text-white flex items-center gap-2">
-                {now < new Date(contest.start_time) ? 'View Details' : 'Enter Arena'}
-              </Link>
+              {/* 👇 STRICT ENTRY GUARD 👇 */}
+              {(() => {
+                const isUpcoming = now < new Date(contest.start_time);
+                const isAuthor = contest.author_id === currentUser?.id;
+                const isAdmin = currentUser?.role === 'admin';
+                
+                // You can only enter early if you are an Admin, or the Professor who created it
+                const canEnter = !isUpcoming || isAdmin || isAuthor;
+
+                if (canEnter) {
+                  return (
+                    <Link to={`/contests/${contest.contest_id}/arena`} className="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500 transition text-sm font-bold shadow-sm text-white flex items-center gap-2">
+                      Enter Arena
+                    </Link>
+                  );
+                } else {
+                  return (
+                    <button disabled className="bg-gray-800 border border-gray-600 px-6 py-2 rounded cursor-not-allowed transition text-sm font-bold shadow-sm text-gray-500 flex items-center gap-2">
+                      🔒 Locked
+                    </button>
+                  );
+                }
+              })()}
             </span>
 
           </div>

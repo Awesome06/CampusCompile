@@ -96,11 +96,20 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 func (ctrl *ContestController) GetContestDetails(c *gin.Context) {
 	contestID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string) // Extract role
 
 	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
 		return
+	}
+
+	// 🔒 API GUARD: PREVENT EARLY ACCESS 🔒
+	if time.Now().Before(contest.StartTime) && userRole != "admin" {
+		if contest.AuthorID == nil || *contest.AuthorID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "The Arena is locked. Please wait until the start time."})
+			return
+		}
 	}
 
 	// Check if this specific user has clicked "Join Arena" yet
@@ -151,6 +160,17 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 
 func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	contestID := c.Param("id")
+	userRole := c.MustGet("role").(string)
+	userID := c.MustGet("user_id").(string)
+
+	// 🔒 API GUARD: PREVENT PROBLEM LEAKS 🔒
+	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
+	if err == nil && time.Now().Before(contest.StartTime) && userRole != "admin" {
+		if contest.AuthorID == nil || *contest.AuthorID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Classified: Problems cannot be viewed before the contest begins."})
+			return
+		}
+	}
 
 	problems, err := ctrl.service.FetchContestProblems(c.Request.Context(), contestID)
 	if err != nil {
