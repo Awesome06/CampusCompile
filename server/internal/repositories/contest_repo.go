@@ -134,9 +134,9 @@ func (r *contestRepo) GetContestByID(ctx context.Context, contestID string) (mod
 	var rulesJSON []byte
 
 	err := r.db.QueryRow(ctx, `
-		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, created_at
+		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
 		FROM contests WHERE contest_id = $1
-	`, contestID).Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.CreatedAt)
+	`, contestID).Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.AuthorID, &c.IsPublic, &c.CreatedAt)
 
 	if err != nil {
 		return c, err

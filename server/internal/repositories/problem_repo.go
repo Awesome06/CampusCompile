@@ -84,7 +84,7 @@ func (r *problemRepo) GetProblems(ctx context.Context) ([]map[string]interface{}
 
 func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error) {
 	var title, description, difficulty string
-	var authorID *string // Null-safe
+	var authorID *string // Null-safe pointer
 	var timeLimit, memoryLimit int
 	var isPublic bool // Fetch the public status
 
@@ -104,7 +104,7 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	problemMeta := map[string]interface{}{
 		"problem_id": problemID, "title": title, "description": description,
 		"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memoryLimit,
-		"author_id": safeAuthorID, "is_public": isPublic, // Added is_public
+		"author_id": safeAuthorID, "is_public": isPublic, // Pass it to React
 	}
 
 	rows, err := r.db.Query(ctx, `
