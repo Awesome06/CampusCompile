@@ -6,28 +6,42 @@ import { CheckCircle, Circle, XCircle } from 'lucide-react';
 export default function ContestProblems() {
   const { id } = useParams();
   const [problems, setProblems] = useState([]);
+  const [contestEndTime, setContestEndTime] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchProblems = async () => {
-      try {
-        const res = await api.get(`/contests/${id}/problems`);
-        setProblems(res.data || []);
-      } catch (err) {
-        console.error("Failed to fetch contest problems", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProblems();
+    // Fetch both the problems and the contest details to get the end time
+    Promise.all([
+      api.get(`/contests/${id}/problems`),
+      api.get(`/contests/${id}`)
+    ])
+    .then(([problemsRes, contestRes]) => {
+      setProblems(problemsRes.data || []);
+      setContestEndTime(new Date(contestRes.data.contest.end_time));
+      setLoading(false);
+    })
+    .catch(err => {
+      console.error("Failed to fetch contest data", err);
+      setLoading(false);
+    });
   }, [id]);
 
   if (loading) {
     return <div className="text-center text-gray-400 font-mono animate-pulse mt-20">Loading problem set...</div>;
   }
 
+  const isContestOver = contestEndTime && new Date() > contestEndTime;
+
   return (
     <div className="bg-[#1e1e1e] border border-dark-border rounded-lg shadow-2xl overflow-hidden">
+      
+      {/* Optional: Show a banner if the contest is over so students know they are in practice mode */}
+      {isContestOver && (
+        <div className="bg-blue-900/20 border-b border-blue-800 text-blue-400 p-3 text-center text-sm font-bold">
+          ℹ️ This contest has ended. Problems are now available for standard practice (upsolving).
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-4 bg-[#2a2a2a] p-4 border-b border-dark-border text-xs font-bold text-gray-400 uppercase tracking-wider">
         <div className="col-span-1 text-center">Status</div>
         <div className="col-span-1 text-center">#</div>
@@ -40,13 +54,18 @@ export default function ContestProblems() {
           <div className="p-8 text-center text-gray-500 italic">The problem set has not been revealed yet.</div>
         ) : (
           problems.map((prob, index) => {
-            // Note: In a fully wired backend, you would left join the user's latest submission status here.
-            // Defaulting to 'unsolved' for the clean UI state.
             const status = prob.user_status || 'unsolved'; 
+            
+            // 👇 THE ROUTING LOGIC 👇
+            // If contest is over -> Go to standard practice arena
+            // If contest is live -> Go to restricted contest arena
+            const targetUrl = isContestOver 
+              ? `/arena/${prob.problem_id}` 
+              : `/contests/${id}/problem/${prob.problem_id}`;
 
             return (
               <Link 
-                to={`/contests/${id}/problem/${prob.problem_id}`} 
+                to={targetUrl} 
                 key={prob.problem_id}
                 className="grid grid-cols-12 gap-4 p-5 items-center transition-colors duration-200 hover:bg-[#252525] group cursor-pointer"
               >
@@ -57,7 +76,7 @@ export default function ContestProblems() {
                    <Circle className="text-gray-600 group-hover:text-gray-400 transition-colors" size={22} />}
                 </div>
                 
-                {/* ICPC Style Index (A, B, C...) */}
+                {/* ICPC Style Index */}
                 <div className="col-span-1 text-center font-mono text-gray-500 font-bold text-lg">
                   {String.fromCharCode(65 + index)} 
                 </div>

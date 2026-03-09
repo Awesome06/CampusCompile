@@ -172,7 +172,7 @@ export default function ContestList() {
                 </Link>
               )}
               
-              <Link to={`/contests/${contest.contest_id}`} className="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500 transition text-sm font-bold shadow-sm text-white flex items-center gap-2">
+              <Link to={`/contests/${contest.contest_id}/arena`} className="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500 transition text-sm font-bold shadow-sm text-white flex items-center gap-2">
                 {now < new Date(contest.start_time) ? 'View Details' : 'Enter Arena'}
               </Link>
             </span>

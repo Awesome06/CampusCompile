@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy your worker scripts into the container
-COPY queue_listener.py runner.py ./
+COPY queue_listener.py runner.py moss_auditor.py ./
 
 # Start the worker with unbuffered output so we can see print statements in real-time
 CMD ["python", "-u", "queue_listener.py"]

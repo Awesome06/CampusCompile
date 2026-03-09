@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -13,12 +13,17 @@ const boilerplates = {
   java: `import java.util.*;\nimport java.io.*;\n\n public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}`
 };
 
-export default function Arena() {
-  const { id } = useParams();
+// 👇 FIXED: Accept isContest prop
+export default function Arena({ isContest }) { 
+  // 👇 FIXED: Grab both potential URL params
+  const { id, problemId } = useParams(); 
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   
-  // State
+  // 👇 FIXED: Resolve the correct IDs based on the routing mode
+  const activeProblemId = isContest ? problemId : id;
+  const activeContestId = isContest ? id : null;
+
   const [problem, setProblem] = useState(null);
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
@@ -26,16 +31,14 @@ export default function Arena() {
   const [leftTab, setLeftTab] = useState('description');
   const [history, setHistory] = useState([]);
   
-  // Console State
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('input');
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
 
-  // --- DRAFT LOGIC ---
-  const draftKey = currentUser ? `draft_${currentUser.id}_${id}` : null;
+  // 👇 FIXED: Sync Drafts strictly to the active problem ID
+  const draftKey = currentUser ? `draft_${currentUser.id}_${activeProblemId}` : null;
 
-  // 1. Load Draft on Mount
   useEffect(() => {
     if (draftKey) {
       const savedDraft = localStorage.getItem(draftKey);
@@ -50,37 +53,33 @@ export default function Arena() {
         }
       }
     }
-    // Fallback to boilerplate if no draft exists
     setCode(boilerplates['cpp']);
-  }, [id, draftKey]);
+  }, [activeProblemId, draftKey]); // Depend on activeProblemId
 
-  // 2. Save Draft on Change (Debounced)
   useEffect(() => {
     if (!draftKey || !code) return;
-
-    // Wait 1 second after the user stops typing before saving to localStorage
     const timer = setTimeout(() => {
-      // Don't save if they haven't modified the boilerplate
       if (code !== boilerplates[language]) {
          localStorage.setItem(draftKey, JSON.stringify({ language, code }));
       }
     }, 1000); 
-
     return () => clearTimeout(timer);
   }, [code, language, draftKey]);
 
   useEffect(() => {
-    api.get(`/problems/${id}`)
+    // 👇 FIXED: Fetch using activeProblemId
+    api.get(`/problems/${activeProblemId}`)
       .then(res => setProblem(res.data))
       .catch(err => console.error("Could not fetch problem details", err));
     fetchHistory();
-  }, [id]);
+  }, [activeProblemId]); // Depend on activeProblemId
 
   const canEdit = currentUser && problem && (currentUser.role === 'admin' || (currentUser.role === 'professor' && currentUser.id === problem.author_id));
 
   const fetchHistory = async () => {
     try {
-      const res = await api.get(`/submissions/history/${id}`);
+      // 👇 FIXED: Fetch using activeProblemId
+      const res = await api.get(`/submissions/history/${activeProblemId}`);
       setHistory(res.data || []);
     } catch (err) {
       console.error("Could not fetch history:", err);
@@ -91,9 +90,14 @@ export default function Arena() {
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     try {
-      const response = await api.post('/submit', { problem_id: id, language, source_code: code });
+      // 👇 FIXED: Pass the active IDs properly
+      const response = await api.post('/submit', { 
+        problem_id: activeProblemId, 
+        contest_id: activeContestId, 
+        language, 
+        source_code: code 
+      });
       
-      // 👇 NEW: Start SSE Stream
       const token = localStorage.getItem('token');
       const sse = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
       
@@ -104,7 +108,6 @@ export default function Arena() {
         if (status === 'Running') {
           setSubmitStatus('Running... ⚙️');
         } else {
-          // Terminal state reached
           setSubmitStatus(status);
           fetchHistory();
           
@@ -116,14 +119,9 @@ export default function Arena() {
             setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
             setActiveTab('output');
             setIsConsoleOpen(true);
-            
-            // 3. Clear Draft on Accepted Answer
-            if (draftKey) {
-              localStorage.removeItem(draftKey);
-            }
+            if (draftKey) localStorage.removeItem(draftKey);
           }
-          
-          sse.close(); // Close connection
+          sse.close(); 
         }
       };
 
@@ -144,18 +142,16 @@ export default function Arena() {
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
       
-      // 👇 NEW: Start SSE Stream for Custom Run
       const token = localStorage.getItem('token');
       const sse = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
       
       sse.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        
         if (data.status === 'Running') {
           setConsoleOutput('Running... ⚙️');
         } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
           setConsoleOutput(data.output || data.message || "Program finished with no output.");
-          sse.close(); // Close connection
+          sse.close(); 
         }
       };
 
@@ -173,7 +169,6 @@ export default function Arena() {
 
   return (
     <div className="flex h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden"> 
-      {/* LEFT PANE */}
       <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
         <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
           <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('description')}>Description</button>
@@ -188,12 +183,12 @@ export default function Arena() {
         </div>
       </div>
 
-      {/* RIGHT PANE */}
       <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border relative">
+        {/* 👇 FIXED: Passing isContest and activeContestId strictly down to the editor */}
         <CodeEditor 
           code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
           boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
-          isContest={isContest} contestId={id}
+          isContest={isContest} contestId={activeContestId}
         />
         <ExecutionConsole 
           isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}

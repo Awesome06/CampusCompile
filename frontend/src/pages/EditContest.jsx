@@ -31,7 +31,12 @@ export default function EditContest() {
   // Helper to format ISO date strings for <input type="datetime-local">
   const formatForInput = (isoString) => {
     if (!isoString) return '';
-    return new Date(isoString).toISOString().slice(0, 16);
+    try {
+      return new Date(isoString).toISOString().slice(0, 16);
+    } catch (e) {
+      console.warn("Invalid date format received:", isoString);
+      return ''; // Fallback gracefully instead of crashing the page
+    }
   };
 
   useEffect(() => {
@@ -228,7 +233,7 @@ const handleSubmit = async () => {
                   <label className="block text-gray-400 text-sm font-bold mb-2">{item.label}</label>
                   <input 
                     type="text" 
-                    defaultValue={(formData.access_rules[item.field] || []).join(', ')} 
+                    defaultValue={((formData.access_rules || {})[item.field] || []).join(', ')}
                     onChange={(e) => handleArrayChange(item.field, e.target.value)} 
                     className="w-full p-3 rounded bg-dark-surface border border-dark-border text-white focus:border-blue-500 outline-none font-mono text-sm" 
                   />

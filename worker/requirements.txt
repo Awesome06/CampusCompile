@@ -1,6 +1,6 @@
 redis
 docker
-psycopg2
+psycopg2-binary
 python-dotenv
 boto3
 mosspy==1.0.9
