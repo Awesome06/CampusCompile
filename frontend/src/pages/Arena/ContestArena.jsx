@@ -13,17 +13,12 @@ const boilerplates = {
   java: `import java.util.*;\nimport java.io.*;\n\n public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}`
 };
 
-// 👇 FIXED: Accept isContest prop
-export default function Arena({ isContest }) { 
-  // 👇 FIXED: Grab both potential URL params
-  const { id, problemId } = useParams(); 
+export default function ContestArena() {
+  // Extract both IDs specifically for the contest mode
+  const { id: contestId, problemId } = useParams(); 
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   
-  // 👇 FIXED: Resolve the correct IDs based on the routing mode
-  const activeProblemId = isContest ? problemId : id;
-  const activeContestId = isContest ? id : null;
-
   const [problem, setProblem] = useState(null);
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
@@ -36,8 +31,8 @@ export default function Arena({ isContest }) {
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
 
-  // 👇 FIXED: Sync Drafts strictly to the active problem ID
-  const draftKey = currentUser ? `draft_${currentUser.id}_${activeProblemId}` : null;
+  // Draft tied strictly to the problem within this specific contest
+  const draftKey = currentUser ? `draft_${currentUser.id}_${problemId}` : null;
 
   useEffect(() => {
     if (draftKey) {
@@ -54,7 +49,7 @@ export default function Arena({ isContest }) {
       }
     }
     setCode(boilerplates['cpp']);
-  }, [activeProblemId, draftKey]); // Depend on activeProblemId
+  }, [problemId, draftKey]);
 
   useEffect(() => {
     if (!draftKey || !code) return;
@@ -67,19 +62,15 @@ export default function Arena({ isContest }) {
   }, [code, language, draftKey]);
 
   useEffect(() => {
-    // 👇 FIXED: Fetch using activeProblemId
-    api.get(`/problems/${activeProblemId}`)
+    api.get(`/problems/${problemId}`)
       .then(res => setProblem(res.data))
       .catch(err => console.error("Could not fetch problem details", err));
     fetchHistory();
-  }, [activeProblemId]); // Depend on activeProblemId
-
-  const canEdit = currentUser && problem && (currentUser.role === 'admin' || (currentUser.role === 'professor' && currentUser.id === problem.author_id));
+  }, [problemId]);
 
   const fetchHistory = async () => {
     try {
-      // 👇 FIXED: Fetch using activeProblemId
-      const res = await api.get(`/submissions/history/${activeProblemId}`);
+      const res = await api.get(`/submissions/history/${problemId}`);
       setHistory(res.data || []);
     } catch (err) {
       console.error("Could not fetch history:", err);
@@ -90,10 +81,10 @@ export default function Arena({ isContest }) {
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     try {
-      // 👇 FIXED: Pass the active IDs properly
+      // Contest Submission strictly includes the contest_id
       const response = await api.post('/submit', { 
-        problem_id: activeProblemId, 
-        contest_id: activeContestId, 
+        problem_id: problemId, 
+        contest_id: contestId, 
         language, 
         source_code: code 
       });
@@ -125,11 +116,7 @@ export default function Arena({ isContest }) {
         }
       };
 
-      sse.onerror = () => {
-        console.error("SSE connection lost.");
-        sse.close();
-      };
-
+      sse.onerror = () => { sse.close(); };
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
     }
@@ -141,7 +128,6 @@ export default function Arena({ isContest }) {
     setIsConsoleOpen(true);
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
-      
       const token = localStorage.getItem('token');
       const sse = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
       
@@ -159,43 +145,55 @@ export default function Arena({ isContest }) {
         setConsoleOutput('Error streaming execution status.');
         sse.close();
       };
-
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
     }
   };
 
-  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Arena...</div>;
+  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Contest Arena...</div>;
 
   return (
-    <div className="flex h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden"> 
-      <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
-        <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
-          <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('description')}>Description</button>
-          <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'history' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('history')}>Submissions</button>
-        </div>
-        <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
-          {leftTab === 'history' ? (
-            <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} />
-          ) : (
-            <ProblemDescription problem={problem} canEdit={canEdit} navigate={navigate} submitStatus={submitStatus} />
-          )}
-        </div>
+    <div className="flex flex-col h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden">
+      
+      {/* Optional: Add a top banner allowing them to return to the contest hub easily */}
+      <div className="bg-[#1e1e1e] border-b border-dark-border px-4 py-1.5 flex justify-between items-center text-xs">
+        <span className="text-gray-400 font-mono tracking-wider flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+          LIVE CONTEST ENVIRONMENT
+        </span>
+        <button onClick={() => navigate(`/contests/${contestId}/arena`)} className="text-blue-400 hover:text-blue-300 font-bold transition-colors">
+          ← Return to Problems List
+        </button>
       </div>
 
-      <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border relative">
-        {/* 👇 FIXED: Passing isContest and activeContestId strictly down to the editor */}
-        <CodeEditor 
-          code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
-          boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
-          isContest={isContest} contestId={activeContestId}
-        />
-        <ExecutionConsole 
-          isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}
-          activeTab={activeTab} setActiveTab={setActiveTab}
-          customInput={customInput} setCustomInput={setCustomInput}
-          consoleOutput={consoleOutput}
-        />
+      <div className="flex h-full w-full relative overflow-hidden"> 
+        <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
+          <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
+            <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('description')}>Description</button>
+            <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'history' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('history')}>Submissions</button>
+          </div>
+          <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
+            {leftTab === 'history' ? (
+              <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} />
+            ) : (
+              <ProblemDescription problem={problem} canEdit={false} navigate={navigate} submitStatus={submitStatus} />
+            )}
+          </div>
+        </div>
+
+        <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border relative">
+          <CodeEditor 
+            code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
+            boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
+            isContest={true} contestId={contestId} 
+          />
+          <ExecutionConsole 
+            isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}
+            activeTab={activeTab} setActiveTab={setActiveTab}
+            customInput={customInput} setCustomInput={setCustomInput}
+            consoleOutput={consoleOutput}
+          />
+        </div>
       </div>
     </div>
   );
