@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -134,5 +135,6 @@ func main() {
 	}
 	// 5. START SERVER
 	fmt.Println("[*] API Server running on http://localhost:8080")
+	go contestService.StartAuditDaemon(context.Background())
 	router.Run(":8080")
 }

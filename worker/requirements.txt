@@ -2,10 +2,7 @@ redis
 docker
 psycopg2
 python-dotenv
-json
-os
-uuid
-shutil
-itertools
 boto3
-typing
+mosspy==1.0.9
+beautifulsoup4==4.12.3
+requests==2.31.0

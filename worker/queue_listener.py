@@ -5,6 +5,7 @@ import os
 from datetime import timezone
 from psycopg2.extras import RealDictCursor
 from runner import grade_submission
+from moss_auditor import run_moss_audit
 
 # --- CONFIGURATION ---
 DB_CONFIG = {
@@ -150,7 +151,17 @@ def start_worker():
         if message:
             submission_data = json.loads(message)
             
-            if submission_data.get('is_custom'):
+            # 1. Handle Faculty Audits
+            if submission_data.get('job_type') == 'moss_audit':
+                contest_id = submission_data.get('contest_id')
+                problem_id = submission_data.get('problem_id')
+                print(f"\n[+] Picked up MOSS Audit Job for Problem: {problem_id}")
+                
+                # Run the auditor in the background
+                run_moss_audit(contest_id)
+                
+            # 2. Handle Custom Execution Runs
+            elif submission_data.get('is_custom'):
                 run_id = submission_data.get('run_id')
                 print(f"\n[+] Processing Custom Run: {run_id}")
 
@@ -184,6 +195,7 @@ def start_worker():
                 redis_client.publish(f"run_updates:{run_id}", json.dumps({
                     "status": "Completed", "output": output_to_show, "verdict": result['verdict']
                 }))
+           # 3. Handle Standard Grading Submissions
             else:
                 sub_id = submission_data.get('submission_id')
                 if sub_id:

@@ -130,7 +130,7 @@ func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
 func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
 
-	leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
+	auditStatus, leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load leaderboard"})
 		return
@@ -142,7 +142,11 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 			delete(entry, "alerts")
 		}
 	}
-	c.JSON(http.StatusOK, leaderboard)
+
+	c.JSON(http.StatusOK, gin.H{
+		"audit_status": auditStatus,
+		"leaderboard":  leaderboard,
+	})
 }
 
 func (ctrl *ContestController) GetContestProblems(c *gin.Context) {

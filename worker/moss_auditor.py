@@ -1,0 +1,191 @@
+import os
+import shutil
+import mosspy
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import boto3
+import requests
+from bs4 import BeautifulSoup
+from typing import List, Dict
+import time
+import redis
+
+# --- CONFIGURATION ---
+DB_CONFIG = {
+    "dbname": "CampusCompile_db",
+    "user": "campus_app",            
+    "password": "app", 
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": "5432"
+}
+
+s3_client = boto3.client(
+    's3',
+    endpoint_url=os.getenv('S3_ENDPOINT', 'http://minio:9000'),
+    aws_access_key_id=os.getenv('S3_ACCESS_KEY', 'campus_admin'),
+    aws_secret_access_key=os.getenv('S3_SECRET_KEY', 'campus_password'),
+    region_name='us-east-1' 
+)
+BUCKET_NAME = "campus-testcases"
+
+# You must register for a MOSS ID by emailing: moss@moss.stanford.edu
+# For testing, you can use a placeholder, but it will fail the network request without a real ID.
+MOSS_USER_ID = os.getenv("MOSS_USER_ID", "YOUR_MOSS_ID_HERE") 
+
+# Map CampusCompile language tags to MOSS language tags
+LANGUAGE_MAP = {
+    'cpp': 'cc',
+    'java': 'java',
+    'python': 'python'
+}
+
+def get_db_connection():
+    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
+
+def fetch_from_s3(s3_key: str, destination_path: str):
+    try:
+        s3_client.download_file(BUCKET_NAME, s3_key, destination_path)
+    except Exception as e:
+        print(f"[!] Failed to fetch {s3_key} from S3: {e}")
+
+def parse_moss_report(moss_url: str) -> List[Dict]:
+    """Scrapes the MOSS HTML report to extract flagged user pairs and their similarity scores."""
+    parsed_results = []
+    try:
+        response = requests.get(moss_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # MOSS results are strictly in an HTML table
+        table = soup.find('table')
+        if not table:
+            return parsed_results
+
+        rows = table.find_all('tr')[1:] # Skip header
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) >= 2:
+                # MOSS formats links like: "user_id_1.cpp (85%)"
+                link1 = cols[0].find('a').text.strip()
+                link2 = cols[1].find('a').text.strip()
+                
+                # Extract User IDs
+                user1 = link1.split('.')[0]
+                user2 = link2.split('.')[0]
+                
+                # Extract Percentages
+                score1 = int(link1.split('(')[1].replace('%)', ''))
+                score2 = int(link2.split('(')[1].replace('%)', ''))
+                
+                # Use the highest similarity score between the pair
+                max_score = max(score1, score2)
+                
+                # Only flag pairs with > 40% structural similarity to reduce noise
+                if max_score > 40:
+                    parsed_results.append({
+                        "user_1": user1,
+                        "user_2": user2,
+                        "score": max_score
+                    })
+    except Exception as e:
+        print(f"[!] Failed to parse MOSS HTML: {e}")
+        
+    return parsed_results
+
+def run_moss_audit(contest_id: str):
+    print(f"\n[*] Starting Automated MOSS Audit for Contest: {contest_id}")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Find all unique problems solved in this contest
+        cursor.execute("SELECT DISTINCT problem_id FROM submissions WHERE contest_id = %s", (contest_id,))
+        problems = [row['problem_id'] for row in cursor.fetchall()]
+
+        for prob_id in problems:
+            # Fetch latest submissions for THIS problem
+            cursor.execute("""
+                SELECT DISTINCT ON (user_id) user_id, language, source_code_s3_key
+                FROM submissions
+                WHERE contest_id = %s AND problem_id = %s AND source_code_s3_key IS NOT NULL
+                ORDER BY user_id, submitted_at DESC
+            """, (contest_id, prob_id))
+            
+            submissions = cursor.fetchall()
+            
+            if not submissions:
+                continue
+
+            # 2. Group submissions by language (MOSS cannot cross-compare Python and C++)
+            grouped_subs = {'cpp': [], 'java': [], 'python': []}
+            for sub in submissions:
+                lang = sub['language']
+                if lang in grouped_subs:
+                    grouped_subs[lang].append(sub)
+
+            # 3. Process each language batch
+            for lang, subs in grouped_subs.items():
+                if len(subs) < 2:
+                    continue # Need at least 2 submissions to compare
+                    
+                print(f"[*] Analyzing {len(subs)} {lang.upper()} submissions...")
+                
+                # Create a temporary directory for this batch
+                batch_dir = f"/tmp/moss_{contest_id}_{prob_id}_{lang}"
+                os.makedirs(batch_dir, exist_ok=True)
+                
+                moss_lang = LANGUAGE_MAP[lang]
+                m = mosspy.Moss(MOSS_USER_ID, moss_lang)
+                
+                # Download files from MinIO and add to MOSS
+                for sub in subs:
+                    user_id = sub['user_id']
+                    s3_key = sub['source_code_s3_key']
+                    
+                    # Name the file exactly as the user_id so MOSS returns it in the report
+                    file_ext = "cpp" if lang == "cpp" else "py" if lang == "python" else "java"
+                    local_path = os.path.join(batch_dir, f"{user_id}.{file_ext}")
+                    
+                    fetch_from_s3(s3_key, local_path)
+                    m.addFile(local_path)
+                    
+                # Submit to Stanford
+                print("[*] Uploading to Stanford MOSS servers (this may take a minute)...")
+                url = m.send()
+                print(f"[+] MOSS Report URL: {url}")
+                
+                # Scrape the results
+                flagged_pairs = parse_moss_report(url)
+                
+                # 4. Save flagged pairs to the database for faculty review
+                for pair in flagged_pairs:
+                    cursor.execute("""
+                        INSERT INTO plagiarism_reports (contest_id, problem_id, user_1_id, user_2_id, similarity_score, moss_url)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (contest_id, prob_id, pair['user_1'], pair['user_2'], pair['score'], url))
+                    
+                conn.commit()
+                print(f"[+] Logged {len(flagged_pairs)} flagged pairs to the database.")
+                
+                # Cleanup temp files
+                shutil.rmtree(batch_dir, ignore_errors=True)
+
+            # 🔥 RATE LIMIT PROTECTOR 🔥
+            print("[*] Sleeping for 20 seconds to respect Stanford MOSS rate limits...")
+            time.sleep(20)
+
+        # Audit is completely finished. Update PostgreSQL.
+        cursor.execute("UPDATE contests SET moss_audit_status = 'completed' WHERE contest_id = %s", (contest_id,))
+        conn.commit()
+        print(f"[+] Contest {contest_id} audit finalized and locked.")
+
+        # Ping Redis to force a final Leaderboard UI refresh
+        rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
+        rc.set(f"contest:{contest_id}:is_dirty", "true")
+
+    except Exception as e:
+        print(f"[!] MOSS Audit crashed: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()

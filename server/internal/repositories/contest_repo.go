@@ -316,16 +316,36 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 		return map[string]models.TelemetryAlerts{}, nil
 	}
 
+	// This query counts both browser telemetry and instances where the user was flagged in a MOSS pair
 	rows, err := r.db.Query(ctx, `
-		SELECT user_id,
-			COUNT(*) as total,
-			COUNT(CASE WHEN event_type = 'blur' THEN 1 END) as blur,
-			COUNT(CASE WHEN event_type = 'paste_attempt' THEN 1 END) as paste_attempt,
-			COUNT(CASE WHEN event_type = 'autotyper_suspected' THEN 1 END) as autotyper,
-			COUNT(CASE WHEN event_type = 'visibility_spoof_suspected' THEN 1 END) as spoof
-		FROM contest_telemetry
-		WHERE contest_id = $1 AND user_id = ANY($2)
-		GROUP BY user_id
+		WITH TelemetryCounts AS (
+			SELECT user_id,
+				COUNT(*) as total_telemetry,
+				COUNT(CASE WHEN event_type = 'blur' THEN 1 END) as blur,
+				COUNT(CASE WHEN event_type = 'paste_attempt' THEN 1 END) as paste_attempt,
+				COUNT(CASE WHEN event_type = 'autotyper_suspected' THEN 1 END) as autotyper,
+				COUNT(CASE WHEN event_type = 'visibility_spoof_suspected' THEN 1 END) as spoof
+			FROM contest_telemetry
+			WHERE contest_id = $1 AND user_id = ANY($2)
+			GROUP BY user_id
+		),
+		PlagiarismCounts AS (
+			SELECT u.user_id, COUNT(p.report_id) as plagiarism
+			FROM unnest($2::uuid[]) AS u(user_id)
+			LEFT JOIN plagiarism_reports p ON (p.user_1_id = u.user_id OR p.user_2_id = u.user_id) AND p.contest_id = $1
+			GROUP BY u.user_id
+		)
+		SELECT 
+			u.user_id, 
+			COALESCE(t.total_telemetry, 0) + COALESCE(p.plagiarism, 0) as total,
+			COALESCE(t.blur, 0),
+			COALESCE(t.paste_attempt, 0),
+			COALESCE(t.autotyper, 0),
+			COALESCE(t.spoof, 0),
+			COALESCE(p.plagiarism, 0)
+		FROM unnest($2::uuid[]) AS u(user_id)
+		LEFT JOIN TelemetryCounts t ON u.user_id = t.user_id
+		LEFT JOIN PlagiarismCounts p ON u.user_id = p.user_id
 	`, contestID, userIDs)
 
 	if err != nil {
@@ -337,7 +357,7 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 	for rows.Next() {
 		var userID string
 		var alerts models.TelemetryAlerts
-		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected); err == nil {
+		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected, &alerts.Plagiarism); err == nil {
 			alertsMap[userID] = alerts
 		}
 	}
