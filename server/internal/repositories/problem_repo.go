@@ -83,20 +83,28 @@ func (r *problemRepo) GetProblems(ctx context.Context) ([]map[string]interface{}
 }
 
 func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error) {
-	var title, description, difficulty, authorID string
+	var title, description, difficulty string
+	var authorID *string // Null-safe
 	var timeLimit, memoryLimit int
+	var isPublic bool // Fetch the public status
 
 	err := r.db.QueryRow(ctx, `
-		SELECT title, description, difficulty, time_limit_ms, memory_limit_kb, author_id 
+		SELECT title, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public 
 		FROM problems WHERE problem_id = $1
-	`, problemID).Scan(&title, &description, &difficulty, &timeLimit, &memoryLimit, &authorID)
+	`, problemID).Scan(&title, &description, &difficulty, &timeLimit, &memoryLimit, &authorID, &isPublic)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	var safeAuthorID string
+	if authorID != nil {
+		safeAuthorID = *authorID
+	}
+
 	problemMeta := map[string]interface{}{
 		"problem_id": problemID, "title": title, "description": description,
-		"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memoryLimit, "author_id": authorID,
+		"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memoryLimit,
+		"author_id": safeAuthorID, "is_public": isPublic, // Added is_public
 	}
 
 	rows, err := r.db.Query(ctx, `

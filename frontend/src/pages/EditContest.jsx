@@ -310,7 +310,7 @@ const handleSubmit = async () => {
                     <Button onClick={() => setStep(step - 1)} variant="secondary">Back</Button>
                   ) : <div></div>}
 
-                  {userRole === 'admin' && (
+                  {(userRole === 'admin' || (userRole === 'professor' && !formData.is_public)) && (
                     <Button onClick={handleDelete} variant="danger" disabled={saving} className="bg-red-900/50 border border-red-600 text-red-500 hover:bg-red-600 hover:text-white transition">
                       Delete Arena
                     </Button>

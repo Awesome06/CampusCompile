@@ -123,14 +123,16 @@ func main() {
 			// Faculty Contest Management
 			faculty.POST("/contests", contestController.CreateContest)
 			faculty.PUT("/contests/:id", contestController.UpdateContest)
+
+			faculty.DELETE("/problems/:id", problemController.DeleteProblem)
+			faculty.DELETE("/contests/:id", contestController.DeleteContest)
 		}
 
 		// --- ADMIN ONLY ROUTES ---
 		adminGroup := protected.Group("")
 		adminGroup.Use(middleware.RequireRole("admin"))
 		{
-			adminGroup.DELETE("/problems/:id", problemController.DeleteProblem)
-			adminGroup.DELETE("/contests/:id", contestController.DeleteContest)
+
 		}
 	}
 	// 5. START SERVER

@@ -248,15 +248,28 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 	contestID := c.Param("id")
 	userRole := c.MustGet("role").(string)
+	userID := c.MustGet("user_id").(string) // Extract userID
 
-	// Fetch the contest to check its timing
+	// Fetch the contest to check its timing and ownership
 	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
 		return
 	}
 
-	// 🔒 NEW: TIME LOCK CHECK 🔒
+	// 🔒 PROFESSOR DELETION RULES 🔒
+	if userRole == "professor" {
+		if existingContest.AuthorID == nil || *existingContest.AuthorID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this contest."})
+			return
+		}
+		if existingContest.IsPublic {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: Professors cannot delete published contests. Please contact an Administrator."})
+			return
+		}
+	}
+
+	// 🔒 TIME LOCK CHECK (Kept from Phase 3) 🔒
 	if time.Now().After(existingContest.StartTime) && userRole != "admin" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Time Lock Active: You cannot delete a contest that has already started."})
 		return
