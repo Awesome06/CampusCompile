@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
-import { AuthProvider, useAuth } from './context/AuthContext'; // 👈 Imported Context
+import { AuthProvider, useAuth } from './context/AuthContext'; 
 
 import Navbar from './components/Navbar';
 
@@ -17,10 +17,15 @@ import Onboarding from './pages/Onboarding';
 import ContestList from './pages/ContestList';
 import EditContest from './pages/EditContest';
 import AddContest from './pages/AddContest';
+import Leaderboard from './pages/Leaderboard';
+
+// Phase 4 Contest Redesign Imports
+import ContestArenaLayout from './pages/Contest/ContestArenaLayout';
+import ContestProblems from './pages/Contest/ContestProblems';
 
 // The Bouncer
 const ProtectedRoute = ({ children, requireOnboarding = true }) => {
-  const { token, isLoading } = useAuth(); // 👈 Now pulling from Context
+  const { token, isLoading } = useAuth(); 
 
   // Prevent redirect flickering while context initializes
   if (isLoading) {
@@ -52,7 +57,6 @@ const ProtectedRoute = ({ children, requireOnboarding = true }) => {
 
 function App() {
   return (
-    // 👇 Wrap the entire app in the AuthProvider
     <AuthProvider>
       <BrowserRouter>
         <div className="min-h-screen bg-dark-bg text-dark-text font-sans">
@@ -72,8 +76,8 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* These strictly require the user to be onboarded */}
-            <Route path="/arena/:id" element={<ProtectedRoute><Arena /></ProtectedRoute>} />
+            {/* STANDARD PRACTICE ARENA (No Anti-Cheat, No Draft Wipes) */}
+            <Route path="/arena/:id" element={<ProtectedRoute><Arena isContest={false} /></ProtectedRoute>} />
 
             <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
             <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
@@ -83,6 +87,22 @@ function App() {
             <Route path="/add-contest" element={<ProtectedRoute><AddContest /></ProtectedRoute>} />
             <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
             
+            {/* =========================================
+                CONTEST HUB & RESTRICTED ARENA
+                ========================================= */}
+                
+            {/* The Hub (Problems List & Live Leaderboard) */}
+            <Route path="/contests/:id/arena" element={<ProtectedRoute><ContestArenaLayout /></ProtectedRoute>}>
+              <Route index element={<ContestProblems />} />
+              <Route path="leaderboard" element={<Leaderboard />} />
+            </Route>
+
+            {/* The Restricted Editor (Anti-Cheat Traps ARMED) */}
+            <Route 
+              path="/contests/:id/problem/:problemId" 
+              element={<ProtectedRoute><Arena isContest={true} /></ProtectedRoute>} 
+            />
+
           </Routes>
           
         </div>
