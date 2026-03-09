@@ -165,13 +165,12 @@ export default function ContestList() {
 
             {/* Actions */}
             <span className="w-1/4 text-right flex justify-end gap-2">
-               {/* 👇 UPDATED: Added Time Lock check here */}
-               {isElevated && viewMode === 'faculty' && now < new Date(contest.start_time) && (
+              {/* Admins can ALWAYS configure. Professors can only configure their own upcoming contests. */}
+              {(currentUser?.role === 'admin' || (contest.author_id === currentUser?.id && now < new Date(contest.start_time))) && (
                 <Link to={`/edit-contest/${contest.contest_id}`} className="bg-[#2a2a2a] px-4 py-2 rounded border border-dark-border hover:bg-gray-700 transition text-sm font-bold text-gray-300 shadow-sm">
                   Configure
                 </Link>
               )}
-              
               <Link to={`/contests/${contest.contest_id}/arena`} className="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500 transition text-sm font-bold shadow-sm text-white flex items-center gap-2">
                 {now < new Date(contest.start_time) ? 'View Details' : 'Enter Arena'}
               </Link>

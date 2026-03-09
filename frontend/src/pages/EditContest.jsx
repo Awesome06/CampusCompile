@@ -50,7 +50,17 @@ export default function EditContest() {
       const contest = contestRes.data.contest;
       const assignedProblems = assignedProbsRes.data || [];
       
-      setAvailableProblems(availableProbsRes.data || []);
+      let available = availableProbsRes.data || [];
+      
+      // Guarantee that the contest's existing assigned problems are always visible in the checklist
+      // This is crucial for Admins editing a contest created by another professor
+      assignedProblems.forEach(ap => {
+          if (!available.find(av => av.problem_id === ap.problem_id)) {
+              available.push(ap);
+          }
+      });
+
+      setAvailableProblems(available);
       
       setFormData({
         title: contest.title || '',
@@ -59,7 +69,6 @@ export default function EditContest() {
         end_time: formatForInput(contest.end_time),
         is_public: contest.is_public || false,
         access_rules: contest.access_rules || defaultAccessRules,
-        // Map the backend structure to our frontend checklist structure
         problems: assignedProblems.map(p => ({
           problem_id: p.problem_id,
           points_value: p.points_value
