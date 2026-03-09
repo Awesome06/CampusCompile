@@ -165,8 +165,13 @@ export default function ContestList() {
 
             {/* Actions */}
             <span className="w-1/4 text-right flex justify-end gap-2">
-              {/* Admins can ALWAYS configure. Professors can only configure their own upcoming contests. */}
-              {(currentUser?.role === 'admin' || (contest.author_id === currentUser?.id && now < new Date(contest.start_time))) && (
+              {/* 1. Admins can configure ANY contest at ANY time */}
+              {/* 2. Professors can ONLY configure their OWN contests BEFORE the start time */}
+              {/* 3. Students will NEVER pass this check */}
+              {(
+                currentUser?.role === 'admin' || 
+                (currentUser?.role === 'professor' && contest.author_id === currentUser?.id && now < new Date(contest.start_time))
+              ) && (
                 <Link to={`/edit-contest/${contest.contest_id}`} className="bg-[#2a2a2a] px-4 py-2 rounded border border-dark-border hover:bg-gray-700 transition text-sm font-bold text-gray-300 shadow-sm">
                   Configure
                 </Link>
