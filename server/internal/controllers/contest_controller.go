@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,7 +26,13 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
 
 	// 1. Subscribe to the contest's specific Redis broadcast channel
-	channelName := fmt.Sprintf("contest:leaderboard_updates:%s", contestID)
+	userRole := c.MustGet("role").(string)
+	channelSuffix := "student"
+	if userRole == "admin" || userRole == "professor" {
+		channelSuffix = "faculty"
+	}
+
+	channelName := fmt.Sprintf("contest:leaderboard_updates:%s:%s", channelSuffix, contestID)
 	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), channelName)
 	defer cleanup()
 
@@ -129,6 +136,12 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 		return
 	}
 
+	userRole := c.MustGet("role").(string)
+	if userRole == "student" {
+		for _, entry := range leaderboard {
+			delete(entry, "alerts")
+		}
+	}
 	c.JSON(http.StatusOK, leaderboard)
 }
 
@@ -252,6 +265,22 @@ func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Arena permanently destroyed"})
+}
+
+func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
+	contestID := c.Param("id")
+	userID := c.MustGet("user_id").(string)
+
+	var payload models.TelemetryPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload format"})
+		return
+	}
+
+	// Fire and forget; don't block the student's browser waiting for a DB write
+	go ctrl.service.LogTelemetry(context.Background(), contestID, userID, payload)
+
+	c.JSON(http.StatusOK, gin.H{"status": "logged"})
 }
 
 func getString(c *gin.Context, key string) string {

@@ -166,3 +166,20 @@ type SubmissionHistoryEntry struct {
 	SubmittedAt time.Time `json:"submitted_at"`
 	ContestID   *string   `json:"contest_id,omitempty"`
 }
+
+// ==========================================
+// 6. ANTI-CHEAT & TELEMETRY
+// ==========================================
+
+type TelemetryPayload struct {
+	EventType string                 `json:"event_type" binding:"required"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type TelemetryAlerts struct {
+	Total                    int `json:"total"`
+	Blur                     int `json:"blur"`
+	PasteAttempt             int `json:"paste_attempt"`
+	AutotyperSuspected       int `json:"autotyper_suspected"`
+	VisibilitySpoofSuspected int `json:"visibility_spoof_suspected"`
+}

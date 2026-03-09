@@ -26,6 +26,7 @@ type ContestService interface {
 	FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
 	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 	DeleteContest(ctx context.Context, contestID string) error
+	LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error
 }
 
 type contestService struct {
@@ -129,32 +130,44 @@ func (s *contestService) FetchCurrentLeaderboard(ctx context.Context, contestID 
 }
 
 func (s *contestService) StartLeaderboardTicker(ctx context.Context, contestID string) {
-	// Wake up every 2 seconds
-	ticker := time.NewTicker(2 * time.Second)
+	// Wake up every 10 seconds
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	dirtyKey := fmt.Sprintf("contest:%s:is_dirty", contestID)
-	updatesChannel := fmt.Sprintf("contest:leaderboard_updates:%s", contestID)
 
 	for {
 		select {
 		case <-ctx.Done():
-			return // Kills the background routine if the server shuts down
+			return
 		case <-ticker.C:
-			// 1. Ask Redis if the Python worker flagged an update
 			isDirty, err := s.redis.Get(ctx, dirtyKey).Bool()
 			if err != nil || !isDirty {
-				continue // Go back to sleep, nothing changed
+				continue
 			}
 
-			// 2. Acknowledge and reset the flag immediately
 			s.redis.Set(ctx, dirtyKey, "false", 0)
 
-			// 3. Fetch the leaderboard, enrich it, and broadcast!
-			leaderboard, err := s.FetchEnrichedLeaderboard(ctx, contestID)
+			leaderboardFull, err := s.FetchEnrichedLeaderboard(ctx, contestID)
 			if err == nil {
-				payload, _ := json.Marshal(leaderboard)
-				s.redis.Publish(ctx, updatesChannel, payload)
+				// 1. Broadcast FULL intelligence to Faculty
+				payloadFull, _ := json.Marshal(leaderboardFull)
+				s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:faculty:%s", contestID), payloadFull)
+
+				// 2. Strip alerts and broadcast CLEAN intelligence to Students
+				var leaderboardStripped []map[string]interface{}
+				for _, entry := range leaderboardFull {
+					strippedEntry := make(map[string]interface{})
+					for k, v := range entry {
+						if k != "alerts" { // Redact the alerts object
+							strippedEntry[k] = v
+						}
+					}
+					leaderboardStripped = append(leaderboardStripped, strippedEntry)
+				}
+
+				payloadStripped, _ := json.Marshal(leaderboardStripped)
+				s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:student:%s", contestID), payloadStripped)
 			}
 		}
 	}
@@ -180,28 +193,30 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 	}
 
 	usernamesMap, _ := s.repo.GetUsernames(ctx, userIDs)
+	alertsMap, _ := s.repo.GetTelemetryAlerts(ctx, contestID, userIDs) // NEW
 
 	var enriched []map[string]interface{}
 	for i, z := range zset {
 		userID := z.Member.(string)
 		score := z.Score
 
-		// Reverse-engineer the ICPC composite float
 		var solves float64
 		if score > 0 {
 			solves = math.Ceil(score)
 		} else {
-			solves = 0 // Handles edge cases or students with 0 points
+			solves = 0
 		}
 
 		penalty := math.Round((solves - score) * 100000.0)
+		userAlerts := alertsMap[userID] // NEW
 
 		enriched = append(enriched, map[string]interface{}{
 			"rank":     i + 1,
 			"user_id":  userID,
-			"username": usernamesMap[userID], // Joined from Postgres
+			"username": usernamesMap[userID],
 			"solves":   int(solves),
 			"penalty":  int(penalty),
+			"alerts":   userAlerts, // NEW: Attach the struct
 		})
 	}
 	return enriched, nil
@@ -236,6 +251,11 @@ func isEligible(rules *models.ContestAccessRules, user models.UserDemographics) 
 // Add the implementation:
 func (s *contestService) DeleteContest(ctx context.Context, contestID string) error {
 	return s.repo.DeleteContest(ctx, contestID)
+}
+
+func (s *contestService) LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error {
+	metadataBytes, _ := json.Marshal(payload.Metadata)
+	return s.repo.LogTelemetry(ctx, contestID, userID, payload.EventType, metadataBytes)
 }
 
 func containsStr(slice []string, val string) bool {

@@ -21,6 +21,8 @@ type ContestRepository interface {
 	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
 	GetAllContests(ctx context.Context) ([]models.Contest, error)
 	DeleteContest(ctx context.Context, contestID string) error
+	LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error
+	GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error)
 }
 
 type contestRepo struct {
@@ -299,4 +301,46 @@ func (r *contestRepo) DeleteContest(ctx context.Context, contestID string) error
 
 	// Commit the transaction
 	return tx.Commit(ctx)
+}
+
+func (r *contestRepo) LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO contest_telemetry (contest_id, user_id, event_type, metadata)
+		VALUES ($1, $2, $3, $4)
+	`, contestID, userID, eventType, metadata)
+	return err
+}
+
+func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error) {
+	if len(userIDs) == 0 {
+		return map[string]models.TelemetryAlerts{}, nil
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT user_id,
+			COUNT(*) as total,
+			COUNT(CASE WHEN event_type = 'blur' THEN 1 END) as blur,
+			COUNT(CASE WHEN event_type = 'paste_attempt' THEN 1 END) as paste_attempt,
+			COUNT(CASE WHEN event_type = 'autotyper_suspected' THEN 1 END) as autotyper,
+			COUNT(CASE WHEN event_type = 'visibility_spoof_suspected' THEN 1 END) as spoof
+		FROM contest_telemetry
+		WHERE contest_id = $1 AND user_id = ANY($2)
+		GROUP BY user_id
+	`, contestID, userIDs)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	alertsMap := make(map[string]models.TelemetryAlerts)
+	for rows.Next() {
+		var userID string
+		var alerts models.TelemetryAlerts
+		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected); err == nil {
+			alertsMap[userID] = alerts
+		}
+	}
+
+	return alertsMap, nil
 }

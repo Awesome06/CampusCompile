@@ -105,6 +105,7 @@ func main() {
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
 			arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
 			arena.GET("/problems", contestController.GetContestProblems)
+			arena.POST("/telemetry", contestController.LogTelemetry)
 		}
 
 		// --- FACULTY & ADMIN ROUTES ---
