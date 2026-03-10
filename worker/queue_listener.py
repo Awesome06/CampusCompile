@@ -2,6 +2,7 @@ import redis
 import json
 import psycopg2
 import os
+import traceback
 from datetime import timezone
 from psycopg2.extras import RealDictCursor
 from runner import grade_submission
@@ -34,11 +35,12 @@ def process_submission(submission_id):
             "status": "Running", "message": "Compiling and executing..."
         }))
 
-        # 👇 MODIFIED: We now fetch user_id, contest_id, submitted_at, and the contest's start_time
+        # 👇 FIX: Calculate 'elapsed_minutes' safely inside PostgreSQL
         cursor.execute("""
             SELECT s.source_code_s3_key, s.language, s.problem_id, s.user_id, s.contest_id, s.submitted_at,
                    p.time_limit_ms, p.memory_limit_kb,
-                   c.start_time as contest_start
+                   c.start_time as contest_start,
+                   EXTRACT(EPOCH FROM (s.submitted_at - c.start_time))/60.0 as elapsed_minutes
             FROM submissions s
             JOIN problems p ON s.problem_id = p.problem_id
             LEFT JOIN contests c ON s.contest_id = c.contest_id
@@ -86,15 +88,13 @@ def process_submission(submission_id):
         )
         conn.commit()
         
-        # 👇 NEW: Phase 3 ICPC Leaderboard Engine
+        # 2. Phase 3 ICPC Leaderboard Engine
         if final_verdict == 'AC' and submission.get('contest_id'):
             contest_id = submission['contest_id']
             user_id = submission['user_id']
             problem_id = submission['problem_id']
             submitted_at = submission['submitted_at']
-            contest_start = submission['contest_start']
 
-            # Check if this user already solved this problem (no extra points for duplicate ACs)
             cursor.execute("""
                 SELECT COUNT(*) as solved 
                 FROM submissions 
@@ -103,7 +103,6 @@ def process_submission(submission_id):
             """, (user_id, problem_id, contest_id, submission_id))
             
             if cursor.fetchone()['solved'] == 0:
-                # Count "Ghost Penalties" (WA, TLE, RE) prior to this AC
                 cursor.execute("""
                     SELECT COUNT(*) as fails 
                     FROM submissions 
@@ -113,21 +112,17 @@ def process_submission(submission_id):
                 """, (user_id, problem_id, contest_id, submitted_at))
                 fails = cursor.fetchone()['fails']
 
-                # Calculate ICPC Penalty Minutes
-                elapsed_minutes = max(0, (submitted_at - contest_start).total_seconds() / 60.0)
+                # 👇 FIX: Extract pre-calculated safe float from DB query
+                elapsed_minutes = max(0, float(submission.get('elapsed_minutes') or 0))
                 penalty_minutes = elapsed_minutes + (fails * 20)
 
-                # Redis Math: $1 - (\text{Penalty} / 100000.0)$
                 score_increment = 1.0 - (penalty_minutes / 100000.0)
 
-                # Atomically increment their score in the ZSET
                 redis_client.zincrby(f"contest:leaderboard:{contest_id}", score_increment, user_id)
-                
-                # Flag the contest as dirty so the Go server broadcasts the update
                 redis_client.set(f"contest:{contest_id}:is_dirty", "true")
                 print(f"[+] ICPC Score Updated for {user_id}. (+1 Solve, {penalty_minutes:.2f} Penalty Mins)")
 
-        # 2. Publish Final Verdict to Redis for the specific student's Execution Console
+        # 3. Publish Final Verdict to Redis
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": final_verdict, "message": final_message
         }))
@@ -135,10 +130,14 @@ def process_submission(submission_id):
         print(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")
 
     except Exception as e:
-        print(f"[!] Database/Execution Error: {str(e)}")
+        # 👇 FIX: Aggressive error logging directly to your terminal
+        print(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.py:")
+        traceback.print_exc() 
         conn.rollback()
+        
+        # We pass the EXACT error text to the frontend console instead of a generic message
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
-            "status": "SE", "message": "System Error during execution"
+            "status": "SE", "message": f"Worker Crash: {str(e)}"
         }))
     finally:
         cursor.close()
@@ -151,16 +150,12 @@ def start_worker():
         if message:
             submission_data = json.loads(message)
             
-            # 1. Handle Faculty Audits
             if submission_data.get('job_type') == 'moss_audit':
                 contest_id = submission_data.get('contest_id')
                 problem_id = submission_data.get('problem_id')
                 print(f"\n[+] Picked up MOSS Audit Job for Problem: {problem_id}")
-                
-                # Run the auditor in the background
                 run_moss_audit(contest_id)
                 
-            # 2. Handle Custom Execution Runs
             elif submission_data.get('is_custom'):
                 run_id = submission_data.get('run_id')
                 print(f"\n[+] Processing Custom Run: {run_id}")
@@ -195,7 +190,6 @@ def start_worker():
                 redis_client.publish(f"run_updates:{run_id}", json.dumps({
                     "status": "Completed", "output": output_to_show, "verdict": result['verdict']
                 }))
-           # 3. Handle Standard Grading Submissions
             else:
                 sub_id = submission_data.get('submission_id')
                 if sub_id:

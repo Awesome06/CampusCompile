@@ -70,7 +70,8 @@ export default function ContestArena() {
 
   const fetchHistory = async () => {
     try {
-      const res = await api.get(`/submissions/history/${problemId}`);
+      // 👇 ADDED: ?contest_id=${contestId} to strictly isolate the query
+      const res = await api.get(`/submissions/history/${problemId}?contest_id=${contestId}`);
       setHistory(res.data || []);
     } catch (err) {
       console.error("Could not fetch history:", err);
