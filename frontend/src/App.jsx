@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'; // 👈 Added Outlet
 import { jwtDecode } from 'jwt-decode';
 import { AuthProvider, useAuth } from './context/AuthContext'; 
 
@@ -51,45 +51,60 @@ const ProtectedRoute = ({ children, requireOnboarding = true }) => {
   return children;
 };
 
+// 👇 THE NAVBAR WRAPPER 👇
+// Any route placed inside this layout will have the Navbar at the top.
+const NavbarLayout = () => {
+  return (
+    <>
+      <Navbar />
+      <Outlet />
+    </>
+  );
+};
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <div className="min-h-screen bg-dark-bg text-dark-text font-sans">
           
-          <Navbar />
-
           <Routes>
-            {/* Public Routes */}
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/oauth-success" element={<OAuthSuccess />} />
             
-            <Route path="/onboarding" element={
-              <ProtectedRoute requireOnboarding={false}>
-                <Onboarding />
-              </ProtectedRoute>
-            } />
+            {/* =========================================
+                🟢 ROUTES WITH NAVBAR 🟢
+            ========================================= */}
+            <Route element={<NavbarLayout />}>
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/oauth-success" element={<OAuthSuccess />} />
+              
+              <Route path="/onboarding" element={
+                <ProtectedRoute requireOnboarding={false}>
+                  <Onboarding />
+                </ProtectedRoute>
+              } />
 
-            {/* DEDICATED PRACTICE ROUTE */}
-            <Route path="/arena/:id" element={<ProtectedRoute><PracticeArena /></ProtectedRoute>} />
+              <Route path="/arena/:id" element={<ProtectedRoute><PracticeArena /></ProtectedRoute>} />
+              <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
+              <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
+              <Route path="/edit-problem/:id" element={<ProtectedRoute><EditProblem /></ProtectedRoute>} />
+              <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
+              <Route path="/add-contest" element={<ProtectedRoute><AddContest /></ProtectedRoute>} />
+              <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
+            </Route>
 
-            {/* Repositories */}
-            <Route path="/problems" element={<ProtectedRoute><ProblemList /></ProtectedRoute>} />
-            <Route path="/add-problem" element={<ProtectedRoute><AddProblem /></ProtectedRoute>} />
-            <Route path="/edit-problem/:id" element={<ProtectedRoute><EditProblem /></ProtectedRoute>} />
 
-            <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
-            <Route path="/add-contest" element={<ProtectedRoute><AddContest /></ProtectedRoute>} />
-            <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
+            {/* =========================================
+                🔴 SECURE CONTEST ROUTES (NO NAVBAR) 🔴
+            ========================================= */}
             
-            {/* Contest Hub Layout */}
+            {/* The Contest Hub (Problems List & Leaderboard) */}
             <Route path="/contests/:id/arena" element={<ProtectedRoute><ContestArenaLayout /></ProtectedRoute>}>
               <Route index element={<ContestProblems />} />
               <Route path="leaderboard" element={<Leaderboard />} />
             </Route>
 
-            {/* DEDICATED CONTEST EDITOR ROUTE */}
+            {/* The Code Editor strictly for Contests */}
             <Route 
               path="/contests/:id/problem/:problemId" 
               element={<ProtectedRoute><ContestArena /></ProtectedRoute>} 

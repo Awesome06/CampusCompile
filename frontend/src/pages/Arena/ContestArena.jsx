@@ -156,12 +156,25 @@ export default function ContestArena() {
   return (
     <div className="flex flex-col h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden">
       
-      {/* Optional: Add a top banner allowing them to return to the contest hub easily */}
+      {/* TOP BANNER */}
       <div className="bg-[#1e1e1e] border-b border-dark-border px-4 py-1.5 flex justify-between items-center text-xs">
-        <span className="text-gray-400 font-mono tracking-wider flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-          LIVE CONTEST ENVIRONMENT
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-gray-400 font-mono tracking-wider flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            LIVE CONTEST ENVIRONMENT
+          </span>
+          
+          {/* 👇 THE ESCAPE HATCH FOR FACULTY */}
+          {(currentUser?.role === 'admin' || currentUser?.role === 'professor') && (
+            <button 
+              onClick={() => navigate('/contests')} 
+              className="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold bg-red-900/20 px-2 py-0.5 rounded border border-red-800/50 transition-colors"
+            >
+              Exit to Workspace
+            </button>
+          )}
+        </div>
+
         <button onClick={() => navigate(`/contests/${contestId}/arena`)} className="text-blue-400 hover:text-blue-300 font-bold transition-colors">
           ← Return to Problems List
         </button>

@@ -1,46 +1,49 @@
 import React from 'react';
-import { Outlet, Link, useLocation, useParams } from 'react-router-dom';
-import { List, Trophy } from 'lucide-react';
+import { Outlet, Link, useParams, useLocation } from 'react-router-dom';
+import { LogOut } from 'lucide-react';
 
 export default function ContestArenaLayout() {
-  const { id } = useParams();
+  const { id: contestId } = useParams();
   const location = useLocation();
+  
+  // 👇 Check if the user is a Professor or Admin
+  const userRole = localStorage.getItem('role');
+  const isElevated = userRole === 'admin' || userRole === 'professor';
 
-  // Determine which tab is active based on the URL
   const isLeaderboard = location.pathname.includes('leaderboard');
 
   return (
-    <div className="min-h-screen bg-dark-bg text-gray-200 font-sans">
-      {/* Contest Hub Navbar */}
-      <div className="bg-[#1e1e1e] border-b border-dark-border px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md">
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
-          <Trophy className="text-yellow-500" size={24} />
-          Contest Arena
-        </h1>
-        
-        {/* Tab Navigation */}
-        <div className="flex bg-[#2a2a2a] rounded-lg p-1 border border-dark-border">
-          <Link
-            to={`/contests/${id}/arena`}
-            className={`flex items-center gap-2 px-6 py-2 rounded-md transition text-sm font-bold tracking-wide ${
-              !isLeaderboard ? 'bg-dark-accent text-white shadow' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <List size={16} /> Problems
-          </Link>
-          <Link
-            to={`/contests/${id}/arena/leaderboard`}
-            className={`flex items-center gap-2 px-6 py-2 rounded-md transition text-sm font-bold tracking-wide ${
-              isLeaderboard ? 'bg-dark-accent text-white shadow' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Trophy size={16} /> Leaderboard
-          </Link>
-        </div>
+    <div className="min-h-screen bg-dark-bg text-white relative">
+      
+      {/* 👇 THE ESCAPE HATCH (Only visible to Admins & Professors) */}
+      {isElevated && (
+        <Link 
+          to="/contests" 
+          className="absolute top-4 right-4 z-50 flex items-center gap-2 bg-red-900/50 hover:bg-red-600 text-red-200 hover:text-white px-4 py-2 rounded border border-red-700 transition-colors shadow-lg text-sm font-bold tracking-wider"
+        >
+          <LogOut size={16} />
+          Exit to Workspace
+        </Link>
+      )}
+
+      {/* Hub Navigation Tabs */}
+      <div className="bg-[#1e1e1e] border-b border-dark-border px-8 pt-6 flex gap-6">
+        <Link 
+          to={`/contests/${contestId}/arena`} 
+          className={`pb-3 font-bold transition-colors ${!isLeaderboard ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-white'}`}
+        >
+          Arena Problems
+        </Link>
+        <Link 
+          to={`/contests/${contestId}/arena/leaderboard`} 
+          className={`pb-3 font-bold transition-colors ${isLeaderboard ? 'text-yellow-400 border-b-2 border-yellow-400' : 'text-gray-400 hover:text-white'}`}
+        >
+          Live Leaderboard
+        </Link>
       </div>
 
-      {/* Render either ContestProblems or Leaderboard here */}
-      <div className="p-6 max-w-7xl mx-auto">
+      {/* Renders either ContestProblems or Leaderboard based on the URL */}
+      <div className="p-8">
         <Outlet />
       </div>
     </div>
