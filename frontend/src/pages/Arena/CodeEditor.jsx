@@ -2,37 +2,52 @@ import React, { useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import Button from '../../components/ui/Button';
 import useAntiCheat from '../../hooks/useAntiCheat'; 
-import { RefreshCw } from 'lucide-react'; // 👈 Import the refresh icon
+import { RefreshCw } from 'lucide-react'; 
 
 export default function CodeEditor({ 
   code, setCode, language, setLanguage, boilerplates, 
   onRun, onSubmit, isContest, contestId 
 }) {
   
+  // The hook itself should internally respect the isContest boolean
   const { logPasteAttempt, logKeystroke } = useAntiCheat(contestId, isContest);
   const editorRef = useRef(null);
 
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
 
-    editor.onKeyDown((e) => {
-      logKeystroke(); 
-
-      if ((e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV) {
-        if (isContest) {
-          e.preventDefault();   
-          e.stopPropagation();  
-          logPasteAttempt();    
-        }
-      }
-    });
-
+    // 👇 STRICTLY CONTEST ONLY: All anti-cheat and telemetry
     if (isContest) {
+      
+      // 1. Keystroke variance tracking (AutoTyper Polygraph)
+      editor.onKeyDown((e) => {
+        logKeystroke(); 
+      });
+
+      // 2. Disable right-click menu entirely
       editor.updateOptions({ contextmenu: false });
+
+      // 3. The Bulletproof DOM Locks
+      const domNode = editor.getDomNode();
+
+      const preventPaste = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        logPasteAttempt(); 
+      };
+
+      const preventCopy = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      domNode.addEventListener('paste', preventPaste, true);
+      domNode.addEventListener('drop', preventPaste, true);
+      domNode.addEventListener('copy', preventCopy, true);
+      domNode.addEventListener('cut', preventCopy, true);
     }
   };
 
-  // 👇 Handle Reset Logic
   const handleReset = () => {
     if (window.confirm("Are you sure you want to reset the editor? Your current code will be permanently lost.")) {
       setCode(boilerplates[language]);
@@ -56,7 +71,6 @@ export default function CodeEditor({
             <option value="java">Java 17</option>
           </select>
           
-          {/* 👇 Reset Button */}
           <button
             onClick={handleReset}
             className="p-1.5 text-gray-400 hover:text-white bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-dark-border rounded transition-colors shadow-sm"
