@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -14,14 +14,12 @@ func RequireAuth(c *gin.Context) {
 	var tokenString string
 	authHeader := c.GetHeader("Authorization")
 
-	if authHeader != "" {
-		fmt.Sscanf(authHeader, "Bearer %s", &tokenString)
-		if tokenString == "" {
-			tokenString = authHeader
-		}
-	} else {
-		// 👇 NEW: Fallback to URL query parameter for SSE streams
+	if authHeader == "" {
+		// 👇 NEW: Fallback to URL query parameter strictly for SSE streams
 		tokenString = c.Query("token")
+	} else {
+		// Strip the "Bearer " prefix if it came from the HTTP header
+		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 
 	if tokenString == "" {
@@ -43,6 +41,30 @@ func RequireAuth(c *gin.Context) {
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
 		c.Set("user_id", claims["user_id"])
 		c.Set("role", claims["role"])
+
+		// Extract demographic context if the user is onboarded
+		if isOnboarded, _ := claims["is_onboarded"].(bool); isOnboarded {
+			if course, ok := claims["course"].(string); ok {
+				c.Set("course", course)
+			}
+			if dept, ok := claims["department"].(string); ok {
+				c.Set("department", dept)
+			}
+			if batch, ok := claims["batch"].(string); ok {
+				c.Set("batch", batch)
+			}
+			if section, ok := claims["section"].(string); ok {
+				c.Set("section", section)
+			}
+			if group, ok := claims["student_group"].(string); ok {
+				c.Set("student_group", group)
+			}
+			// JWT unmarshals numbers as float64
+			if gradYear, ok := claims["graduation_year"].(float64); ok {
+				c.Set("graduation_year", int(gradYear))
+			}
+		}
+
 		c.Next()
 	} else {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload"})

@@ -13,12 +13,11 @@ const boilerplates = {
   java: `import java.util.*;\nimport java.io.*;\n\n public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}`
 };
 
-export default function Arena() {
-  const { id } = useParams();
+export default function PracticeArena() {
+  const { id } = useParams(); // id is the problem_id
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   
-  // State
   const [problem, setProblem] = useState(null);
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
@@ -26,11 +25,39 @@ export default function Arena() {
   const [leftTab, setLeftTab] = useState('description');
   const [history, setHistory] = useState([]);
   
-  // Console State
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('input');
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
+
+  const draftKey = currentUser ? `draft_${currentUser.id}_${id}` : null;
+
+  useEffect(() => {
+    if (draftKey) {
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          setLanguage(parsed.language);
+          setCode(parsed.code);
+          return; 
+        } catch (e) {
+          console.error("Failed to parse draft", e);
+        }
+      }
+    }
+    setCode(boilerplates['cpp']);
+  }, [id, draftKey]);
+
+  useEffect(() => {
+    if (!draftKey || !code) return;
+    const timer = setTimeout(() => {
+      if (code !== boilerplates[language]) {
+         localStorage.setItem(draftKey, JSON.stringify({ language, code }));
+      }
+    }, 1000); 
+    return () => clearTimeout(timer);
+  }, [code, language, draftKey]);
 
   useEffect(() => {
     api.get(`/problems/${id}`)
@@ -39,7 +66,7 @@ export default function Arena() {
     fetchHistory();
   }, [id]);
 
-  const canEdit = currentUser && problem && (currentUser.role === 'admin' || currentUser.id === problem.author_id);
+  const canEdit = currentUser && problem && (currentUser.role === 'admin' || (currentUser.role === 'professor' && currentUser.id === problem.author_id));
 
   const fetchHistory = async () => {
     try {
@@ -54,9 +81,13 @@ export default function Arena() {
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     try {
-      const response = await api.post('/submit', { problem_id: id, language, source_code: code });
+      // Standard practice submission (no contest_id)
+      const response = await api.post('/submit', { 
+        problem_id: id, 
+        language, 
+        source_code: code 
+      });
       
-      // 👇 NEW: Start SSE Stream
       const token = localStorage.getItem('token');
       const sse = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
       
@@ -67,7 +98,6 @@ export default function Arena() {
         if (status === 'Running') {
           setSubmitStatus('Running... ⚙️');
         } else {
-          // Terminal state reached
           setSubmitStatus(status);
           fetchHistory();
           
@@ -79,17 +109,13 @@ export default function Arena() {
             setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
             setActiveTab('output');
             setIsConsoleOpen(true);
+            if (draftKey) localStorage.removeItem(draftKey);
           }
-          
-          sse.close(); // Close connection
+          sse.close(); 
         }
       };
 
-      sse.onerror = () => {
-        console.error("SSE connection lost.");
-        sse.close();
-      };
-
+      sse.onerror = () => { sse.close(); };
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
     }
@@ -101,19 +127,16 @@ export default function Arena() {
     setIsConsoleOpen(true);
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
-      
-      // 👇 NEW: Start SSE Stream for Custom Run
       const token = localStorage.getItem('token');
       const sse = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
       
       sse.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        
         if (data.status === 'Running') {
           setConsoleOutput('Running... ⚙️');
         } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
           setConsoleOutput(data.output || data.message || "Program finished with no output.");
-          sse.close(); // Close connection
+          sse.close(); 
         }
       };
 
@@ -121,17 +144,15 @@ export default function Arena() {
         setConsoleOutput('Error streaming execution status.');
         sse.close();
       };
-
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
     }
   };
 
-  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Arena...</div>;
+  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Practice Arena...</div>;
 
   return (
     <div className="flex h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden"> 
-      {/* LEFT PANE */}
       <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
         <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
           <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('description')}>Description</button>
@@ -146,11 +167,11 @@ export default function Arena() {
         </div>
       </div>
 
-      {/* RIGHT PANE */}
       <div className="w-1/2 flex flex-col bg-dark-surface border-l border-dark-border relative">
         <CodeEditor 
           code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
-          boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit} 
+          boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
+          isContest={false} contestId={null} 
         />
         <ExecutionConsole 
           isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}

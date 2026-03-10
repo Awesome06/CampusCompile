@@ -1,79 +1,90 @@
--- 1. Create Custom ENUM Types for strict data enforcement
+-- ==========================================
+-- 1. CUSTOM TYPES
+-- ==========================================
 CREATE TYPE user_role AS ENUM ('student', 'professor', 'admin');
 CREATE TYPE problem_difficulty AS ENUM ('Easy', 'Medium', 'Hard');
-CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE');
+CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'SE');
+CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected');
+CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed');
 
--- 2. Create the Users Table
+-- ==========================================
+-- 2. CORE ENTITIES
+-- ==========================================
+
+-- Users table: Stores all user profiles and authentication mappings
 CREATE TABLE users (
-    user_id         UUID               NOT NULL DEFAULT gen_random_uuid(),
-    provider_id     VARCHAR(255)       NULL,
-    email           VARCHAR(255)       NOT NULL,
-    username        VARCHAR(50)        NULL,
-    real_name       VARCHAR(255)       NULL,
-    batch           VARCHAR(50)        NULL,
-    "section"       VARCHAR(50)        NULL,
-    student_group   VARCHAR(50)        NULL,
-    course          VARCHAR(100)       NULL,
-    department      VARCHAR(100)       NULL,
-    graduation_year INTEGER            NULL,
-    "role"          "user_role"        NOT NULL DEFAULT 'student'::user_role,
-    campus_rating   INTEGER            NULL     DEFAULT 1200,
-    is_onboarded    BOOLEAN            NULL     DEFAULT FALSE,
-    created_at      TIMESTAMPTZ        NULL     DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT users_pkey 
-        PRIMARY KEY (user_id),
-
-    CONSTRAINT users_email_key 
-        UNIQUE (email),
-
-    CONSTRAINT users_provider_id_key 
-        UNIQUE (provider_id),
-
-    CONSTRAINT users_username_key 
-        UNIQUE (username)
+    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider_id VARCHAR(255) UNIQUE,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(50) UNIQUE,
+    real_name VARCHAR(255),
+    batch VARCHAR(50),
+    section VARCHAR(50),
+    student_group VARCHAR(50),
+    course VARCHAR(100),
+    department VARCHAR(100),
+    graduation_year INTEGER,
+    role user_role NOT NULL DEFAULT 'student',
+    campus_rating INTEGER DEFAULT 1200,
+    is_onboarded BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Create the Problems Table
+-- Problems table: Stores the problem statements, limits, and checker metadata
 CREATE TABLE problems (
-    problem_id        UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    title             VARCHAR(255) NOT NULL,
-    slug              VARCHAR(255) NOT NULL UNIQUE,
-    description       TEXT NOT NULL,
-    difficulty        public.problem_difficulty NOT NULL,
-    time_limit_ms     INTEGER DEFAULT 2000 NOT NULL,
-    memory_limit_kb   INTEGER DEFAULT 262144 NOT NULL,
-    author_id         UUID, REFERENCES users(user_id) ON DELETE SET NULL
-    created_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    has_checker       BOOLEAN DEFAULT FALSE,
-    checker_s3_key    TEXT,
-    is_public         BOOLEAN DEFAULT FALSE
+    problem_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE NOT NULL,
+    description TEXT NOT NULL,
+    difficulty problem_difficulty NOT NULL,
+    time_limit_ms INTEGER NOT NULL DEFAULT 2000,
+    memory_limit_kb INTEGER NOT NULL DEFAULT 262144,
+    author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    has_checker BOOLEAN DEFAULT false,
+    checker_s3_key TEXT,
+    is_public BOOLEAN DEFAULT false
 );
 
--- 4. Create the Test Cases Table
-CREATE TABLE test_cases (
-    test_case_id    UUID         NOT NULL DEFAULT gen_random_uuid(),
-    problem_id      UUID         NULL,
-    input_data      TEXT         NULL,
-    expected_output TEXT         NULL,
-    is_hidden       BOOLEAN      NULL     DEFAULT TRUE,
-    input_s3_key    VARCHAR(512) NULL,
-    expected_s3_key VARCHAR(512) NULL,
-
-    CONSTRAINT test_cases_pkey 
-        PRIMARY KEY (test_case_id),
-
-    CONSTRAINT test_cases_problem_id_fkey 
-        FOREIGN KEY (problem_id) 
-        REFERENCES public.problems (problem_id) 
-        ON DELETE CASCADE
+-- Contests table: Manages competition windows and rules
+CREATE TABLE contests (
+    contest_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    host_organization VARCHAR(255),
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    access_rules JSONB,
+    author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    is_public BOOLEAN NOT NULL DEFAULT false
 );
 
--- 5. Create the Submissions Table
+-- ==========================================
+-- 3. RELATIONAL & ACTIVITY TABLES
+-- ==========================================
+
+-- Contest Registrations: Maps users to the contests they joined
+CREATE TABLE contest_registrations (
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    registered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (contest_id, user_id)
+);
+
+-- Contest Problems: Maps specific problems to specific contests
+CREATE TABLE contest_problems (
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    points_value INTEGER NOT NULL DEFAULT 100,
+    PRIMARY KEY (contest_id, problem_id)
+);
+
+-- Submissions table: Tracks code execution runs
 CREATE TABLE submissions (
     submission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     language VARCHAR(50) NOT NULL,
     status submission_status DEFAULT 'Pending',
     execution_time_ms INTEGER,
@@ -82,53 +93,64 @@ CREATE TABLE submissions (
     error_logs TEXT,
     source_code_s3_key VARCHAR(512)
 );
--- 6. Create the Contests Table
-CREATE TABLE contests (
-    contest_id        UUID         NOT NULL DEFAULT gen_random_uuid(),
-    title             VARCHAR(255) NOT NULL,
-    host_organization VARCHAR(255) NULL,
-    start_time        TIMESTAMPTZ  NOT NULL,
-    end_time          TIMESTAMPTZ  NOT NULL,
-    created_at        TIMESTAMPTZ  NULL     DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT contests_pkey 
-        PRIMARY KEY (contest_id)
+-- Test Cases: Stores I/O data or S3 references for validating submissions
+CREATE TABLE test_cases (
+    test_case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    input_data TEXT,
+    expected_output TEXT,
+    is_hidden BOOLEAN DEFAULT true,
+    input_s3_key VARCHAR(512),
+    expected_s3_key VARCHAR(512)
 );
 
--- 7. Create the Contest Problems Mapping Table
-CREATE TABLE contest_problems (
-    contest_id   UUID    NOT NULL,
-    problem_id   UUID    NOT NULL,
-    points_value INTEGER NOT NULL DEFAULT 100,
+-- ==========================================
+-- 4. ANTI-CHEAT & TELEMETRY
+-- ==========================================
 
-    CONSTRAINT contest_problems_pkey 
-        PRIMARY KEY (contest_id, problem_id),
-
-    CONSTRAINT contest_problems_contest_id_fkey 
-        FOREIGN KEY (contest_id) 
-        REFERENCES contests (contest_id) 
-        ON DELETE CASCADE,
-
-    CONSTRAINT contest_problems_problem_id_fkey 
-        FOREIGN KEY (problem_id) 
-        REFERENCES problems (problem_id) 
-        ON DELETE CASCADE
+-- Contest Telemetry: Logs suspicious browser and editor activity
+CREATE TABLE contest_telemetry (
+    telemetry_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    event_type telemetry_event_type NOT NULL,
+    -- JSONB is perfect here to store flexible data like keystroke variance 
+    -- standard deviations or exact time-out durations for later analysis.
+    metadata JSONB, 
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- Optimize queries looking for a specific user's submissions
-CREATE INDEX idx_submissions_user_id ON submissions(user_id);
+-- Plagiarism Reports: Stores MOSS audit results from the Python worker
+CREATE TABLE plagiarism_reports (
+    report_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    user_1_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    user_2_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    similarity_score NUMERIC(5,2) NOT NULL, -- e.g., 85.50 for 85.5% match
+    moss_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
 
--- Optimize queries loading all submissions for a specific problem
-CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);
+-- ==========================================
+-- 5. INDEXES
+-- ==========================================
 
--- Optimize queries filtering by AC, WA, TLE, etc. (Great for analytics)
-CREATE INDEX idx_submissions_status ON submissions(status);
-
--- Optimize leaderboards for contests
+-- Contests
+CREATE INDEX idx_contests_author_id ON contests(author_id);
 CREATE INDEX idx_contests_times ON contests(start_time, end_time);
 
--- Index to instantly fetch all test cases for a specific problem when judging
-CREATE INDEX idx_test_cases_problem_id ON test_cases(problem_id);
+-- Contest Registrations
+CREATE INDEX idx_contest_registrations_user_id ON contest_registrations(user_id);
 
--- Index to instantly fetch ONLY the public samples for the React frontend
-CREATE INDEX idx_test_cases_samples ON test_cases(problem_id, is_hidden) WHERE is_hidden = false;
+-- Submissions
+CREATE INDEX idx_submissions_contest_id ON submissions(contest_id);
+CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);
+CREATE INDEX idx_submissions_user_id ON submissions(user_id);
+CREATE INDEX idx_submissions_status ON submissions(status);
+
+-- query this table grouped by user_id for a specific contest_id.
+CREATE INDEX idx_telemetry_contest_user ON contest_telemetry(contest_id, user_id);
+-- Speeds up queries when a professor wants to see all flagged pairs for a specific problem.
+CREATE INDEX idx_plagiarism_contest_problem ON plagiarism_reports(contest_id, problem_id);

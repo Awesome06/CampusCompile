@@ -82,12 +82,18 @@ func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
-
 func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 	problemID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
 
-	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID)
+	// Check if the frontend passed a specific contest context
+	contestIDQuery := c.Query("contest_id")
+	var contestID *string
+	if contestIDQuery != "" {
+		contestID = &contestIDQuery
+	}
+
+	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
 		return

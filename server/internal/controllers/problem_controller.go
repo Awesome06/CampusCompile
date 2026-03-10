@@ -102,7 +102,32 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
-	if err := ctrl.service.RemoveProblem(c.Request.Context(), c.Param("id")); err != nil {
+	problemID := c.Param("id")
+	userRole := c.MustGet("role").(string)
+	userID := c.MustGet("user_id").(string)
+
+	// Fetch problem to verify ownership and publish status
+	problemMeta, err := ctrl.service.FetchProblemByID(c.Request.Context(), problemID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
+		return
+	}
+
+	if userRole == "professor" {
+		authorID, ok := problemMeta["author_id"].(string)
+		if !ok || authorID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this problem"})
+			return
+		}
+
+		isPublic, ok := problemMeta["is_public"].(bool)
+		if ok && isPublic {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: Professors cannot delete published problems. Please contact an Administrator."})
+			return
+		}
+	}
+
+	if err := ctrl.service.RemoveProblem(c.Request.Context(), problemID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete problem"})
 		return
 	}

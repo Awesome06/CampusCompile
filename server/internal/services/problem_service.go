@@ -47,9 +47,9 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 }
 
 func (s *problemService) AddTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error {
-	var dbTestCases []repositories.TestCaseToInsert
+	var dbTestCases []models.TestCaseToInsert
 	for _, tc := range req.TestCases {
-		dbTestCases = append(dbTestCases, repositories.TestCaseToInsert{
+		dbTestCases = append(dbTestCases, models.TestCaseToInsert{
 			ID:             uuid.New().String(),
 			ProblemID:      problemID,
 			InputData:      tc.Input,
@@ -95,9 +95,9 @@ func (s *problemService) FetchFacultyProblems(ctx context.Context, authorID stri
 }
 
 func (s *problemService) SyncTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error {
-	var dbTestCases []repositories.TestCaseToInsert
+	var dbTestCases []models.TestCaseToInsert
 	for _, tc := range req.TestCases {
-		dbTestCases = append(dbTestCases, repositories.TestCaseToInsert{
+		dbTestCases = append(dbTestCases, models.TestCaseToInsert{
 			ID: uuid.New().String(), ProblemID: problemID, InputData: tc.Input, ExpectedOutput: tc.ExpectedOutput, IsHidden: tc.IsHidden,
 		})
 	}
