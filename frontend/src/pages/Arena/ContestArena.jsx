@@ -6,6 +6,8 @@ import ProblemDescription from './ProblemDescription';
 import SubmissionHistory from './SubmissionHistory';
 import CodeEditor from './CodeEditor';
 import ExecutionConsole from './ExecutionConsole';
+// 👇 1. Import some icons for the new banner
+import { ArrowLeft, LogOut, ShieldAlert } from 'lucide-react'; 
 
 const boilerplates = {
   cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}`,
@@ -14,7 +16,6 @@ const boilerplates = {
 };
 
 export default function ContestArena() {
-  // Extract both IDs specifically for the contest mode
   const { id: contestId, problemId } = useParams(); 
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -31,7 +32,6 @@ export default function ContestArena() {
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
 
-  // Draft tied strictly to the problem within this specific contest
   const draftKey = currentUser ? `draft_${currentUser.id}_${problemId}` : null;
 
   useEffect(() => {
@@ -70,7 +70,6 @@ export default function ContestArena() {
 
   const fetchHistory = async () => {
     try {
-      // 👇 ADDED: ?contest_id=${contestId} to strictly isolate the query
       const res = await api.get(`/submissions/history/${problemId}?contest_id=${contestId}`);
       setHistory(res.data || []);
     } catch (err) {
@@ -82,7 +81,6 @@ export default function ContestArena() {
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     try {
-      // Contest Submission strictly includes the contest_id
       const response = await api.post('/submit', { 
         problem_id: problemId, 
         contest_id: contestId, 
@@ -154,37 +152,49 @@ export default function ContestArena() {
   if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Contest Arena...</div>;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden">
+    // 👇 2. Changed h-[calc(100vh-61px)] to h-screen
+    <div className="flex flex-col h-screen w-full font-sans relative overflow-hidden bg-dark-bg">
       
-      {/* TOP BANNER */}
-      <div className="bg-[#1e1e1e] border-b border-dark-border px-4 py-1.5 flex justify-between items-center text-xs">
-        <div className="flex items-center gap-4">
-          <span className="text-gray-400 font-mono tracking-wider flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-            LIVE CONTEST ENVIRONMENT
-          </span>
+      {/* 👇 3. UPGRADED TOP BANNER */}
+      <div className="bg-[#1a1a1a] border-b border-dark-border px-6 py-3 flex justify-between items-center shadow-md z-20">
+        
+        <div className="flex items-center gap-6">
+          {/* Security Indicator */}
+          <div className="text-red-500 font-mono font-bold tracking-widest flex items-center gap-2 text-sm bg-red-950/30 px-3 py-1.5 rounded border border-red-900/50">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+            <ShieldAlert size={16} />
+            SECURE EXAM ENVIRONMENT
+          </div>
           
-          {/* 👇 THE ESCAPE HATCH FOR FACULTY */}
+          {/* Faculty Escape Hatch */}
           {(currentUser?.role === 'admin' || currentUser?.role === 'professor') && (
             <button 
               onClick={() => navigate('/contests')} 
-              className="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold bg-red-900/20 px-2 py-0.5 rounded border border-red-800/50 transition-colors"
+              className="flex items-center gap-2 text-red-300 hover:text-white font-bold bg-red-900/40 hover:bg-red-700 px-3 py-1.5 rounded border border-red-700/50 transition-colors text-sm shadow-sm"
+              title="Return to Faculty Dashboard"
             >
+              <LogOut size={16} />
               Exit to Workspace
             </button>
           )}
         </div>
 
-        <button onClick={() => navigate(`/contests/${contestId}/arena`)} className="text-blue-400 hover:text-blue-300 font-bold transition-colors">
-          ← Return to Problems List
+        {/* Big Return to Hub Button */}
+        <button 
+          onClick={() => navigate(`/contests/${contestId}/arena`)} 
+          className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-gray-700 text-gray-200 hover:text-white px-4 py-2 rounded font-bold border border-dark-border transition-all shadow-sm text-sm"
+        >
+          <ArrowLeft size={16} />
+          Return to Hub
         </button>
       </div>
 
-      <div className="flex h-full w-full relative overflow-hidden"> 
+      {/* Editor & Content Area (flex-1 lets it take the remaining height perfectly) */}
+      <div className="flex flex-1 w-full relative overflow-hidden"> 
         <div className="w-1/2 flex flex-col border-r border-dark-border bg-dark-bg">
           <div className="flex items-center px-4 bg-[#1e1e1e] border-b border-dark-border select-none">
-            <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('description')}>Description</button>
-            <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'history' ? 'text-white border-b-2 border-dark-accent' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('history')}>Submissions</button>
+            <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'description' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('description')}>Description</button>
+            <button className={`py-3 px-4 text-sm font-bold transition ${leftTab === 'history' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white'}`} onClick={() => setLeftTab('history')}>Submissions</button>
           </div>
           <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
             {leftTab === 'history' ? (
