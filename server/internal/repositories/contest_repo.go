@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -16,7 +17,7 @@ type ContestRepository interface {
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
 	GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error)
-	GetContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
+	GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
 	GetPublicContests(ctx context.Context) ([]models.Contest, error)
 	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
 	GetAllContests(ctx context.Context) ([]models.Contest, error)
@@ -194,30 +195,43 @@ func (r *contestRepo) GetUsernames(ctx context.Context, userIDs []string) (map[s
 	return usernames, nil
 }
 
-func (r *contestRepo) GetContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error) {
+func (r *contestRepo) GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT p.problem_id, p.title, p.difficulty, cp.points_value 
+		SELECT p.problem_id, p.title, p.difficulty, cp.points_value,
+		       COALESCE(
+		           -- 👇 FIX: Cast status to ::text so it doesn't clash with the 'unsolved' string
+		           (SELECT status::text FROM submissions 
+		            WHERE user_id = $2 AND problem_id = p.problem_id AND contest_id = $1
+		            ORDER BY 
+		                CASE WHEN status = 'AC' THEN 1 ELSE 2 END, -- AC takes priority
+		                submitted_at DESC 
+		            LIMIT 1),
+		           'unsolved'
+		       ) as user_status
 		FROM contest_problems cp
 		JOIN problems p ON cp.problem_id = p.problem_id
 		WHERE cp.contest_id = $1
 		ORDER BY p.created_at ASC
-	`, contestID)
+	`, contestID, userID)
 
 	if err != nil {
+		// 👇 Added a helpful error print so we can see DB failures in the Docker logs
+		fmt.Printf("[!] DB Error in GetContestProblems: %v\n", err)
 		return nil, err
 	}
 	defer rows.Close()
 
 	var problems []map[string]interface{}
 	for rows.Next() {
-		var id, title, difficulty string
+		var id, title, difficulty, status string
 		var points int
-		if err := rows.Scan(&id, &title, &difficulty, &points); err == nil {
+		if err := rows.Scan(&id, &title, &difficulty, &points, &status); err == nil {
 			problems = append(problems, map[string]interface{}{
 				"problem_id":   id,
 				"title":        title,
 				"difficulty":   difficulty,
-				"points_value": points, // Useful if you ever want custom weighting
+				"points_value": points,
+				"user_status":  status,
 			})
 		}
 	}

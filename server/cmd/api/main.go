@@ -138,5 +138,6 @@ func main() {
 	// 5. START SERVER
 	fmt.Println("[*] API Server running on http://localhost:8080")
 	go contestService.StartAuditDaemon(context.Background())
+	go contestService.StartLeaderboardDaemon(context.Background())
 	router.Run(":8080")
 }

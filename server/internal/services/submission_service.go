@@ -54,7 +54,7 @@ func (s *submissionService) ProcessSubmission(ctx context.Context, req models.Su
 		return "", fmt.Errorf("failed to upload source code to S3: %w", err)
 	}
 
-	// 3. Save ONLY the S3 key to the database
+	// 3. Save ONLY the S3 key to the database (and the Contest ID!)
 	err = s.repo.CreateSubmission(ctx, submissionID, userID, req.ProblemID, req.Language, s3Key, req.ContestID)
 	if err != nil {
 		return "", err

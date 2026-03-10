@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	redisClient "github.com/redis/go-redis/v9"
@@ -22,9 +23,9 @@ type ContestService interface {
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
 	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
 	FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error)
-	StartLeaderboardTicker(ctx context.Context, contestID string)
 	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error) // Updated
-	FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error)
+	FetchContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
+	StartLeaderboardDaemon(ctx context.Context) // Replaces StartLeaderboardTicker
 	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error
@@ -119,50 +120,63 @@ func (s *contestService) FetchCurrentLeaderboard(ctx context.Context, contestID 
 	return s.redis.ZRevRangeWithScores(ctx, leaderboardKey, 0, -1).Result()
 }
 
-func (s *contestService) StartLeaderboardTicker(ctx context.Context, contestID string) {
-	ticker := time.NewTicker(10 * time.Second)
+func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second) // Check for updates every 2 seconds
 	defer ticker.Stop()
-
-	dirtyKey := fmt.Sprintf("contest:%s:is_dirty", contestID)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			isDirty, err := s.redis.Get(ctx, dirtyKey).Bool()
-			if err != nil || !isDirty {
+			// 1. Find all contests flagged as 'dirty' by the Python Worker
+			keys, err := s.redis.Keys(ctx, "contest:*:is_dirty").Result()
+			if err != nil {
 				continue
 			}
 
-			s.redis.Set(ctx, dirtyKey, "false", 0)
-
-			auditStatus, leaderboardFull, err := s.FetchEnrichedLeaderboard(ctx, contestID)
-			if err == nil {
-				// 1. Broadcast FULL intelligence to Faculty
-				payloadFull, _ := json.Marshal(map[string]interface{}{
-					"audit_status": auditStatus,
-					"leaderboard":  leaderboardFull,
-				})
-				s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:faculty:%s", contestID), payloadFull)
-
-				// 2. Strip alerts and broadcast CLEAN intelligence to Students (FIXED LOOP)
-				var leaderboardStripped []map[string]interface{}
-				for _, entry := range leaderboardFull {
-					strippedEntry := make(map[string]interface{})
-					for k, v := range entry {
-						if k != "alerts" { // Redact the alerts object
-							strippedEntry[k] = v
-						}
+			for _, key := range keys {
+				isDirty, err := s.redis.Get(ctx, key).Result()
+				if err == nil && isDirty == "true" {
+					// 2. Extract the Contest ID from the Redis key (e.g., "contest:1234:is_dirty")
+					parts := strings.Split(key, ":")
+					if len(parts) != 3 {
+						continue
 					}
-					leaderboardStripped = append(leaderboardStripped, strippedEntry)
-				}
+					contestID := parts[1]
 
-				payloadStripped, _ := json.Marshal(map[string]interface{}{
-					"audit_status": auditStatus,
-					"leaderboard":  leaderboardStripped,
-				})
-				s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:student:%s", contestID), payloadStripped)
+					// 3. Reset the flag immediately to prevent duplicate broadcasts
+					s.redis.Set(ctx, key, "false", 0)
+
+					// 4. Fetch enriched data and broadcast
+					auditStatus, leaderboardFull, err := s.FetchEnrichedLeaderboard(ctx, contestID)
+					if err == nil {
+						// Broadcast FULL intelligence to Faculty
+						payloadFull, _ := json.Marshal(map[string]interface{}{
+							"audit_status": auditStatus,
+							"leaderboard":  leaderboardFull,
+						})
+						s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:faculty:%s", contestID), payloadFull)
+
+						// Strip alerts and broadcast CLEAN intelligence to Students
+						var leaderboardStripped []map[string]interface{}
+						for _, entry := range leaderboardFull {
+							strippedEntry := make(map[string]interface{})
+							for k, v := range entry {
+								if k != "alerts" {
+									strippedEntry[k] = v
+								}
+							}
+							leaderboardStripped = append(leaderboardStripped, strippedEntry)
+						}
+
+						payloadStripped, _ := json.Marshal(map[string]interface{}{
+							"audit_status": auditStatus,
+							"leaderboard":  leaderboardStripped,
+						})
+						s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:student:%s", contestID), payloadStripped)
+					}
+				}
 			}
 		}
 	}
@@ -222,8 +236,8 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 	return auditStatus, enriched, nil
 }
 
-func (s *contestService) FetchContestProblems(ctx context.Context, contestID string) ([]map[string]interface{}, error) {
-	return s.repo.GetContestProblems(ctx, contestID)
+func (s *contestService) FetchContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error) {
+	return s.repo.GetContestProblems(ctx, contestID, userID)
 }
 
 func isEligible(rules *models.ContestAccessRules, user models.UserDemographics) bool {

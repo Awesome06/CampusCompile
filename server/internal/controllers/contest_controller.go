@@ -24,9 +24,9 @@ func NewContestController(service services.ContestService) *ContestController {
 // StreamLeaderboard is the SSE endpoint that keeps the React UI perfectly in sync
 func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
+	userRole := c.MustGet("role").(string)
 
 	// 1. Subscribe to the contest's specific Redis broadcast channel
-	userRole := c.MustGet("role").(string)
 	channelSuffix := "student"
 	if userRole == "admin" || userRole == "professor" {
 		channelSuffix = "faculty"
@@ -42,22 +42,28 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Flush()
 
-	// 3. Immediately fetch and send the current leaderboard state so the UI isn't blank
-	initialLeaderboard, err := ctrl.service.FetchCurrentLeaderboard(c.Request.Context(), contestID)
+	// 3. 👇 FIX: Fetch the ENRICHED leaderboard immediately on connect
+	auditStatus, initialLeaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err == nil {
-		initialData, _ := json.Marshal(initialLeaderboard)
+		if userRole == "student" {
+			for _, entry := range initialLeaderboard {
+				delete(entry, "alerts")
+			}
+		}
+		initialData, _ := json.Marshal(map[string]interface{}{
+			"audit_status": auditStatus,
+			"leaderboard":  initialLeaderboard,
+		})
 		c.SSEvent("message", string(initialData))
 		c.Writer.Flush()
 	}
 
-	// 4. Enter the infinite loop: listen for live updates from the Python Worker / Go Engine
+	// 4. Listen for live updates from the Python Worker / Go Engine
 	for {
 		select {
 		case <-c.Request.Context().Done():
-			// The student closed the tab or navigated away; kill the connection cleanly
 			return
 		case msg := <-ch:
-			// A student just got an 'AC' and the leaderboard shifted! Push the new data.
 			c.SSEvent("message", msg.Payload)
 			c.Writer.Flush()
 		}
@@ -172,7 +178,8 @@ func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 		}
 	}
 
-	problems, err := ctrl.service.FetchContestProblems(c.Request.Context(), contestID)
+	// 👇 Pass the userID down to the SQL query
+	problems, err := ctrl.service.FetchContestProblems(c.Request.Context(), contestID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contest problems"})
 		return

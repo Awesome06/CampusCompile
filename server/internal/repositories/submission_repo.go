@@ -61,7 +61,7 @@ func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, probl
 	var err error
 
 	if contestID != nil && *contestID != "" {
-		// 🔒 STRICT CONTEST MODE: Only show submissions made specifically for this live contest
+		// 🔒 STRICT CONTEST MODE
 		rows, err = r.db.Query(ctx, `
 			SELECT submission_id, language, status, submitted_at, contest_id
 			FROM submissions 
@@ -69,7 +69,7 @@ func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, probl
 			ORDER BY submitted_at DESC
 		`, userID, problemID, *contestID)
 	} else {
-		// 🔓 PRACTICE MODE: Show practice submissions, plus any contest submissions where the contest has ended
+		// 🔓 PRACTICE MODE
 		rows, err = r.db.Query(ctx, `
 			SELECT s.submission_id, s.language, s.status, s.submitted_at, s.contest_id
 			FROM submissions s

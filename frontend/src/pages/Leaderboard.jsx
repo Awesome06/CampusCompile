@@ -8,6 +8,10 @@ export default function Leaderboard() {
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
 
+  // 👇 Determine if the user is a Professor or Admin
+  const userRole = localStorage.getItem('role');
+  const isElevated = userRole === 'admin' || userRole === 'professor';
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -22,7 +26,7 @@ export default function Leaderboard() {
     source.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        setLeaderboard(data);
+        setLeaderboard(data.leaderboard || []);
         setLoading(false);
         setConnectionError(false);
       } catch (err) {
@@ -73,16 +77,23 @@ export default function Leaderboard() {
         {/* Table Header */}
         <div className="grid grid-cols-12 gap-4 bg-[#2a2a2a] p-4 border-b border-dark-border text-xs font-bold text-gray-400 uppercase tracking-wider">
           <div className="col-span-1 text-center">Rank</div>
-          <div className="col-span-5">Participant</div>
+          
+          {/* 👇 Stretch the participant column to span 7 spaces if we are hiding the integrity column (2 spaces) */}
+          <div className={isElevated ? "col-span-5" : "col-span-7"}>Participant</div>
+          
           <div className="col-span-2 text-center flex items-center justify-center gap-1">
             <CheckCircle size={14} /> Solves
           </div>
           <div className="col-span-2 text-center flex items-center justify-center gap-1">
             <Clock size={14} /> Penalty
           </div>
-          <div className="col-span-2 text-center flex items-center justify-center gap-1">
-            Integrity
-          </div>
+          
+          {/* 👇 Only render Integrity Header for Faculty/Admin */}
+          {isElevated && (
+            <div className="col-span-2 text-center flex items-center justify-center gap-1">
+              Integrity
+            </div>
+          )}
         </div>
 
         {/* Table Body */}
@@ -110,7 +121,7 @@ export default function Leaderboard() {
                 </div>
 
                 {/* Username */}
-                <div className="col-span-5 font-semibold text-white text-lg truncate">
+                <div className={`font-semibold text-white text-lg truncate ${isElevated ? 'col-span-5' : 'col-span-7'}`}>
                   {player.username}
                 </div>
 
@@ -124,51 +135,50 @@ export default function Leaderboard() {
                   {player.penalty} <span className="text-xs text-gray-600">min</span>
                 </div>
 
-                {/* Integrity / Alerts Column */}
-                <div className="col-span-2 text-center flex items-center justify-center relative group">
-                  {player.alerts && player.alerts.total > 0 && (
-                    <>
-                      {/* The Warning Icon */}
-                      <AlertTriangle className="text-red-500 cursor-help animate-pulse" size={22} />
-                      
-                      {/* The Hover Tooltip */}
-                      <div className="absolute bottom-full mb-2 hidden group-hover:block w-56 bg-[#2a2a2a] text-gray-300 text-sm rounded border border-red-800/50 shadow-2xl z-50 p-3 transform -translate-x-1/4">
-                        <div className="font-bold text-red-400 border-b border-dark-border mb-2 pb-1 text-left uppercase tracking-wider text-xs">
-                          Telemetry Flags ({player.alerts.total})
-                        </div>
+                {/* 👇 Integrity / Alerts Column (Faculty Only) */}
+                {isElevated && (
+                  <div className="col-span-2 text-center flex items-center justify-center relative group">
+                    {player.alerts && player.alerts.total > 0 && (
+                      <>
+                        <AlertTriangle className="text-red-500 cursor-help animate-pulse" size={22} />
                         
-                        <div className="space-y-1">
-                          {player.alerts.blur > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tab Switches:</span> 
-                              <span className="font-mono text-red-400">{player.alerts.blur}</span>
-                            </div>
-                          )}
-                          {player.alerts.paste_attempt > 0 && (
-                            <div className="flex justify-between">
-                              <span>Paste Attempts:</span> 
-                              <span className="font-mono text-red-400">{player.alerts.paste_attempt}</span>
-                            </div>
-                          )}
-                          {player.alerts.autotyper_suspected > 0 && (
-                            <div className="flex justify-between">
-                              <span>AutoTyper:</span> 
-                              <span className="font-mono text-red-400">{player.alerts.autotyper_suspected}</span>
-                            </div>
-                          )}
-                          {player.alerts.visibility_spoof_suspected > 0 && (
-                            <div className="flex justify-between">
-                              <span>Visibility Spoof:</span> 
-                              <span className="font-mono text-red-400">{player.alerts.visibility_spoof_suspected}</span>
-                            </div>
-                          )}
+                        <div className="absolute bottom-full mb-2 hidden group-hover:block w-56 bg-[#2a2a2a] text-gray-300 text-sm rounded border border-red-800/50 shadow-2xl z-50 p-3 transform -translate-x-1/4">
+                          <div className="font-bold text-red-400 border-b border-dark-border mb-2 pb-1 text-left uppercase tracking-wider text-xs">
+                            Telemetry Flags ({player.alerts.total})
+                          </div>
+                          
+                          <div className="space-y-1">
+                            {player.alerts.blur > 0 && (
+                              <div className="flex justify-between">
+                                <span>Tab Switches:</span> 
+                                <span className="font-mono text-red-400">{player.alerts.blur}</span>
+                              </div>
+                            )}
+                            {player.alerts.paste_attempt > 0 && (
+                              <div className="flex justify-between">
+                                <span>Paste Attempts:</span> 
+                                <span className="font-mono text-red-400">{player.alerts.paste_attempt}</span>
+                              </div>
+                            )}
+                            {player.alerts.autotyper_suspected > 0 && (
+                              <div className="flex justify-between">
+                                <span>AutoTyper:</span> 
+                                <span className="font-mono text-red-400">{player.alerts.autotyper_suspected}</span>
+                              </div>
+                            )}
+                            {player.alerts.visibility_spoof_suspected > 0 && (
+                              <div className="flex justify-between">
+                                <span>Visibility Spoof:</span> 
+                                <span className="font-mono text-red-400">{player.alerts.visibility_spoof_suspected}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-[#2a2a2a]"></div>
                         </div>
-                        {/* Little triangle pointer for the tooltip */}
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-[#2a2a2a]"></div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
               </div>
             ))
