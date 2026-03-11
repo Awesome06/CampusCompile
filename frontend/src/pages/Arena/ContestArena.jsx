@@ -31,6 +31,7 @@ export default function ContestArena() {
   const [activeTab, setActiveTab] = useState('input');
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const draftKey = currentUser ? `draft_${currentUser.id}_${problemId}` : null;
 
@@ -78,6 +79,7 @@ export default function ContestArena() {
   };
 
   const handleSubmit = async () => {
+    setIsProcessing(true); // 🔒 Lock the UI
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     try {
@@ -111,17 +113,23 @@ export default function ContestArena() {
             setIsConsoleOpen(true);
             if (draftKey) localStorage.removeItem(draftKey);
           }
+          setIsProcessing(false); // 🔓 Unlock UI on completion
           sse.close(); 
         }
       };
 
-      sse.onerror = () => { sse.close(); };
+      sse.onerror = () => { 
+        setIsProcessing(false); // 🔓 Unlock on connection error
+        sse.close(); 
+      };
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
+      setIsProcessing(false); // 🔓 Unlock on API failure
     }
   };
 
   const handleRunCode = async () => {
+    setIsProcessing(true); // 🔒 Lock the UI
     setConsoleOutput('Queuing... ⚙️');
     setActiveTab('output');
     setIsConsoleOpen(true);
@@ -136,16 +144,19 @@ export default function ContestArena() {
           setConsoleOutput('Running... ⚙️');
         } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
           setConsoleOutput(data.output || data.message || "Program finished with no output.");
+          setIsProcessing(false); // 🔓 Unlock UI on completion
           sse.close(); 
         }
       };
 
       sse.onerror = () => {
         setConsoleOutput('Error streaming execution status.');
+        setIsProcessing(false); // 🔓 Unlock on connection error
         sse.close();
       };
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
+      setIsProcessing(false); // 🔓 Unlock on API failure
     }
   };
 
@@ -209,7 +220,7 @@ export default function ContestArena() {
           <CodeEditor 
             code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
             boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
-            isContest={true} contestId={contestId} 
+            isContest={true} contestId={contestId} isProcessing={isProcessing} // 👈 Passed down
           />
           <ExecutionConsole 
             isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}

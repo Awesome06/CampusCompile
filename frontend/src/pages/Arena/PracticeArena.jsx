@@ -29,6 +29,9 @@ export default function PracticeArena() {
   const [activeTab, setActiveTab] = useState('input');
   const [customInput, setCustomInput] = useState('');
   const [consoleOutput, setConsoleOutput] = useState('');
+  
+  // 👇 Added processing state for UI locks
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const draftKey = currentUser ? `draft_${currentUser.id}_${id}` : null;
 
@@ -78,6 +81,7 @@ export default function PracticeArena() {
   };
 
   const handleSubmit = async () => {
+    setIsProcessing(true); // 🔒 Lock the UI
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
     try {
@@ -111,17 +115,23 @@ export default function PracticeArena() {
             setIsConsoleOpen(true);
             if (draftKey) localStorage.removeItem(draftKey);
           }
+          setIsProcessing(false); // 🔓 Unlock UI
           sse.close(); 
         }
       };
 
-      sse.onerror = () => { sse.close(); };
+      sse.onerror = () => { 
+        setIsProcessing(false); // 🔓 Unlock UI
+        sse.close(); 
+      };
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
+      setIsProcessing(false); // 🔓 Unlock UI
     }
   };
 
   const handleRunCode = async () => {
+    setIsProcessing(true); // 🔒 Lock the UI
     setConsoleOutput('Queuing... ⚙️');
     setActiveTab('output');
     setIsConsoleOpen(true);
@@ -136,16 +146,19 @@ export default function PracticeArena() {
           setConsoleOutput('Running... ⚙️');
         } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
           setConsoleOutput(data.output || data.message || "Program finished with no output.");
+          setIsProcessing(false); // 🔓 Unlock UI
           sse.close(); 
         }
       };
 
       sse.onerror = () => {
         setConsoleOutput('Error streaming execution status.');
+        setIsProcessing(false); // 🔓 Unlock UI
         sse.close();
       };
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
+      setIsProcessing(false); // 🔓 Unlock UI
     }
   };
 
@@ -171,7 +184,7 @@ export default function PracticeArena() {
         <CodeEditor 
           code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
           boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
-          isContest={false} contestId={null} 
+          isContest={false} contestId={null} isProcessing={isProcessing} // 👈 Passed down here
         />
         <ExecutionConsole 
           isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}

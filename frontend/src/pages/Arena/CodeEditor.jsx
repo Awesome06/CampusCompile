@@ -2,32 +2,26 @@ import React, { useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import Button from '../../components/ui/Button';
 import useAntiCheat from '../../hooks/useAntiCheat'; 
-import { RefreshCw } from 'lucide-react'; 
+import { RefreshCw, Loader2 } from 'lucide-react'; // Added Loader2 icon
 
 export default function CodeEditor({ 
   code, setCode, language, setLanguage, boilerplates, 
-  onRun, onSubmit, isContest, contestId 
+  onRun, onSubmit, isContest, contestId, isProcessing // 👈 Added isProcessing
 }) {
   
-  // The hook itself should internally respect the isContest boolean
   const { logPasteAttempt, logKeystroke } = useAntiCheat(contestId, isContest);
   const editorRef = useRef(null);
 
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
 
-    // 👇 STRICTLY CONTEST ONLY: All anti-cheat and telemetry
     if (isContest) {
-      
-      // 1. Keystroke variance tracking (AutoTyper Polygraph)
       editor.onKeyDown((e) => {
         logKeystroke(); 
       });
 
-      // 2. Disable right-click menu entirely
       editor.updateOptions({ contextmenu: false });
 
-      // 3. The Bulletproof DOM Locks
       const domNode = editor.getDomNode();
 
       const preventPaste = (e) => {
@@ -65,6 +59,7 @@ export default function CodeEditor({
               setCode(boilerplates[e.target.value]);
             }}
             className="bg-dark-bg text-gray-300 px-3 py-1.5 rounded border border-dark-border font-mono text-sm outline-none"
+            disabled={isProcessing} // Disable language switch while running
           >
             <option value="cpp">C++ 20</option>
             <option value="python">Python 3</option>
@@ -73,7 +68,8 @@ export default function CodeEditor({
           
           <button
             onClick={handleReset}
-            className="p-1.5 text-gray-400 hover:text-white bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-dark-border rounded transition-colors shadow-sm"
+            disabled={isProcessing}
+            className={`p-1.5 rounded transition-colors shadow-sm ${isProcessing ? 'text-gray-600 bg-[#1a1a1a] cursor-not-allowed' : 'text-gray-400 hover:text-white bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-dark-border'}`}
             title="Reset to boilerplate"
           >
             <RefreshCw size={16} />
@@ -86,9 +82,28 @@ export default function CodeEditor({
           )}
         </div>
 
+        {/* 👇 Button Lockouts */}
         <div className="flex space-x-2">
-          <Button onClick={onRun} variant="secondary" size="sm">Run</Button>
-          <Button onClick={onSubmit} variant="success" size="sm">Submit</Button>
+          <Button 
+            onClick={onRun} 
+            variant="secondary" 
+            size="sm" 
+            disabled={isProcessing}
+            className={isProcessing ? 'opacity-50 cursor-not-allowed flex gap-2 items-center' : 'flex gap-2 items-center'}
+          >
+            {isProcessing && <Loader2 size={14} className="animate-spin" />}
+            Run
+          </Button>
+          <Button 
+            onClick={onSubmit} 
+            variant="success" 
+            size="sm" 
+            disabled={isProcessing}
+            className={isProcessing ? 'opacity-50 cursor-not-allowed flex gap-2 items-center' : 'flex gap-2 items-center'}
+          >
+            {isProcessing && <Loader2 size={14} className="animate-spin" />}
+            Submit
+          </Button>
         </div>
       </div>
 
@@ -105,7 +120,8 @@ export default function CodeEditor({
             minimap: { enabled: false }, 
             padding: { top: 20 }, 
             scrollBeyondLastLine: false,
-            wordWrap: "on"
+            wordWrap: "on",
+            readOnly: isProcessing // Disable typing while processing
           }}
         />
       </div>
