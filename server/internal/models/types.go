@@ -184,3 +184,7 @@ type TelemetryAlerts struct {
 	VisibilitySpoofSuspected int `json:"visibility_spoof_suspected"`
 	Plagiarism               int `json:"plagiarism"` // NEW
 }
+
+type BatchTelemetryPayload struct {
+	Events []TelemetryPayload `json:"events" binding:"required"`
+}

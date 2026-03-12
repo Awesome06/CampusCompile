@@ -2,19 +2,50 @@ import { useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 
 export default function useAntiCheat(contestId, isContest) {
-  // Refs to persist state without triggering re-renders
   const keyBuffer = useRef([]);
   const mouseLeaveTimer = useRef(null);
+  
+  // 1. Create a buffer to hold events
+  const eventBuffer = useRef([]);
 
-  // Helper to dispatch telemetry to the Go backend
+  // 2. Modify dispatch to push to the buffer instead of calling the API directly
   const dispatchTelemetry = useCallback((eventType, metadata = {}) => {
     if (!isContest || !contestId) return;
     
-    // Fire and forget - don't await so we don't block the UI
-    api.post(`/contests/${contestId}/telemetry`, {
+    eventBuffer.current.push({
       event_type: eventType,
-      metadata: metadata
-    }).catch(err => console.error("Telemetry dispatch failed", err));
+      metadata: metadata,
+      timestamp: Date.now()
+    });
+  }, [contestId, isContest]);
+
+  // 3. The Master Batching Daemon
+  useEffect(() => {
+    if (!isContest || !contestId) return;
+
+    const flushTelemetry = () => {
+      if (eventBuffer.current.length > 0) {
+        // Send the entire array at once to the new batch endpoint
+        api.post(`/contests/${contestId}/telemetry/batch`, {
+          events: eventBuffer.current
+        }).catch(err => console.error("Telemetry sync failed", err));
+        
+        // Clear the buffer
+        eventBuffer.current = [];
+      }
+    };
+
+    // Flush every 5 seconds
+    const flushInterval = setInterval(flushTelemetry, 5000);
+
+    // Attempt to flush if the user closes the tab or navigates away
+    window.addEventListener('beforeunload', flushTelemetry);
+
+    return () => {
+      clearInterval(flushInterval);
+      window.removeEventListener('beforeunload', flushTelemetry);
+      flushTelemetry(); // Flush one last time on unmount
+    };
   }, [contestId, isContest]);
 
   // ----------------------------------------------------
@@ -38,23 +69,15 @@ export default function useAntiCheat(contestId, isContest) {
     if (!isContest) return;
 
     const handleMouseLeave = () => {
-      // If the mouse leaves the viewport, start a 45-second timer
       mouseLeaveTimer.current = setTimeout(() => {
-        // If 45s pass and a 'blur' event hasn't fired natively, 
-        // they are likely using a visibility-spoofing extension.
         if (document.hasFocus()) {
-          dispatchTelemetry('visibility_spoof_suspected', { 
-            duration_out: 45000 
-          });
+          dispatchTelemetry('visibility_spoof_suspected', { duration_out: 45000 });
         }
       }, 45000);
     };
 
     const handleMouseEnter = () => {
-      // Mouse came back, cancel the trap
-      if (mouseLeaveTimer.current) {
-        clearTimeout(mouseLeaveTimer.current);
-      }
+      if (mouseLeaveTimer.current) clearTimeout(mouseLeaveTimer.current);
     };
 
     document.addEventListener('mouseleave', handleMouseLeave);
@@ -70,23 +93,17 @@ export default function useAntiCheat(contestId, isContest) {
   // ----------------------------------------------------
   // TRAP 3 & 4: AutoTyper Detection & Paste Attempts
   // ----------------------------------------------------
-  
-  // Call this manually when a paste is intercepted
   const logPasteAttempt = useCallback(() => {
     dispatchTelemetry('paste_attempt', { timestamp: Date.now() });
   }, [dispatchTelemetry]);
 
-  // Call this on every keystroke in the Monaco editor
   const logKeystroke = useCallback(() => {
     if (!isContest) return;
 
     const now = Date.now();
     keyBuffer.current.push(now);
 
-    // Keep the buffer at exactly 50 keystrokes to run the math
-    if (keyBuffer.current.length > 50) {
-      keyBuffer.current.shift();
-    }
+    if (keyBuffer.current.length > 50) keyBuffer.current.shift();
 
     if (keyBuffer.current.length === 50) {
       const deltas = [];
@@ -94,26 +111,19 @@ export default function useAntiCheat(contestId, isContest) {
         deltas.push(keyBuffer.current[i] - keyBuffer.current[i - 1]);
       }
 
-      // Calculate Mean (Average delay between keys)
       const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
-
-      // Calculate Standard Deviation (Variance)
       const variance = deltas.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / deltas.length;
       const stdDev = Math.sqrt(variance);
 
-      // Math: 50 keystrokes = ~10 words. Calculate WPM.
       const timeFor50KeysMins = (now - keyBuffer.current[0]) / 60000;
       const wpm = 10 / timeFor50KeysMins;
 
-      // The Trigger: Superhuman speed AND robotic consistency
       if (wpm > 180 && stdDev < 15) {
         dispatchTelemetry('autotyper_suspected', {
           wpm: Math.round(wpm),
           std_dev_ms: Math.round(stdDev),
           mean_delay_ms: Math.round(mean)
         });
-        
-        // Flush the buffer so we don't spam the server for every subsequent key
         keyBuffer.current = []; 
       }
     }

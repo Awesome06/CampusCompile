@@ -327,6 +327,27 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "logged"})
 }
 
+func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
+	contestID := c.Param("id")
+	userID := c.MustGet("user_id").(string)
+
+	var payload models.BatchTelemetryPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid batch payload format"})
+		return
+	}
+
+	// Fire and forget: Loop through the events in a background goroutine
+	// so the HTTP request completes instantly
+	go func() {
+		for _, event := range payload.Events {
+			ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"status": "batch_logged", "count": len(payload.Events)})
+}
+
 func getString(c *gin.Context, key string) string {
 	val, exists := c.Get(key)
 	if !exists {
