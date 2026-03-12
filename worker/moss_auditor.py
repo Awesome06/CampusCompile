@@ -181,7 +181,7 @@ def run_moss_audit(contest_id: str):
 
         # Ping Redis to force a final Leaderboard UI refresh
         rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-        rc.set(f"contest:{contest_id}:is_dirty", "true")
+        rc.sadd("dirty_contests", contest_id)
 
     except Exception as e:
         print(f"[!] MOSS Audit crashed: {e}")
