@@ -93,38 +93,62 @@ def compile_code(language: str, work_dir: str, source_code: str):
             except: pass
         return {"verdict": "CE", "message": "Compilation Timed Out or Failed"}
 
-def run_code(language: str, work_dir: str, cached_input_path: str, time_limit_seconds: float, memory_limit_kb: int):
+def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_seconds: float, memory_limit_kb: int):
     volumes = {'sandbox_volume': {'bind': SANDBOX_BASE, 'mode': 'rw'}}
     container = None
     
+    script_path = os.path.join(work_dir, 'execute.sh')
+    
     if language == 'python':
-        cmd = f'sh -c "python solution.py < {cached_input_path} > output.txt 2> error.txt"'
         img = "campus-python"
     elif language == 'cpp':
-        cmd = f'sh -c "./solution.out < {cached_input_path} > output.txt 2> error.txt"'
         img = "campus-cpp"
     elif language == 'java':
-        cmd = f'sh -c "java -Xmx{int(memory_limit_kb/1024)}m Main < {cached_input_path} > output.txt 2> error.txt"'
         img = "campus-java"
+        
+    # Dynamically build a shell script to run ALL test cases sequentially
+    with open(script_path, 'w', encoding='utf-8') as f:
+        f.write("#!/bin/sh\n")
+        for meta in tc_meta:
+            idx = meta['index']
+            input_path = meta['input_path']
+            
+            if language == 'python':
+                cmd = f"python solution.py < {input_path} > out_{idx}.txt 2> err_{idx}.txt"
+            elif language == 'cpp':
+                cmd = f"./solution.out < {input_path} > out_{idx}.txt 2> err_{idx}.txt"
+            elif language == 'java':
+                cmd = f"java -Xmx{int(memory_limit_kb/1024)}m Main < {input_path} > out_{idx}.txt 2> err_{idx}.txt"
+                
+            # Use Alpine's 'timeout' command. 
+            # If the process exceeds the time limit, it exits with code 124, 137, or 143.
+            f.write(f"timeout {time_limit_seconds} sh -c '{cmd}'\n")
+            f.write(f"RES=$?\n")
+            f.write(f"echo $RES > status_{idx}.txt\n")
+            
+            # FAST-FAIL: If it Time Limits (TLE) or Runtime Errors (RE), immediately stop the script.
+            f.write(f"if [ $RES -ne 0 ]; then exit 0; fi\n")
 
     try:
-        # Execution container: Heavily restricted capabilities, prevents fork bombs, limits memory swap
         container = client.containers.run(
-            image=img, command=cmd, volumes=volumes, working_dir=work_dir, 
+            image=img, command="sh execute.sh", volumes=volumes, working_dir=work_dir, 
             detach=True, network_disabled=True, 
             mem_limit=f"{memory_limit_kb}k", memswap_limit=f"{memory_limit_kb}k", 
             auto_remove=True, cpu_period=100000, cpu_quota=100000, pids_limit=64, 
             cap_drop=["ALL"], security_opt=["no-new-privileges"]
         )
-        result = container.wait(timeout=time_limit_seconds)
-        return {"status": "Success" if result['StatusCode'] == 0 else "Runtime Error"}
+        
+        # The absolute maximum time the container is allowed to stay alive
+        max_wait = (time_limit_seconds * len(tc_meta)) + 5.0
+        container.wait(timeout=max_wait)
+        return {"status": "Success"}
         
     except Exception as e:
         if container:
-            try: container.kill() # Force kill hanging containers
+            try: container.kill() 
             except: pass
         if "Timeout" in str(e) or "Read timed out" in str(e): 
-            return {"status": "Time Limit Exceeded"}
+            return {"status": "Container Timeout Exceeded"}
         return {"status": "System Error", "message": str(e)}
 
 def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> str:
@@ -190,29 +214,63 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         compile_err = compile_code(language, work_dir, source_code)
         if compile_err: return compile_err 
             
+        # 1. Gather all file paths and cache test cases
+        tc_meta = []
         for idx, tc in enumerate(test_cases):
             tc_id = tc.get('test_case_id', f"custom_{idx}")
             input_path, expected_path = ensure_cached_testcase(
                 work_dir, problem_id, tc_id, tc.get('input_data'), tc.get('expected_output'), 
                 tc.get('input_s3_key'), tc.get('expected_s3_key')
             )
+            tc_meta.append({
+                'index': idx,
+                'input_path': input_path,
+                'expected_path': expected_path
+            })
             
-            run_result = run_code(language, work_dir, input_path, time_limit_sec, memory_limit_kb)
+        # 2. RUN ONE SINGLE CONTAINER for all test cases
+        run_result = run_all_cases(language, work_dir, tc_meta, time_limit_sec, memory_limit_kb)
+        
+        if run_result["status"] == "Container Timeout Exceeded":
+            return {"verdict": "SE", "message": "Container critically timed out.", "actual_output": ""}
+        elif run_result["status"] != "Success":
+            return {"verdict": "SE", "message": run_result.get("message", "System Error"), "actual_output": ""}
+
+        # 3. Evaluate the generated text files sequentially
+        for meta in tc_meta:
+            idx = meta['index']
+            expected_path = meta['expected_path']
             
-            if run_result["status"] == "Time Limit Exceeded":
-                return {"verdict": "TLE", "message": f"Execution took too long on Test Case {idx+1}", "actual_output": ""}
-            elif run_result["status"] == "Runtime Error":
-                err_log = read_file_safely(os.path.join(work_dir, 'error.txt'))
-                return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
-            elif run_result["status"] != "Success":
-                return {"verdict": "SE", "message": run_result.get("message", "System Error"), "actual_output": ""}
+            status_file = os.path.join(work_dir, f'status_{idx}.txt')
+            out_file = os.path.join(work_dir, f'out_{idx}.txt')
+            err_file = os.path.join(work_dir, f'err_{idx}.txt')
+            
+            # If the script stopped early due to a previous TLE/RE, this file won't exist.
+            if not os.path.exists(status_file):
+                return {"verdict": "SE", "message": f"Execution halted unexpectedly before Test Case {idx+1}", "actual_output": ""}
+
+            status_code_str = read_file_safely(status_file).strip()
+            if not status_code_str:
+                return {"verdict": "SE", "message": f"Empty status code for Test Case {idx+1}", "actual_output": ""}
                 
-            verdict = evaluate_output(os.path.join(work_dir, 'output.txt'), expected_path)
+            status_code = int(status_code_str)
+            
+            # Interpret Alpine's exit codes
+            if status_code in [124, 137, 143]: 
+                return {"verdict": "TLE", "message": f"Execution took too long on Test Case {idx+1}", "actual_output": ""}
+            elif status_code != 0:
+                err_log = read_file_safely(err_file)
+                return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
+                
+            # Check for WA using Python
+            verdict = evaluate_output(out_file, expected_path)
             if verdict != "AC":
-                actual_out = read_file_safely(os.path.join(work_dir, 'output.txt'))
+                actual_out = read_file_safely(out_file)
                 return {"verdict": "WA", "message": f"Wrong Answer on Test Case {idx+1}", "actual_output": actual_out}
                 
-        return {"verdict": "AC", "actual_output": read_file_safely(os.path.join(work_dir, 'output.txt'))}
+        # If we passed everything, return the output of the final test case
+        last_idx = tc_meta[-1]['index']
+        return {"verdict": "AC", "actual_output": read_file_safely(os.path.join(work_dir, f'out_{last_idx}.txt'))}
         
     except Exception as e:
         return {"verdict": "SE", "message": str(e), "actual_output": ""}
