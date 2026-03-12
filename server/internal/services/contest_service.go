@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	redisClient "github.com/redis/go-redis/v9"
 
-	"campuscompile/api/internal/database" // NEW: Required for direct DB queries in the daemon
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 )
@@ -129,53 +127,43 @@ func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 1. Find all contests flagged as 'dirty' by the Python Worker
-			keys, err := s.redis.Keys(ctx, "contest:*:is_dirty").Result()
-			if err != nil {
+			// 1. Fetch all currently dirty contest IDs in O(1) time
+			dirtyContests, err := s.redis.SMembers(ctx, "dirty_contests").Result()
+			if err != nil || len(dirtyContests) == 0 {
 				continue
 			}
 
-			for _, key := range keys {
-				isDirty, err := s.redis.Get(ctx, key).Result()
-				if err == nil && isDirty == "true" {
-					// 2. Extract the Contest ID from the Redis key (e.g., "contest:1234:is_dirty")
-					parts := strings.Split(key, ":")
-					if len(parts) != 3 {
-						continue
-					}
-					contestID := parts[1]
+			for _, contestID := range dirtyContests {
+				// 2. Remove the ID from the set immediately to prevent duplicate broadcasts
+				s.redis.SRem(ctx, "dirty_contests", contestID)
 
-					// 3. Reset the flag immediately to prevent duplicate broadcasts
-					s.redis.Set(ctx, key, "false", 0)
+				// 3. Fetch enriched data and broadcast
+				auditStatus, leaderboardFull, err := s.FetchEnrichedLeaderboard(ctx, contestID)
+				if err == nil {
+					// Broadcast FULL intelligence to Faculty
+					payloadFull, _ := json.Marshal(map[string]interface{}{
+						"audit_status": auditStatus,
+						"leaderboard":  leaderboardFull,
+					})
+					s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:faculty:%s", contestID), payloadFull)
 
-					// 4. Fetch enriched data and broadcast
-					auditStatus, leaderboardFull, err := s.FetchEnrichedLeaderboard(ctx, contestID)
-					if err == nil {
-						// Broadcast FULL intelligence to Faculty
-						payloadFull, _ := json.Marshal(map[string]interface{}{
-							"audit_status": auditStatus,
-							"leaderboard":  leaderboardFull,
-						})
-						s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:faculty:%s", contestID), payloadFull)
-
-						// Strip alerts and broadcast CLEAN intelligence to Students
-						var leaderboardStripped []map[string]interface{}
-						for _, entry := range leaderboardFull {
-							strippedEntry := make(map[string]interface{})
-							for k, v := range entry {
-								if k != "alerts" {
-									strippedEntry[k] = v
-								}
+					// Strip alerts and broadcast CLEAN intelligence to Students
+					var leaderboardStripped []map[string]interface{}
+					for _, entry := range leaderboardFull {
+						strippedEntry := make(map[string]interface{})
+						for k, v := range entry {
+							if k != "alerts" {
+								strippedEntry[k] = v
 							}
-							leaderboardStripped = append(leaderboardStripped, strippedEntry)
 						}
-
-						payloadStripped, _ := json.Marshal(map[string]interface{}{
-							"audit_status": auditStatus,
-							"leaderboard":  leaderboardStripped,
-						})
-						s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:student:%s", contestID), payloadStripped)
+						leaderboardStripped = append(leaderboardStripped, strippedEntry)
 					}
+
+					payloadStripped, _ := json.Marshal(map[string]interface{}{
+						"audit_status": auditStatus,
+						"leaderboard":  leaderboardStripped,
+					})
+					s.redis.Publish(ctx, fmt.Sprintf("contest:leaderboard_updates:student:%s", contestID), payloadStripped)
 				}
 			}
 		}
@@ -191,8 +179,7 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 	}
 
 	// FIXED: Using database.Pool instead of illegally accessing unexported fields
-	var auditStatus string
-	err = database.Pool.QueryRow(ctx, "SELECT moss_audit_status FROM contests WHERE contest_id = $1", contestID).Scan(&auditStatus)
+	auditStatus, err := s.repo.GetMossAuditStatus(ctx, contestID)
 	if err != nil {
 		auditStatus = "pending" // Safe fallback
 	}
@@ -268,7 +255,9 @@ func (s *contestService) DeleteContest(ctx context.Context, contestID string) er
 	if err == nil {
 		// Nuke all Redis tracking keys associated with this contest
 		s.redis.Del(ctx, fmt.Sprintf("contest:leaderboard:%s", contestID))
-		s.redis.Del(ctx, fmt.Sprintf("contest:%s:is_dirty", contestID))
+
+		// Old: s.redis.Del(ctx, fmt.Sprintf("contest:%s:is_dirty", contestID))
+		s.redis.SRem(ctx, "dirty_contests", contestID)
 	}
 
 	return err
@@ -288,25 +277,15 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// FIXED: Using database.Pool instead of illegally accessing unexported fields
-			rows, err := database.Pool.Query(ctx, `
-				SELECT contest_id FROM contests 
-				WHERE end_time <= NOW() AND moss_audit_status = 'pending'
-			`)
+			// 👇 FIX: Use the repository interface
+			pendingIDs, err := s.repo.GetPendingAuditContests(ctx)
 			if err != nil {
 				continue
 			}
 
-			var pendingIDs []string
-			for rows.Next() {
-				var id string
-				rows.Scan(&id)
-				pendingIDs = append(pendingIDs, id)
-			}
-			rows.Close()
-
 			for _, id := range pendingIDs {
-				database.Pool.Exec(ctx, "UPDATE contests SET moss_audit_status = 'in_progress' WHERE contest_id = $1", id)
+				// 👇 FIX: Use the repository interface
+				s.repo.UpdateMossAuditStatus(ctx, id, "in_progress")
 
 				payload, _ := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
@@ -314,7 +293,7 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 				})
 				s.redis.LPush(ctx, "submission_queue", payload)
 
-				s.redis.Set(ctx, fmt.Sprintf("contest:%s:is_dirty", id), "true", 0)
+				s.redis.SAdd(ctx, "dirty_contests", id)
 			}
 		}
 	}

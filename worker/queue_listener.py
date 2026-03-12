@@ -119,7 +119,7 @@ def process_submission(submission_id):
                 score_increment = 1.0 - (penalty_minutes / 100000.0)
 
                 redis_client.zincrby(f"contest:leaderboard:{contest_id}", score_increment, user_id)
-                redis_client.set(f"contest:{contest_id}:is_dirty", "true")
+                redis_client.sadd("dirty_contests", contest_id)
                 print(f"[+] ICPC Score Updated for {user_id}. (+1 Solve, {penalty_minutes:.2f} Penalty Mins)")
 
         # 3. Publish Final Verdict to Redis

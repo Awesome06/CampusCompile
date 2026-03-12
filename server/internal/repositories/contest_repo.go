@@ -24,6 +24,9 @@ type ContestRepository interface {
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error
 	GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error)
+	GetMossAuditStatus(ctx context.Context, contestID string) (string, error)
+	GetPendingAuditContests(ctx context.Context) ([]string, error)
+	UpdateMossAuditStatus(ctx context.Context, contestID string, status string) error
 }
 
 type contestRepo struct {
@@ -357,4 +360,35 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 	}
 
 	return alertsMap, nil
+}
+
+func (r *contestRepo) GetMossAuditStatus(ctx context.Context, contestID string) (string, error) {
+	var status string
+	err := r.db.QueryRow(ctx, "SELECT moss_audit_status FROM contests WHERE contest_id = $1", contestID).Scan(&status)
+	return status, err
+}
+
+func (r *contestRepo) GetPendingAuditContests(ctx context.Context) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT contest_id FROM contests 
+		WHERE end_time <= NOW() AND moss_audit_status = 'pending'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pendingIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			pendingIDs = append(pendingIDs, id)
+		}
+	}
+	return pendingIDs, nil
+}
+
+func (r *contestRepo) UpdateMossAuditStatus(ctx context.Context, contestID string, status string) error {
+	_, err := r.db.Exec(ctx, "UPDATE contests SET moss_audit_status = $1 WHERE contest_id = $2", status, contestID)
+	return err
 }
