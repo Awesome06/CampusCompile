@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -32,8 +32,18 @@ export default function PracticeArena() {
   
   // 👇 Added processing state for UI locks
   const [isProcessing, setIsProcessing] = useState(false);
-
+  
+  const sseRef = useRef(null);
   const draftKey = currentUser ? `draft_${currentUser.id}_${id}` : null;
+
+  useEffect(() => {
+    return () => {
+      // If the component unmounts while a connection is open, sever it
+      if (sseRef.current) {
+        sseRef.current.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (draftKey) {
@@ -81,11 +91,14 @@ export default function PracticeArena() {
   };
 
   const handleSubmit = async () => {
-    setIsProcessing(true); // 🔒 Lock the UI
+    setIsProcessing(true);
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
+    
+    // Sever any existing connection just to be safe
+    if (sseRef.current) sseRef.current.close();
+
     try {
-      // Standard practice submission (no contest_id)
       const response = await api.post('/submit', { 
         problem_id: id, 
         language, 
@@ -93,9 +106,11 @@ export default function PracticeArena() {
       });
       
       const token = localStorage.getItem('token');
-      const sse = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
       
-      sse.onmessage = (event) => {
+      // USE THE REF HERE
+      sseRef.current = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
+      
+      sseRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         const status = data.status;
         
@@ -115,50 +130,56 @@ export default function PracticeArena() {
             setIsConsoleOpen(true);
             if (draftKey) localStorage.removeItem(draftKey);
           }
-          setIsProcessing(false); // 🔓 Unlock UI
-          sse.close(); 
+          setIsProcessing(false);
+          sseRef.current.close(); // USE THE REF HERE
         }
       };
 
-      sse.onerror = () => { 
-        setIsProcessing(false); // 🔓 Unlock UI
-        sse.close(); 
+      sseRef.current.onerror = () => { 
+        setIsProcessing(false);
+        sseRef.current.close(); // USE THE REF HERE
       };
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
-      setIsProcessing(false); // 🔓 Unlock UI
+      setIsProcessing(false);
     }
   };
 
   const handleRunCode = async () => {
-    setIsProcessing(true); // 🔒 Lock the UI
+    setIsProcessing(true);
     setConsoleOutput('Queuing... ⚙️');
     setActiveTab('output');
     setIsConsoleOpen(true);
+
+    // Sever any existing connection just to be safe
+    if (sseRef.current) sseRef.current.close();
+
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
       const token = localStorage.getItem('token');
-      const sse = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
       
-      sse.onmessage = (event) => {
+      // USE THE REF HERE
+      sseRef.current = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
+      
+      sseRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.status === 'Running') {
           setConsoleOutput('Running... ⚙️');
         } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
           setConsoleOutput(data.output || data.message || "Program finished with no output.");
-          setIsProcessing(false); // 🔓 Unlock UI
-          sse.close(); 
+          setIsProcessing(false);
+          sseRef.current.close(); // USE THE REF HERE
         }
       };
 
-      sse.onerror = () => {
+      sseRef.current.onerror = () => {
         setConsoleOutput('Error streaming execution status.');
-        setIsProcessing(false); // 🔓 Unlock UI
-        sse.close();
+        setIsProcessing(false);
+        sseRef.current.close(); // USE THE REF HERE
       };
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
-      setIsProcessing(false); // 🔓 Unlock UI
+      setIsProcessing(false);
     }
   };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -33,7 +33,18 @@ export default function ContestArena() {
   const [consoleOutput, setConsoleOutput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const sseRef = useRef(null);
+
   const draftKey = currentUser ? `draft_${currentUser.id}_${problemId}` : null;
+
+  useEffect(() => {
+    return () => {
+      // If the component unmounts while a connection is open, sever it
+      if (sseRef.current) {
+        sseRef.current.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (draftKey) {
@@ -82,6 +93,10 @@ export default function ContestArena() {
     setIsProcessing(true); // 🔒 Lock the UI
     setSubmitStatus('Pending... ⏳');
     setIsConsoleOpen(false);
+
+    // Sever any existing connection just to be safe
+    if (sseRef.current) sseRef.current.close();
+
     try {
       const response = await api.post('/submit', { 
         problem_id: problemId, 
@@ -91,9 +106,11 @@ export default function ContestArena() {
       });
       
       const token = localStorage.getItem('token');
-      const sse = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
       
-      sse.onmessage = (event) => {
+      // USE THE REF HERE
+      sseRef.current = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
+      
+      sseRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         const status = data.status;
         
@@ -114,13 +131,13 @@ export default function ContestArena() {
             if (draftKey) localStorage.removeItem(draftKey);
           }
           setIsProcessing(false); // 🔓 Unlock UI on completion
-          sse.close(); 
+          sseRef.current.close(); // USE THE REF HERE
         }
       };
 
-      sse.onerror = () => { 
+      sseRef.current.onerror = () => { 
         setIsProcessing(false); // 🔓 Unlock on connection error
-        sse.close(); 
+        sseRef.current.close(); // USE THE REF HERE
       };
     } catch (error) {
       setSubmitStatus('Error: Submission Failed');
@@ -133,26 +150,32 @@ export default function ContestArena() {
     setConsoleOutput('Queuing... ⚙️');
     setActiveTab('output');
     setIsConsoleOpen(true);
+
+    // Sever any existing connection just to be safe
+    if (sseRef.current) sseRef.current.close();
+
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
       const token = localStorage.getItem('token');
-      const sse = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
       
-      sse.onmessage = (event) => {
+      // USE THE REF HERE
+      sseRef.current = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
+      
+      sseRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.status === 'Running') {
           setConsoleOutput('Running... ⚙️');
         } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
           setConsoleOutput(data.output || data.message || "Program finished with no output.");
           setIsProcessing(false); // 🔓 Unlock UI on completion
-          sse.close(); 
+          sseRef.current.close(); // USE THE REF HERE
         }
       };
 
-      sse.onerror = () => {
+      sseRef.current.onerror = () => {
         setConsoleOutput('Error streaming execution status.');
         setIsProcessing(false); // 🔓 Unlock on connection error
-        sse.close();
+        sseRef.current.close(); // USE THE REF HERE
       };
     } catch (error) {
       setConsoleOutput('Error: Could not connect to execution engine.');
