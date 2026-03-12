@@ -10,7 +10,6 @@ import (
 
 	redisClient "github.com/redis/go-redis/v9"
 
-	"campuscompile/api/internal/database" // NEW: Required for direct DB queries in the daemon
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 )
@@ -191,8 +190,7 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 	}
 
 	// FIXED: Using database.Pool instead of illegally accessing unexported fields
-	var auditStatus string
-	err = database.Pool.QueryRow(ctx, "SELECT moss_audit_status FROM contests WHERE contest_id = $1", contestID).Scan(&auditStatus)
+	auditStatus, err := s.repo.GetMossAuditStatus(ctx, contestID)
 	if err != nil {
 		auditStatus = "pending" // Safe fallback
 	}
@@ -288,25 +286,15 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// FIXED: Using database.Pool instead of illegally accessing unexported fields
-			rows, err := database.Pool.Query(ctx, `
-				SELECT contest_id FROM contests 
-				WHERE end_time <= NOW() AND moss_audit_status = 'pending'
-			`)
+			// 👇 FIX: Use the repository interface
+			pendingIDs, err := s.repo.GetPendingAuditContests(ctx)
 			if err != nil {
 				continue
 			}
 
-			var pendingIDs []string
-			for rows.Next() {
-				var id string
-				rows.Scan(&id)
-				pendingIDs = append(pendingIDs, id)
-			}
-			rows.Close()
-
 			for _, id := range pendingIDs {
-				database.Pool.Exec(ctx, "UPDATE contests SET moss_audit_status = 'in_progress' WHERE contest_id = $1", id)
+				// 👇 FIX: Use the repository interface
+				s.repo.UpdateMossAuditStatus(ctx, id, "in_progress")
 
 				payload, _ := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
