@@ -178,9 +178,9 @@ func (r *contestRepo) GetUserProfiles(ctx context.Context, userIDs []string) (ma
 		return map[string]models.ContestProfile{}, nil
 	}
 
-	// Fetch both username AND role
+	// 👇 FIX: Explicitly cast $1 to a UUID array so Postgres doesn't panic
 	rows, err := r.db.Query(ctx, `
-		SELECT user_id, username, role FROM users WHERE user_id = ANY($1)
+		SELECT user_id, username, role FROM users WHERE user_id = ANY($1::uuid[])
 	`, userIDs)
 
 	if err != nil {
