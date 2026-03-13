@@ -13,8 +13,8 @@ import redis
 # --- CONFIGURATION ---
 DB_CONFIG = {
     "dbname": "CampusCompile_db",
-    "user": "campus_app",            
-    "password": "app", 
+    "user": os.getenv("POSTGRES_USER"),
+    "password": os.getenv("POSTGRES_PASSWORD"), 
     "host": os.getenv("DB_HOST", "localhost"),
     "port": "5432"
 }
@@ -105,7 +105,7 @@ def run_moss_audit(contest_id: str):
             conn.commit()
             
             rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-            rc.set(f"contest:{contest_id}:is_dirty", "true")
+            rc.sadd("dirty_contests", contest_id)
             return
 
         cursor.execute("SELECT DISTINCT problem_id FROM submissions WHERE contest_id = %s", (contest_id,))
@@ -177,7 +177,7 @@ def run_moss_audit(contest_id: str):
         print(f"[+] Contest {contest_id} audit finalized. Status set to 'completed'.")
 
         rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-        rc.set(f"contest:{contest_id}:is_dirty", "true")
+        rc.sadd("dirty_contests", contest_id)
 
     except Exception as e:
         print(f"[!] MOSS Audit crashed: {e}")
@@ -189,7 +189,7 @@ def run_moss_audit(contest_id: str):
             cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
             conn.commit()
             rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-            rc.set(f"contest:{contest_id}:is_dirty", "true")
+            rc.sadd("dirty_contests", contest_id)
         except Exception as inner_e:
             print(f"[!] Failed to update crash status to database: {inner_e}")
             

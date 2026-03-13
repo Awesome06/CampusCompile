@@ -313,8 +313,26 @@ func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 
 func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 	contestID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string) // <-- Extract role from JWT
+
+	// 👇 FIXED: Safely extract user_id without panicking
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user_id missing from context"})
+		return
+	}
+	userID, ok := userIDRaw.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user_id format"})
+		return
+	}
+
+	// 👇 FIXED: Safely extract role, defaulting to "student" if missing or malformed
+	userRole := "student"
+	if roleRaw, exists := c.Get("role"); exists {
+		if roleStr, ok := roleRaw.(string); ok {
+			userRole = roleStr
+		}
+	}
 
 	var payload models.TelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {

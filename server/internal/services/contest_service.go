@@ -9,7 +9,6 @@ import (
 
 	redisClient "github.com/redis/go-redis/v9"
 
-	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 )
@@ -22,9 +21,9 @@ type ContestService interface {
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
 	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
 	FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error)
-	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error) // Updated
+	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error)
 	FetchContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
-	StartLeaderboardDaemon(ctx context.Context) // Replaces StartLeaderboardTicker
+	StartLeaderboardDaemon(ctx context.Context)
 	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error
@@ -120,7 +119,7 @@ func (s *contestService) FetchCurrentLeaderboard(ctx context.Context, contestID 
 }
 
 func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second) // Check for updates every 2 seconds
+	ticker := time.NewTicker(10 * time.Second) // Check for updates every 10 seconds
 	defer ticker.Stop()
 
 	for {
@@ -128,14 +127,14 @@ func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 1. Fetch all currently dirty contest IDs in O(1) time
+			// 1. Fetch all contest IDs currently flagged as dirty using SMembers (O(N) where N is dirty count)
 			dirtyContests, err := s.redis.SMembers(ctx, "dirty_contests").Result()
 			if err != nil || len(dirtyContests) == 0 {
 				continue
 			}
 
 			for _, contestID := range dirtyContests {
-				// 2. Remove the ID from the set immediately to prevent duplicate broadcasts
+				// 2. Remove it from the set immediately to prevent duplicate broadcasts (SREM)
 				s.redis.SRem(ctx, "dirty_contests", contestID)
 
 				// 3. Fetch enriched data and broadcast
@@ -179,10 +178,10 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		return "", nil, err
 	}
 
-	var auditStatus string
-	err = database.Pool.QueryRow(ctx, "SELECT moss_audit_status FROM contests WHERE contest_id = $1", contestID).Scan(&auditStatus)
+	// 👇 FIXED: Routed through the repository interface
+	auditStatus, err := s.repo.GetMossAuditStatus(ctx, contestID)
 	if err != nil {
-		auditStatus = "pending"
+		auditStatus = "pending" // Safe fallback
 	}
 
 	if len(zset) == 0 {
@@ -194,9 +193,15 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		userIDs = append(userIDs, z.Member.(string))
 	}
 
-	// 👇 Use the newly upgraded repository method
-	profilesMap, _ := s.repo.GetUserProfiles(ctx, userIDs)
-	alertsMap, _ := s.repo.GetTelemetryAlerts(ctx, contestID, userIDs)
+	profilesMap, err := s.repo.GetUserProfiles(ctx, userIDs)
+	if err != nil {
+		return auditStatus, nil, fmt.Errorf("failed to fetch user profiles for leaderboard: %w", err)
+	}
+
+	alertsMap, err := s.repo.GetTelemetryAlerts(ctx, contestID, userIDs)
+	if err != nil {
+		return auditStatus, nil, fmt.Errorf("failed to fetch telemetry alerts for leaderboard: %w", err)
+	}
 
 	var enriched []map[string]interface{}
 	currentRank := 1 // <-- Dynamic rank counter
@@ -268,9 +273,7 @@ func (s *contestService) DeleteContest(ctx context.Context, contestID string) er
 	if err == nil {
 		// Nuke all Redis tracking keys associated with this contest
 		s.redis.Del(ctx, fmt.Sprintf("contest:leaderboard:%s", contestID))
-
-		// Old: s.redis.Del(ctx, fmt.Sprintf("contest:%s:is_dirty", contestID))
-		s.redis.SRem(ctx, "dirty_contests", contestID)
+		s.redis.SRem(ctx, "dirty_contests", contestID) // <-- CHANGED
 	}
 
 	return err
@@ -290,14 +293,14 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 👇 FIX: Use the repository interface
-			pendingIDs, err := s.repo.GetPendingAuditContests(ctx)
-			if err != nil {
+			// 👇 FIXED: Routed through the repository interface
+			pendingIDs, err := s.repo.GetPendingMossAudits(ctx)
+			if err != nil || len(pendingIDs) == 0 {
 				continue
 			}
 
 			for _, id := range pendingIDs {
-				// 👇 FIX: Use the repository interface
+				// 👇 FIXED: Routed through the repository interface
 				s.repo.UpdateMossAuditStatus(ctx, id, "in_progress")
 
 				payload, _ := json.Marshal(map[string]interface{}{
@@ -306,6 +309,7 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 				})
 				s.redis.LPush(ctx, "submission_queue", payload)
 
+				// Flag the contest to update the UI badge immediately
 				s.redis.SAdd(ctx, "dirty_contests", id)
 			}
 		}

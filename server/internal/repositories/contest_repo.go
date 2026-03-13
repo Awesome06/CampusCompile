@@ -25,8 +25,8 @@ type ContestRepository interface {
 	LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error
 	GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error)
 	GetMossAuditStatus(ctx context.Context, contestID string) (string, error)
-	GetPendingAuditContests(ctx context.Context) ([]string, error)
-	UpdateMossAuditStatus(ctx context.Context, contestID string, status string) error
+	GetPendingMossAudits(ctx context.Context) ([]string, error)
+	UpdateMossAuditStatus(ctx context.Context, contestID, status string) error
 }
 
 type contestRepo struct {
@@ -178,9 +178,8 @@ func (r *contestRepo) GetUserProfiles(ctx context.Context, userIDs []string) (ma
 		return map[string]models.ContestProfile{}, nil
 	}
 
-	// Fetch both username AND role
 	rows, err := r.db.Query(ctx, `
-		SELECT user_id, username, role FROM users WHERE user_id = ANY($1)
+		SELECT user_id, username, role FROM users WHERE user_id = ANY($1::uuid[])
 	`, userIDs)
 
 	if err != nil {
@@ -191,10 +190,18 @@ func (r *contestRepo) GetUserProfiles(ctx context.Context, userIDs []string) (ma
 	profiles := make(map[string]models.ContestProfile)
 	for rows.Next() {
 		var id, name, role string
-		if err := rows.Scan(&id, &name, &role); err == nil {
-			profiles[id] = models.ContestProfile{Username: name, Role: role}
+		// 👇 STRICT CHECK: Catch scan failures immediately
+		if err := rows.Scan(&id, &name, &role); err != nil {
+			return nil, err
 		}
+		profiles[id] = models.ContestProfile{Username: name, Role: role}
 	}
+
+	// 👇 STRICT CHECK: Catch any connection drops that occurred during the loop
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return profiles, nil
 }
 
@@ -368,7 +375,7 @@ func (r *contestRepo) GetMossAuditStatus(ctx context.Context, contestID string) 
 	return status, err
 }
 
-func (r *contestRepo) GetPendingAuditContests(ctx context.Context) ([]string, error) {
+func (r *contestRepo) GetPendingMossAudits(ctx context.Context) ([]string, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT contest_id FROM contests 
 		WHERE end_time <= NOW() AND moss_audit_status = 'pending'
@@ -378,17 +385,18 @@ func (r *contestRepo) GetPendingAuditContests(ctx context.Context) ([]string, er
 	}
 	defer rows.Close()
 
-	var pendingIDs []string
+	var ids []string
 	for rows.Next() {
 		var id string
-		if err := rows.Scan(&id); err == nil {
-			pendingIDs = append(pendingIDs, id)
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
 		}
+		ids = append(ids, id)
 	}
-	return pendingIDs, nil
+	return ids, rows.Err()
 }
 
-func (r *contestRepo) UpdateMossAuditStatus(ctx context.Context, contestID string, status string) error {
+func (r *contestRepo) UpdateMossAuditStatus(ctx context.Context, contestID, status string) error {
 	_, err := r.db.Exec(ctx, "UPDATE contests SET moss_audit_status = $1 WHERE contest_id = $2", status, contestID)
 	return err
 }
