@@ -20,15 +20,31 @@ export default function Onboarding() {
     { value: currentYear + 3, label: `${currentYear + 3}` },
     { value: currentYear + 4, label: `${currentYear + 4}` },
   ];
+  const batchOptions = [
+    { value: '1', label: 'Batch 1' },
+    { value: '2', label: 'Batch 2' },
+    { value: '3', label: 'Batch 3' },
+    { value: '4', label: 'Batch 4' },
+    { value: '27', label: 'Batch 27' },
+  ];
+  const SectionOptions = [
+    { value: '1', label: 'Section 1' },
+    { value: '2', label: 'Section 2' },
+    { value: '14', label: 'Section 14' },
+  ];
+  const GroupOptions = [
+    { value: '1', label: 'Group 1' },
+    { value: '7', label: 'Group 7' },
+  ];
 
   const [formData, setFormData] = useState({
     username: '', 
     course: 'B.Tech', 
     department: 'CSE', 
     graduation_year: currentYear + 3, // Default to a standard 4-year degree timeline
-    batch: '', 
-    section: '', 
-    student_group: ''
+    batch: 'Batch 1', 
+    section: 'Section 1', 
+    student_group: 'Group 1'
   });
 
   useEffect(() => {
@@ -104,9 +120,18 @@ export default function Onboarding() {
               options={gradYearOptions}
             />
 
-            <Input label="Batch" name="batch" value={formData.batch} onChange={handleChange} placeholder="e.g., B15" required />
-            <Input label="Section" name="section" value={formData.section} onChange={handleChange} placeholder="e.g., S8" required />
-            <Input label="Student Group" name="student_group" value={formData.student_group} onChange={handleChange} placeholder="e.g., G4" required />
+            <Select 
+              label="Batch" name="batch" value={formData.batch} onChange={handleChange}
+              options={batchOptions}
+            />
+            <Select 
+              label="Section" name="section" value={formData.section} onChange={handleChange}
+              options={sectionOptions}
+            />
+            <Select 
+              label="Student Group" name="student_group" value={formData.student_group} onChange={handleChange}
+              options={groupOptions}
+            />
           </div>
 
           <div className="mt-8">

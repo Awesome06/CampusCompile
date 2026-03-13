@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import JSZip from 'jszip';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
-import remarkGfm from 'remark-gfm';
 
 const DEFAULT_DESCRIPTION = `### Problem Statement
 Write your problem statement here. CampusCompile supports inline math like $O(N \\log N)$ and block equations:
@@ -31,6 +31,19 @@ $$ \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2} $$
 `;
 
 export default function AddProblem() {
+  // CodeChef-Style Custom Renderers for the Live Preview
+  const markdownComponents = {
+    h3: ({node, ...props}) => <h3 className="text-xl font-bold text-blue-400 mt-8 mb-4 border-b border-dark-border pb-2 tracking-wide uppercase" {...props} />,
+    pre: ({node, ...props}) => <pre className="bg-[#121212] border border-dark-border rounded-lg p-5 overflow-x-auto my-4 font-mono text-sm text-gray-300 shadow-inner" {...props} />,
+    code: ({node, inline, ...props}) => inline 
+        ? <code className="bg-[#2a2a2a] text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono border border-dark-border" {...props} /> 
+        : <code {...props} />,
+    ul: ({node, ...props}) => <ul className="list-disc list-inside my-4 space-y-2 text-gray-300 marker:text-blue-500" {...props} />,
+    li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
+    p: ({node, ...props}) => <p className="my-4 leading-relaxed text-gray-300" {...props} />,
+    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 bg-blue-900/10 p-4 my-4 rounded-r-lg italic text-gray-400" {...props} />
+  };
+
   const navigate = useNavigate();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -289,14 +302,15 @@ export default function AddProblem() {
                   problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 'border-red-800 bg-red-900/20 text-red-400'
                 }`}>{problemData.difficulty}</span>
               </div>
-              <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
-                <ReactMarkdown
-                  remarkPlugins={[remarkMath, remarkGfm]}
-                  rehypePlugins={[rehypeKatex]}
-                >
-                  {problemData.description}
-                </ReactMarkdown>
-              </div>
+              <div className="prose prose-invert max-w-none text-[15px] leading-relaxed">
+              <ReactMarkdown 
+                remarkPlugins={[remarkMath, remarkGfm]} 
+                rehypePlugins={[rehypeKatex]}
+                components={markdownComponents}
+              >
+                {problemData.description || '*Preview your problem description here...*'}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       )}
