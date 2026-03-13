@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"time"
 
@@ -15,19 +16,23 @@ var Pool *pgxpool.Pool
 
 // InitDB initializes the PostgreSQL connection
 func InitDB(host string) {
-	// 1. Securely fetch credentials with local-dev fallbacks
+	// 1. STRICT SECRETS VALIDATION
 	dbUser := os.Getenv("POSTGRES_USER")
 	if dbUser == "" {
-		dbUser = "campus_app"
+		log.Fatal("FATAL STARTUP ERROR: POSTGRES_USER environment variable is missing")
 	}
 
 	dbPassword := os.Getenv("POSTGRES_PASSWORD")
 	if dbPassword == "" {
-		dbPassword = "app"
+		log.Fatal("FATAL STARTUP ERROR: POSTGRES_PASSWORD environment variable is missing")
 	}
 
-	// 2. Dynamically build the connection string
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s:5432/CampusCompile_db?sslmode=disable", dbUser, dbPassword, host)
+	// 2. Safely encode credentials to handle special characters (Fixes Copilot's URL parsing warning)
+	encodedUser := url.QueryEscape(dbUser)
+	encodedPass := url.QueryEscape(dbPassword)
+
+	// 3. Dynamically build the connection string
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:5432/CampusCompile_db?sslmode=disable", encodedUser, encodedPass, host)
 
 	fmt.Println("[*] Attempting to connect to PostgreSQL...")
 	var err error

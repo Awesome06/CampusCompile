@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -25,12 +26,20 @@ var oauthConfig *oauth2.Config
 
 // InitOAuthConfig is called once from main.go when the server boots
 func InitOAuthConfig() {
+	clientID := os.Getenv("AZURE_CLIENT_ID")
+	clientSecret := os.Getenv("AZURE_CLIENT_SECRET")
+	tenantID := os.Getenv("AZURE_TENANT_ID")
+
+	if clientID == "" || clientSecret == "" || tenantID == "" {
+		log.Fatal("FATAL STARTUP ERROR: Azure OAuth credentials (AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID) are missing")
+	}
+
 	oauthConfig = &oauth2.Config{
-		ClientID:     os.Getenv("AZURE_CLIENT_ID"),
-		ClientSecret: os.Getenv("AZURE_CLIENT_SECRET"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 		RedirectURL:  "http://localhost:8080/api/auth/callback",
 		Scopes:       []string{"openid", "profile", "email", "User.Read"},
-		Endpoint:     microsoft.AzureADEndpoint(os.Getenv("AZURE_TENANT_ID")),
+		Endpoint:     microsoft.AzureADEndpoint(tenantID),
 	}
 }
 

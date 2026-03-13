@@ -293,24 +293,32 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 👇 FIXED: Routed through the repository interface
 			pendingIDs, err := s.repo.GetPendingMossAudits(ctx)
 			if err != nil || len(pendingIDs) == 0 {
 				continue
 			}
 
 			for _, id := range pendingIDs {
-				// 👇 FIXED: Routed through the repository interface
-				s.repo.UpdateMossAuditStatus(ctx, id, "in_progress")
-
 				payload, _ := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
 					"contest_id": id,
 				})
-				s.redis.LPush(ctx, "submission_queue", payload)
 
-				// Flag the contest to update the UI badge immediately
-				s.redis.SAdd(ctx, "dirty_contests", id)
+				// 1. ATTEMPT TO QUEUE IN REDIS FIRST
+				if err := s.redis.LPush(ctx, "submission_queue", payload).Err(); err != nil {
+					fmt.Printf("[!] Failed to queue MOSS audit for contest %s: %v\n", id, err)
+					continue // Skip to next; DB safely remains 'pending'
+				}
+
+				// 2. ONLY MARK AS IN_PROGRESS IF THE QUEUE ACCEPTED IT
+				if err := s.repo.UpdateMossAuditStatus(ctx, id, "in_progress"); err != nil {
+					fmt.Printf("[!] Audit queued, but failed to update DB status for contest %s: %v\n", id, err)
+				}
+
+				// 3. FLAG CONTEST AS DIRTY FOR UI UPDATES
+				if err := s.redis.SAdd(ctx, "dirty_contests", id).Err(); err != nil {
+					fmt.Printf("[!] Failed to mark contest %s as dirty: %v\n", id, err)
+				}
 			}
 		}
 	}

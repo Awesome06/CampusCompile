@@ -17,20 +17,21 @@ var S3Client *s3.Client
 const BucketName = "campus-testcases"
 
 func InitS3() {
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			PartitionID:   "aws",
-			URL:           os.Getenv("S3_ENDPOINT"),
-			SigningRegion: "us-east-1",
-		}, nil
-	})
+	// 1. STRICT SECRETS VALIDATION
+	endpoint := os.Getenv("S3_ENDPOINT")
+	accessKey := os.Getenv("S3_ACCESS_KEY")
+	secretKey := os.Getenv("S3_SECRET_KEY")
 
+	if endpoint == "" || accessKey == "" || secretKey == "" {
+		log.Fatal("FATAL STARTUP ERROR: S3/MinIO credentials (S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY) are missing")
+	}
+
+	// 2. LOAD CONFIGURATION (Without the deprecated global resolver)
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion("us-east-1"),
-		config.WithEndpointResolverWithOptions(customResolver),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			os.Getenv("S3_ACCESS_KEY"),
-			os.Getenv("S3_SECRET_KEY"),
+			accessKey,
+			secretKey,
 			"",
 		)),
 	)
@@ -38,11 +39,13 @@ func InitS3() {
 		log.Fatalf("Unable to load S3 config: %v", err)
 	}
 
+	// 3. APPLY BASE ENDPOINT DIRECTLY TO THE CLIENT
 	S3Client = s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = true // Required for MinIO
 	})
 
-	// 👇 NEW CODE: Auto-create bucket if it doesn't exist
+	// 4. AUTO-CREATE BUCKET IF IT DOESN'T EXIST
 	ctx := context.TODO()
 	_, err = S3Client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(BucketName),

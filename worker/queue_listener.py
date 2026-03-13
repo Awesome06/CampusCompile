@@ -1,4 +1,5 @@
 import redis
+import sys
 import json
 import psycopg2
 import os
@@ -8,12 +9,19 @@ from psycopg2.extras import RealDictCursor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
 
+# --- STRICT ENVIRONMENT VALIDATION ---
+def get_required_env(var_name: str) -> str:
+    value = os.getenv(var_name)
+    if not value:
+        raise ValueError(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.")
+    return value
+
 # --- CONFIGURATION ---
 DB_CONFIG = {
     "dbname": "CampusCompile_db",
-    "user": os.getenv("POSTGRES_USER"),
-    "password": os.getenv("POSTGRES_PASSWORD"), 
-    "host": os.getenv("DB_HOST", "localhost"),
+    "user": get_required_env("POSTGRES_USER"),
+    "password": get_required_env("POSTGRES_PASSWORD"), 
+    "host": os.getenv("DB_HOST", "localhost"), # Optional with fallback
     "port": "5432"
 }
 

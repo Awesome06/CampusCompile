@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import mosspy
 import psycopg2
@@ -9,6 +10,13 @@ from bs4 import BeautifulSoup
 from typing import List, Dict
 import time
 import redis
+
+# --- STRICT ENVIRONMENT VALIDATION ---
+def get_required_env(var_name: str) -> str:
+    value = os.getenv(var_name)
+    if not value:
+        raise ValueError(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.")
+    return value
 
 # --- CONFIGURATION ---
 DB_CONFIG = {
