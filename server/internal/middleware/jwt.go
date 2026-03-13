@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -15,10 +16,8 @@ func RequireAuth(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 
 	if authHeader == "" {
-		// 👇 NEW: Fallback to URL query parameter strictly for SSE streams
 		tokenString = c.Query("token")
 	} else {
-		// Strip the "Bearer " prefix if it came from the HTTP header
 		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 
@@ -39,8 +38,18 @@ func RequireAuth(c *gin.Context) {
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		c.Set("user_id", claims["user_id"])
-		c.Set("role", claims["role"])
+		// 1. SAFELY CAST CRITICAL CLAIMS TO STRINGS
+		if userIDRaw, exists := claims["user_id"]; exists {
+			c.Set("user_id", fmt.Sprintf("%v", userIDRaw))
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload: missing user_id"})
+			c.Abort()
+			return
+		}
+
+		if roleRaw, exists := claims["role"]; exists {
+			c.Set("role", fmt.Sprintf("%v", roleRaw))
+		}
 
 		// Extract demographic context if the user is onboarded
 		if isOnboarded, _ := claims["is_onboarded"].(bool); isOnboarded {
@@ -59,7 +68,7 @@ func RequireAuth(c *gin.Context) {
 			if group, ok := claims["student_group"].(string); ok {
 				c.Set("student_group", group)
 			}
-			// JWT unmarshals numbers as float64
+			// JWT unmarshals numbers as float64 safely cast it back
 			if gradYear, ok := claims["graduation_year"].(float64); ok {
 				c.Set("graduation_year", int(gradYear))
 			}
