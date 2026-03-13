@@ -9,7 +9,6 @@ import (
 
 	redisClient "github.com/redis/go-redis/v9"
 
-	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 )
@@ -179,10 +178,10 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		return "", nil, err
 	}
 
-	var auditStatus string
-	err = database.Pool.QueryRow(ctx, "SELECT moss_audit_status FROM contests WHERE contest_id = $1", contestID).Scan(&auditStatus)
+	// 👇 FIXED: Routed through the repository interface
+	auditStatus, err := s.repo.GetMossAuditStatus(ctx, contestID)
 	if err != nil {
-		auditStatus = "pending"
+		auditStatus = "pending" // Safe fallback
 	}
 
 	if len(zset) == 0 {
@@ -288,19 +287,23 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			pendingIDs, err := s.repo.GetPendingAuditContests(ctx)
-			if err != nil {
+			// 👇 FIXED: Routed through the repository interface
+			pendingIDs, err := s.repo.GetPendingMossAudits(ctx)
+			if err != nil || len(pendingIDs) == 0 {
 				continue
 			}
 
 			for _, id := range pendingIDs {
-				database.Pool.Exec(ctx, "UPDATE contests SET moss_audit_status = 'in_progress' WHERE contest_id = $1", id)
+				// 👇 FIXED: Routed through the repository interface
+				s.repo.UpdateMossAuditStatus(ctx, id, "in_progress")
 
 				payload, _ := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
 					"contest_id": id,
 				})
 				s.redis.LPush(ctx, "submission_queue", payload)
+
+				// Flag the contest to update the UI badge immediately
 				s.redis.SAdd(ctx, "dirty_contests", id)
 			}
 		}
