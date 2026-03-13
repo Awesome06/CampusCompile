@@ -5,6 +5,7 @@ import { Trophy, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 export default function Leaderboard() {
   const { id: contestId } = useParams();
   const [leaderboard, setLeaderboard] = useState([]);
+  const [auditStatus, setAuditStatus] = useState('pending');
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
 
@@ -27,6 +28,7 @@ export default function Leaderboard() {
       try {
         const data = JSON.parse(event.data);
         setLeaderboard(data.leaderboard || []);
+        setAuditStatus(data.audit_status || 'pending');
         setLoading(false);
         setConnectionError(false);
       } catch (err) {
@@ -64,6 +66,16 @@ export default function Leaderboard() {
           <span className="text-gray-400">STATUS:</span>
           {connectionError ? (
             <span className="text-red-500 font-bold animate-pulse">DISCONNECTED</span>
+          ) : auditStatus === 'failed' ? (
+            <span className="text-red-500 font-bold flex items-center gap-1 bg-red-900/20 px-2 py-0.5 rounded border border-red-800">
+              <AlertTriangle size={14} />
+              FAILED TO VERIFY
+            </span>
+          ) : auditStatus === 'completed' ? (
+            <span className="text-blue-400 font-bold flex items-center gap-1 bg-blue-900/20 px-2 py-0.5 rounded border border-blue-800">
+              <CheckCircle size={14} />
+              VERIFIED
+            </span>
           ) : (
             <span className="text-green-500 font-bold flex items-center gap-1">
               <span className="h-2 w-2 bg-green-500 rounded-full animate-ping mr-1"></span>

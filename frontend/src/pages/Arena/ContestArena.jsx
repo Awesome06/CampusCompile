@@ -35,7 +35,7 @@ export default function ContestArena() {
 
   const sseRef = useRef(null);
 
-  const draftKey = currentUser ? `draft_${currentUser.id}_${problemId}` : null;
+  const draftKey = currentUser ? `draft_contest_${contestId}_${currentUser.id}_${problemId}` : null;
 
   useEffect(() => {
     return () => {

@@ -16,7 +16,7 @@ type ContestRepository interface {
 	GetContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	RegisterUser(ctx context.Context, contestID, userID string) error
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
-	GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error)
+	GetUserProfiles(ctx context.Context, userIDs []string) (map[string]models.ContestProfile, error)
 	GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
 	GetPublicContests(ctx context.Context) ([]models.Contest, error)
 	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
@@ -173,14 +173,14 @@ func (r *contestRepo) CheckRegistration(ctx context.Context, contestID, userID s
 	return exists, err
 }
 
-func (r *contestRepo) GetUsernames(ctx context.Context, userIDs []string) (map[string]string, error) {
+func (r *contestRepo) GetUserProfiles(ctx context.Context, userIDs []string) (map[string]models.ContestProfile, error) {
 	if len(userIDs) == 0 {
-		return map[string]string{}, nil
+		return map[string]models.ContestProfile{}, nil
 	}
 
-	// Bulk fetch using Postgres ANY() array operator
+	// Fetch both username AND role
 	rows, err := r.db.Query(ctx, `
-		SELECT user_id, username FROM users WHERE user_id = ANY($1)
+		SELECT user_id, username, role FROM users WHERE user_id = ANY($1)
 	`, userIDs)
 
 	if err != nil {
@@ -188,14 +188,14 @@ func (r *contestRepo) GetUsernames(ctx context.Context, userIDs []string) (map[s
 	}
 	defer rows.Close()
 
-	usernames := make(map[string]string)
+	profiles := make(map[string]models.ContestProfile)
 	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err == nil {
-			usernames[id] = name
+		var id, name, role string
+		if err := rows.Scan(&id, &name, &role); err == nil {
+			profiles[id] = models.ContestProfile{Username: name, Role: role}
 		}
 	}
-	return usernames, nil
+	return profiles, nil
 }
 
 func (r *contestRepo) GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error) {

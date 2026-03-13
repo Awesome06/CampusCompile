@@ -314,6 +314,7 @@ func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 	contestID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string) // <-- Extract role from JWT
 
 	var payload models.TelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -321,7 +322,14 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 		return
 	}
 
-	// Fire and forget; don't block the student's browser waiting for a DB write
+	// 👇 TASK 2.2: ISOLATE TELEMETRY
+	// Drop the payload silently for faculty so they don't pollute the anti-cheat logs
+	if userRole == "admin" || userRole == "professor" {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored_for_faculty"})
+		return
+	}
+
+	// Fire and forget for students
 	go ctrl.service.LogTelemetry(context.Background(), contestID, userID, payload)
 
 	c.JSON(http.StatusOK, gin.H{"status": "logged"})

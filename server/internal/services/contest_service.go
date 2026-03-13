@@ -9,6 +9,7 @@ import (
 
 	redisClient "github.com/redis/go-redis/v9"
 
+	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 )
@@ -178,10 +179,10 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		return "", nil, err
 	}
 
-	// FIXED: Using database.Pool instead of illegally accessing unexported fields
-	auditStatus, err := s.repo.GetMossAuditStatus(ctx, contestID)
+	var auditStatus string
+	err = database.Pool.QueryRow(ctx, "SELECT moss_audit_status FROM contests WHERE contest_id = $1", contestID).Scan(&auditStatus)
 	if err != nil {
-		auditStatus = "pending" // Safe fallback
+		auditStatus = "pending"
 	}
 
 	if len(zset) == 0 {
@@ -193,14 +194,24 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		userIDs = append(userIDs, z.Member.(string))
 	}
 
-	usernamesMap, _ := s.repo.GetUsernames(ctx, userIDs)
+	// 👇 Use the newly upgraded repository method
+	profilesMap, _ := s.repo.GetUserProfiles(ctx, userIDs)
 	alertsMap, _ := s.repo.GetTelemetryAlerts(ctx, contestID, userIDs)
 
 	var enriched []map[string]interface{}
-	for i, z := range zset {
-		userID := z.Member.(string)
-		score := z.Score
+	currentRank := 1 // <-- Dynamic rank counter
 
+	for _, z := range zset {
+		userID := z.Member.(string)
+		profile, exists := profilesMap[userID]
+
+		// 👇 TASK 2.3: ISOLATE LEADERBOARD
+		// Silently skip missing users or elevated faculty members
+		if !exists || profile.Role == "admin" || profile.Role == "professor" {
+			continue
+		}
+
+		score := z.Score
 		var solves float64
 		if score > 0 {
 			solves = math.Ceil(score)
@@ -212,13 +223,15 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		userAlerts := alertsMap[userID]
 
 		enriched = append(enriched, map[string]interface{}{
-			"rank":     i + 1,
+			"rank":     currentRank, // <-- Use the dynamic rank so there are no skipped numbers
 			"user_id":  userID,
-			"username": usernamesMap[userID],
+			"username": profile.Username,
 			"solves":   int(solves),
 			"penalty":  int(penalty),
 			"alerts":   userAlerts,
 		})
+
+		currentRank++ // Increment only for valid students
 	}
 	return auditStatus, enriched, nil
 }

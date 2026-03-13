@@ -53,6 +53,11 @@ type UserDemographics struct {
 	GraduationYear int
 }
 
+type ContestProfile struct {
+	Username string
+	Role     string
+}
+
 // ==========================================
 // 3. CONTEST STRUCTS (PHASE 3)
 // ==========================================

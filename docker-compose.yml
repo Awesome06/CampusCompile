@@ -5,8 +5,8 @@ services:
     container_name: campus-db
     restart: always
     environment:
-      POSTGRES_USER: campus_app
-      POSTGRES_PASSWORD: app
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: CampusCompile_db
     ports:
       - "5433:5432"
@@ -31,16 +31,13 @@ services:
     depends_on:
       - db
       - redis
-      - minio # 👈 Ensure MinIO starts before the API
+      - minio
     env_file:
       - ./.env
     environment:
       - DB_HOST=db       
       - REDIS_HOST=redis 
-      # 👈 Inject MinIO connection details for the Go AWS SDK
       - S3_ENDPOINT=http://minio:9000 
-      - S3_ACCESS_KEY=campus_admin
-      - S3_SECRET_KEY=campus_password
 
   # --- 4. PYTHON EXECUTION WORKER ---
   worker:
@@ -50,17 +47,16 @@ services:
     depends_on:
       - db
       - redis
-      - minio # 👈 Ensure MinIO starts before the Worker
+      - minio
+    env_file:
+      - ./.env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock 
       - sandbox_volume:/sandbox_shared
     environment:
       - DB_HOST=db
       - REDIS_HOST=redis
-      # 👈 Inject MinIO connection details for boto3
       - S3_ENDPOINT=http://minio:9000
-      - S3_ACCESS_KEY=campus_admin
-      - S3_SECRET_KEY=campus_password
 
   # --- 5. REACT FRONTEND ---
   frontend:
@@ -80,8 +76,8 @@ services:
       - "9000:9000" # API port
       - "9001:9001" # Web UI port
     environment:
-      MINIO_ROOT_USER: "campus_admin"
-      MINIO_ROOT_PASSWORD: "campus_password"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data
 
@@ -90,4 +86,4 @@ volumes:
   pgdata:
   sandbox_volume:
     name: sandbox_volume
-  minio_data: # 👈 ADDED: The missing root volume declaration
+  minio_data:
