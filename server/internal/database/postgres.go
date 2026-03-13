@@ -4,19 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
+	"net/url" // <-- Ensure this is imported
 	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Pool is the globally accessible database connection pool
 var Pool *pgxpool.Pool
 
-// InitDB initializes the PostgreSQL connection
 func InitDB(host string) {
-	// 1. STRICT SECRETS VALIDATION
 	dbUser := os.Getenv("POSTGRES_USER")
 	if dbUser == "" {
 		log.Fatal("FATAL STARTUP ERROR: POSTGRES_USER environment variable is missing")
@@ -27,12 +24,15 @@ func InitDB(host string) {
 		log.Fatal("FATAL STARTUP ERROR: POSTGRES_PASSWORD environment variable is missing")
 	}
 
-	// 2. Safely encode credentials to handle special characters (Fixes Copilot's URL parsing warning)
-	encodedUser := url.QueryEscape(dbUser)
-	encodedPass := url.QueryEscape(dbPassword)
-
-	// 3. Dynamically build the connection string
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s:5432/CampusCompile_db?sslmode=disable", encodedUser, encodedPass, host)
+	// Safely construct the connection URL using Go's native struct
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(dbUser, dbPassword),
+		Host:     fmt.Sprintf("%s:5432", host),
+		Path:     "CampusCompile_db",
+		RawQuery: "sslmode=disable",
+	}
+	dbURL := u.String()
 
 	fmt.Println("[*] Attempting to connect to PostgreSQL...")
 	var err error

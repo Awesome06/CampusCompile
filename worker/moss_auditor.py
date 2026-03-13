@@ -15,14 +15,16 @@ import redis
 def get_required_env(var_name: str) -> str:
     value = os.getenv(var_name)
     if not value:
-        raise ValueError(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.")
+        # Write cleanly to stderr and terminate without a messy stack trace
+        sys.stderr.write(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.\n")
+        sys.exit(1)
     return value
 
 # --- CONFIGURATION ---
 DB_CONFIG = {
     "dbname": "CampusCompile_db",
-    "user": os.getenv("POSTGRES_USER"),
-    "password": os.getenv("POSTGRES_PASSWORD"), 
+    "user": get_required_env("POSTGRES_USER"),         # <-- Wired up
+    "password": get_required_env("POSTGRES_PASSWORD"), # <-- Wired up
     "host": os.getenv("DB_HOST", "localhost"),
     "port": "5432"
 }

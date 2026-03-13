@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -45,21 +46,27 @@ func InitS3() {
 		o.UsePathStyle = true // Required for MinIO
 	})
 
-	// 4. AUTO-CREATE BUCKET IF IT DOESN'T EXIST
+	// AUTO-CREATE BUCKET IF IT DOESN'T EXIST (With proper error inspection)
 	ctx := context.TODO()
 	_, err = S3Client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(BucketName),
 	})
 
 	if err != nil {
-		fmt.Printf("[*] MinIO Bucket '%s' not found. Creating it now...\n", BucketName)
-		_, err = S3Client.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: aws.String(BucketName),
-		})
-		if err != nil {
-			log.Fatalf("Failed to auto-create S3 bucket: %v", err)
+		// Only attempt to auto-create if we receive a definitive "Not Found" error
+		if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "NoSuchBucket") || strings.Contains(err.Error(), "404") {
+			fmt.Printf("[*] MinIO Bucket '%s' not found. Creating it now...\n", BucketName)
+			_, createErr := S3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+				Bucket: aws.String(BucketName),
+			})
+			if createErr != nil {
+				log.Fatalf("Failed to auto-create S3 bucket: %v", createErr)
+			}
+			fmt.Printf("[+] Bucket '%s' created successfully!\n", BucketName)
+		} else {
+			// If it's an auth failure, network timeout, or bad endpoint, crash immediately
+			log.Fatalf("FATAL STARTUP ERROR: Could not connect to MinIO/S3: %v", err)
 		}
-		fmt.Printf("[+] Bucket '%s' created successfully!\n", BucketName)
 	} else {
 		fmt.Printf("[*] Connected to MinIO (Bucket: %s)\n", BucketName)
 	}
