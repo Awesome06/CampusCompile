@@ -16,7 +16,10 @@ func RequireAuth(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 
 	if authHeader == "" {
-		tokenString = c.Query("token")
+		// STRICT RESTRICTION: Only allow URL tokens for SSE streaming endpoints
+		if strings.Contains(c.Request.URL.Path, "/stream") {
+			tokenString = c.Query("token")
+		}
 	} else {
 		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 	}
