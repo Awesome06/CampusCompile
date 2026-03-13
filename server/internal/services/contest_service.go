@@ -299,23 +299,31 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 			}
 
 			for _, id := range pendingIDs {
-				payload, _ := json.Marshal(map[string]interface{}{
+				// 1. HANDLE MARSHAL ERROR
+				payload, err := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
 					"contest_id": id,
 				})
-
-				// 1. ATTEMPT TO QUEUE IN REDIS FIRST
-				if err := s.redis.LPush(ctx, "submission_queue", payload).Err(); err != nil {
-					fmt.Printf("[!] Failed to queue MOSS audit for contest %s: %v\n", id, err)
-					continue // Skip to next; DB safely remains 'pending'
+				if err != nil {
+					fmt.Printf("[!] Failed to marshal MOSS payload for %s: %v\n", id, err)
+					continue
 				}
 
-				// 2. ONLY MARK AS IN_PROGRESS IF THE QUEUE ACCEPTED IT
+				// 2. CLAIM THE JOB IN DB FIRST
 				if err := s.repo.UpdateMossAuditStatus(ctx, id, "in_progress"); err != nil {
-					fmt.Printf("[!] Audit queued, but failed to update DB status for contest %s: %v\n", id, err)
+					fmt.Printf("[!] Failed to update DB status for %s, skipping queue: %v\n", id, err)
+					continue
 				}
 
-				// 3. FLAG CONTEST AS DIRTY FOR UI UPDATES
+				// 3. ATTEMPT TO QUEUE IN REDIS
+				if err := s.redis.LPush(ctx, "submission_queue", payload).Err(); err != nil {
+					fmt.Printf("[!] Failed to queue MOSS audit for %s: %v. Reverting DB state.\n", id, err)
+					// REVERT DB STATE ON QUEUE FAILURE TO PREVENT ZOMBIE JOBS
+					_ = s.repo.UpdateMossAuditStatus(ctx, id, "pending")
+					continue
+				}
+
+				// 4. FLAG CONTEST AS DIRTY (Handle error silently but log it)
 				if err := s.redis.SAdd(ctx, "dirty_contests", id).Err(); err != nil {
 					fmt.Printf("[!] Failed to mark contest %s as dirty: %v\n", id, err)
 				}
