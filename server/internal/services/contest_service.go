@@ -22,9 +22,9 @@ type ContestService interface {
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
 	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
 	FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error)
-	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error) // Updated
+	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error)
 	FetchContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
-	StartLeaderboardDaemon(ctx context.Context) // Replaces StartLeaderboardTicker
+	StartLeaderboardDaemon(ctx context.Context)
 	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error
@@ -120,7 +120,7 @@ func (s *contestService) FetchCurrentLeaderboard(ctx context.Context, contestID 
 }
 
 func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second) // Check for updates every 2 seconds
+	ticker := time.NewTicker(10 * time.Second) // Check for updates every 10 seconds
 	defer ticker.Stop()
 
 	for {
@@ -128,14 +128,14 @@ func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 1. Fetch all currently dirty contest IDs in O(1) time
+			// 1. Fetch all contest IDs currently flagged as dirty using SMembers (O(N) where N is dirty count)
 			dirtyContests, err := s.redis.SMembers(ctx, "dirty_contests").Result()
 			if err != nil || len(dirtyContests) == 0 {
 				continue
 			}
 
 			for _, contestID := range dirtyContests {
-				// 2. Remove the ID from the set immediately to prevent duplicate broadcasts
+				// 2. Remove it from the set immediately to prevent duplicate broadcasts (SREM)
 				s.redis.SRem(ctx, "dirty_contests", contestID)
 
 				// 3. Fetch enriched data and broadcast
@@ -268,9 +268,7 @@ func (s *contestService) DeleteContest(ctx context.Context, contestID string) er
 	if err == nil {
 		// Nuke all Redis tracking keys associated with this contest
 		s.redis.Del(ctx, fmt.Sprintf("contest:leaderboard:%s", contestID))
-
-		// Old: s.redis.Del(ctx, fmt.Sprintf("contest:%s:is_dirty", contestID))
-		s.redis.SRem(ctx, "dirty_contests", contestID)
+		s.redis.SRem(ctx, "dirty_contests", contestID) // <-- CHANGED
 	}
 
 	return err
@@ -290,22 +288,19 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 👇 FIX: Use the repository interface
 			pendingIDs, err := s.repo.GetPendingAuditContests(ctx)
 			if err != nil {
 				continue
 			}
 
 			for _, id := range pendingIDs {
-				// 👇 FIX: Use the repository interface
-				s.repo.UpdateMossAuditStatus(ctx, id, "in_progress")
+				database.Pool.Exec(ctx, "UPDATE contests SET moss_audit_status = 'in_progress' WHERE contest_id = $1", id)
 
 				payload, _ := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
 					"contest_id": id,
 				})
 				s.redis.LPush(ctx, "submission_queue", payload)
-
 				s.redis.SAdd(ctx, "dirty_contests", id)
 			}
 		}
