@@ -14,7 +14,17 @@ export default function ContestList() {
   
   // Default tabs based on role
   const [viewMode, setViewMode] = useState(isElevated ? 'public' : 'upcoming'); 
+  const [registeredContests, setRegisteredContests] = useState({});
 
+  const handleRegister = async (contestId) => {
+    try {
+      await api.post(`/contests/${contestId}/register`);
+      setRegisteredContests(prev => ({ ...prev, [contestId]: true }));
+    } catch (error) {
+      alert(error.response?.data?.error || "Failed to register for contest");
+    }
+  };
+  
   useEffect(() => {
     setLoading(true);
     api.get('/contests')
@@ -182,7 +192,6 @@ export default function ContestList() {
                 const isAuthor = contest.author_id === currentUser?.id;
                 const isAdmin = currentUser?.role === 'admin';
                 
-                // You can only enter early if you are an Admin, or the Professor who created it
                 const canEnter = !isUpcoming || isAdmin || isAuthor;
 
                 if (canEnter) {
@@ -191,6 +200,21 @@ export default function ContestList() {
                       Enter Arena
                     </Link>
                   );
+                } else if (isUpcoming && currentUser?.role === 'student') {
+                  // 👇 NEW: Registration UI Logic
+                  if (registeredContests[contest.contest_id]) {
+                    return (
+                      <button disabled className="bg-green-900/30 border border-green-800 text-green-400 px-6 py-2 rounded cursor-not-allowed transition text-sm font-bold shadow-sm flex items-center gap-2">
+                        ✅ Registered
+                      </button>
+                    );
+                  } else {
+                    return (
+                      <button onClick={() => handleRegister(contest.contest_id)} className="bg-dark-accent px-6 py-2 rounded hover:bg-blue-500 transition text-sm font-bold shadow-sm text-white flex items-center gap-2">
+                        Register Now
+                      </button>
+                    );
+                  }
                 } else {
                   return (
                     <button disabled className="bg-gray-800 border border-gray-600 px-6 py-2 rounded cursor-not-allowed transition text-sm font-bold shadow-sm text-gray-500 flex items-center gap-2">
