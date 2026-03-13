@@ -54,9 +54,11 @@ CREATE TABLE contests (
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     access_rules JSONB,
     author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
-    is_public BOOLEAN NOT NULL DEFAULT false
+    is_public BOOLEAN NOT NULL DEFAULT false,
+    moss_audit_status audit_status DEFAULT 'pending'
 );
 
 -- ==========================================
@@ -115,8 +117,6 @@ CREATE TABLE contest_telemetry (
     contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     event_type telemetry_event_type NOT NULL,
-    -- JSONB is perfect here to store flexible data like keystroke variance 
-    -- standard deviations or exact time-out durations for later analysis.
     metadata JSONB, 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -128,7 +128,7 @@ CREATE TABLE plagiarism_reports (
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
     user_1_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     user_2_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
-    similarity_score NUMERIC(5,2) NOT NULL, -- e.g., 85.50 for 85.5% match
+    similarity_score NUMERIC(5,2) NOT NULL,
     moss_url TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,6 +140,7 @@ CREATE TABLE plagiarism_reports (
 -- Contests
 CREATE INDEX idx_contests_author_id ON contests(author_id);
 CREATE INDEX idx_contests_times ON contests(start_time, end_time);
+CREATE INDEX idx_contests_moss_audit ON contests(moss_audit_status, end_time, updated_at);
 
 -- Contest Registrations
 CREATE INDEX idx_contest_registrations_user_id ON contest_registrations(user_id);
@@ -150,7 +151,26 @@ CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);
 CREATE INDEX idx_submissions_user_id ON submissions(user_id);
 CREATE INDEX idx_submissions_status ON submissions(status);
 
--- query this table grouped by user_id for a specific contest_id.
+-- Telemetry & Plagiarism
 CREATE INDEX idx_telemetry_contest_user ON contest_telemetry(contest_id, user_id);
--- Speeds up queries when a professor wants to see all flagged pairs for a specific problem.
 CREATE INDEX idx_plagiarism_contest_problem ON plagiarism_reports(contest_id, problem_id);
+
+
+-- ==========================================
+-- 6. DATABASE TRIGGERS
+-- ==========================================
+
+-- Reusable function to bump the updated_at timestamp
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Attach the auto-update trigger to the contests table
+CREATE TRIGGER update_contests_modtime
+    BEFORE UPDATE ON contests
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
