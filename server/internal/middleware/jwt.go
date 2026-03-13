@@ -68,7 +68,7 @@ func RequireAuth(c *gin.Context) {
 			if group, ok := claims["student_group"].(string); ok {
 				c.Set("student_group", group)
 			}
-			// JWT unmarshals numbers as float64 safely cast it back
+			// JWT unmarshals numbers as float64; safely cast them	 back
 			if gradYear, ok := claims["graduation_year"].(float64); ok {
 				c.Set("graduation_year", int(gradYear))
 			}
