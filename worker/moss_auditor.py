@@ -13,8 +13,8 @@ import redis
 # --- CONFIGURATION ---
 DB_CONFIG = {
     "dbname": "CampusCompile_db",
-    "user": "campus_app",            
-    "password": "app", 
+    "user": os.getenv("POSTGRES_USER"),
+    "password": os.getenv("POSTGRES_PASSWORD"), 
     "host": os.getenv("DB_HOST", "localhost"),
     "port": "5432"
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,7 +15,19 @@ var Pool *pgxpool.Pool
 
 // InitDB initializes the PostgreSQL connection
 func InitDB(host string) {
-	dbURL := fmt.Sprintf("postgres://campus_app:app@%s:5432/CampusCompile_db?sslmode=disable", host)
+	// 1. Securely fetch credentials with local-dev fallbacks
+	dbUser := os.Getenv("POSTGRES_USER")
+	if dbUser == "" {
+		dbUser = "campus_app"
+	}
+
+	dbPassword := os.Getenv("POSTGRES_PASSWORD")
+	if dbPassword == "" {
+		dbPassword = "app"
+	}
+
+	// 2. Dynamically build the connection string
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:5432/CampusCompile_db?sslmode=disable", dbUser, dbPassword, host)
 
 	fmt.Println("[*] Attempting to connect to PostgreSQL...")
 	var err error

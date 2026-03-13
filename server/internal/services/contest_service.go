@@ -193,9 +193,15 @@ func (s *contestService) FetchEnrichedLeaderboard(ctx context.Context, contestID
 		userIDs = append(userIDs, z.Member.(string))
 	}
 
-	// 👇 Use the newly upgraded repository method
-	profilesMap, _ := s.repo.GetUserProfiles(ctx, userIDs)
-	alertsMap, _ := s.repo.GetTelemetryAlerts(ctx, contestID, userIDs)
+	profilesMap, err := s.repo.GetUserProfiles(ctx, userIDs)
+	if err != nil {
+		return auditStatus, nil, fmt.Errorf("failed to fetch user profiles for leaderboard: %w", err)
+	}
+
+	alertsMap, err := s.repo.GetTelemetryAlerts(ctx, contestID, userIDs)
+	if err != nil {
+		return auditStatus, nil, fmt.Errorf("failed to fetch telemetry alerts for leaderboard: %w", err)
+	}
 
 	var enriched []map[string]interface{}
 	currentRank := 1 // <-- Dynamic rank counter
