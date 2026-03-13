@@ -152,30 +152,33 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
         return {"status": "System Error", "message": str(e)}
 
 def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> str:
-    def get_lines(path):
-        if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                for line in f: yield line.rstrip()
-        else:
-            yield ""
+    def get_clean_lines(path):
+        """Yields right-stripped lines, ignoring any trailing empty lines at the end of the file."""
+        if not os.path.exists(path):
+            return
+            
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+            
+        # Strip trailing empty lines completely from the buffer
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+            
+        for line in lines:
+            yield line.rstrip()
 
-    actual_iter = get_lines(actual_output_file_path)
-    expected_iter = get_lines(cached_expected_path)
+    actual_iter = get_clean_lines(actual_output_file_path)
+    expected_iter = get_clean_lines(cached_expected_path)
 
     sentinel = object()
     for a_line, e_line in itertools.zip_longest(actual_iter, expected_iter, fillvalue=sentinel):
-        if a_line is sentinel:
-            if e_line != "": return "WA"
-            for remaining in expected_iter:
-                if remaining != "": return "WA"
-            break
-        if e_line is sentinel:
-            if a_line != "": return "WA"
-            for remaining in actual_iter:
-                if remaining != "": return "WA"
-            break
+        # If one file has more lines than the other (and they aren't empty)
+        if a_line is sentinel or e_line is sentinel:
+            return "WA"
+            
         if a_line != e_line:
             return "WA"
+            
     return "AC"
 
 # --- THE MASTER GRADER ---
