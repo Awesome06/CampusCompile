@@ -66,6 +66,11 @@ export default function Leaderboard() {
           <span className="text-gray-400">STATUS:</span>
           {connectionError ? (
             <span className="text-red-500 font-bold animate-pulse">DISCONNECTED</span>
+          ) : auditStatus === 'failed' ? (
+            <span className="text-red-500 font-bold flex items-center gap-1 bg-red-900/20 px-2 py-0.5 rounded border border-red-800">
+              <AlertTriangle size={14} />
+              FAILED TO VERIFY
+            </span>
           ) : auditStatus === 'completed' ? (
             <span className="text-blue-400 font-bold flex items-center gap-1 bg-blue-900/20 px-2 py-0.5 rounded border border-blue-800">
               <CheckCircle size={14} />

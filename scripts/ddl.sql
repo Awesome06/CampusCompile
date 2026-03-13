@@ -5,7 +5,7 @@ CREATE TYPE user_role AS ENUM ('student', 'professor', 'admin');
 CREATE TYPE problem_difficulty AS ENUM ('Easy', 'Medium', 'Hard');
 CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'SE');
 CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected');
-CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed');
+CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed', 'failed');
 
 -- ==========================================
 -- 2. CORE ENTITIES

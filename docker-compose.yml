@@ -50,17 +50,19 @@ services:
     depends_on:
       - db
       - redis
-      - minio # 👈 Ensure MinIO starts before the Worker
+      - minio
+    env_file:
+      - ./.env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock 
       - sandbox_volume:/sandbox_shared
     environment:
       - DB_HOST=db
       - REDIS_HOST=redis
-      # 👈 Inject MinIO connection details for boto3
       - S3_ENDPOINT=http://minio:9000
       - S3_ACCESS_KEY=campus_admin
       - S3_SECRET_KEY=campus_password
+      - MOSS_USER_ID=${MOSS_USER_ID}
 
   # --- 5. REACT FRONTEND ---
   frontend:

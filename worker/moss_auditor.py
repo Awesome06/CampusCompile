@@ -94,16 +94,20 @@ def parse_moss_report(moss_url: str) -> List[Dict]:
 def run_moss_audit(contest_id: str):
     print(f"\n[*] Starting Automated MOSS Audit for Contest: {contest_id}")
     
-    # 1. Strict Environment Validation
-    if MOSS_USER_ID == "YOUR_MOSS_ID_HERE" or not MOSS_USER_ID.strip():
-        print("[!] FATAL: MOSS_USER_ID is missing or invalid.")
-        print("[!] Cannot run plagiarism checks. The audit status will remain pending.")
-        return
-
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
+        # 1. Strict Environment Validation -> Triggers 'failed' state
+        if MOSS_USER_ID == "YOUR_MOSS_ID_HERE" or not MOSS_USER_ID.strip():
+            print("[!] FATAL: MOSS_USER_ID is missing or invalid. Audit Failed.")
+            cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
+            conn.commit()
+            
+            rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
+            rc.set(f"contest:{contest_id}:is_dirty", "true")
+            return
+
         cursor.execute("SELECT DISTINCT problem_id FROM submissions WHERE contest_id = %s", (contest_id,))
         problems = [row['problem_id'] for row in cursor.fetchall()]
 
@@ -167,18 +171,28 @@ def run_moss_audit(contest_id: str):
             print("[*] Sleeping for 20 seconds to respect Stanford MOSS rate limits...")
             time.sleep(20)
 
-        # 2. Finalize Database State to 'completed'
+        # 2. Finalize Database State to 'completed' on Success
         cursor.execute("UPDATE contests SET moss_audit_status = 'completed' WHERE contest_id = %s", (contest_id,))
         conn.commit()
         print(f"[+] Contest {contest_id} audit finalized. Status set to 'completed'.")
 
-        # 3. Ping Redis to force a final Leaderboard UI refresh
         rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
         rc.set(f"contest:{contest_id}:is_dirty", "true")
 
     except Exception as e:
         print(f"[!] MOSS Audit crashed: {e}")
-        conn.rollback()
+        # Rollback any half-finished transactions
+        conn.rollback() 
+        
+        # 3. Explicitly mark as failed in the event of a runtime crash
+        try:
+            cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
+            conn.commit()
+            rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
+            rc.set(f"contest:{contest_id}:is_dirty", "true")
+        except Exception as inner_e:
+            print(f"[!] Failed to update crash status to database: {inner_e}")
+            
     finally:
         cursor.close()
         conn.close()
