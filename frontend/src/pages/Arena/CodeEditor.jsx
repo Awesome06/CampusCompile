@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import Button from '../../components/ui/Button';
 import useAntiCheat from '../../hooks/useAntiCheat'; 
@@ -11,6 +11,7 @@ export default function CodeEditor({
   
   const { logPasteAttempt, logKeystroke } = useAntiCheat(contestId, isContest);
   const editorRef = useRef(null);
+  const isInternalChange = useRef(false);
 
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -42,11 +43,30 @@ export default function CodeEditor({
     }
   };
 
+  const handleEditorChange = (value) => {
+    isInternalChange.current = true; // Throw up the shield: we are typing!
+    setCode(value);
+  };
+
   const handleReset = () => {
     if (window.confirm("Are you sure you want to reset the editor? Your current code will be permanently lost.")) {
       setCode(boilerplates[language]);
     }
   };
+
+  // Only inject external code (like restoring history or resetting)
+  // If the user is actively typing, block the parent from hijacking the editor.
+  useEffect(() => {
+    if (editorRef.current && !isInternalChange.current) {
+      const currentEditorValue = editorRef.current.getValue();
+      if (currentEditorValue !== code) {
+        // Only reset the cursor if we are legitimately loading new code from the outside
+        editorRef.current.setValue(code || boilerplates[language]); 
+      }
+    }
+    // Reset the flag after every state evaluation
+    isInternalChange.current = false;
+  }, [code, language, boilerplates]);
 
   return (
     <>
@@ -112,8 +132,8 @@ export default function CodeEditor({
           height="100%"
           language={language === 'cpp' ? 'cpp' : language}
           theme="vs-dark"
-          value={code}
-          onChange={setCode}
+          defaultValue={code}
+          onChange={handleEditorChange}
           onMount={handleEditorMount} 
           options={{ 
             fontSize: 15, 
