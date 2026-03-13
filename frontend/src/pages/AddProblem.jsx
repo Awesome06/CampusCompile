@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import JSZip from 'jszip';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
+import remarkGfm from 'remark-gfm';
 
 const DEFAULT_DESCRIPTION = `### Problem Statement
 Write your problem statement here. CampusCompile supports inline math like $O(N \\log N)$ and block equations:
@@ -31,47 +31,40 @@ $$ \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2} $$
 `;
 
 export default function AddProblem() {
-  // CodeChef-Style Custom Renderers for the Live Preview
+  const navigate = useNavigate();
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // CodeChef-Style Custom Renderers
   const markdownComponents = {
     h3: ({node, ...props}) => <h3 className="text-xl font-bold text-blue-400 mt-8 mb-4 border-b border-dark-border pb-2 tracking-wide uppercase" {...props} />,
     pre: ({node, ...props}) => <pre className="bg-[#121212] border border-dark-border rounded-lg p-5 overflow-x-auto my-4 font-mono text-sm text-gray-300 shadow-inner" {...props} />,
-    code: ({node, inline, ...props}) => inline 
-        ? <code className="bg-[#2a2a2a] text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono border border-dark-border" {...props} /> 
-        : <code {...props} />,
+    code: ({node, className, children, ...props}) => {
+      const isInline = !className || !className.includes('language-');
+      return isInline 
+        ? <code className="bg-[#2a2a2a] text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono border border-dark-border" {...props}>{children}</code> 
+        : <code className={className} {...props}>{children}</code>;
+    },
     ul: ({node, ...props}) => <ul className="list-disc list-inside my-4 space-y-2 text-gray-300 marker:text-blue-500" {...props} />,
     li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
     p: ({node, ...props}) => <p className="my-4 leading-relaxed text-gray-300" {...props} />,
     blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 bg-blue-900/10 p-4 my-4 rounded-r-lg italic text-gray-400" {...props} />
   };
 
-  const navigate = useNavigate();
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Wizard & Submission State
   const [step, setStep] = useState(1);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Step 1: Problem Details
   const [problemData, setProblemData] = useState({
-    title: '',
-    description: DEFAULT_DESCRIPTION,
-    difficulty: 'Easy',
-    time_limit: 2000,
-    memory_limit: 256,
-    is_public: false
+    title: '', description: DEFAULT_DESCRIPTION, difficulty: 'Easy',
+    time_limit: 2000, memory_limit: 256, is_public: false
   });
 
-  // Step 2: Dynamic Test Cases
-  const [testCases, setTestCases] = useState([
-    { input: '', expectedOutput: '', isHidden: false }
-  ]);
+  const [testCases, setTestCases] = useState([{ input: '', expectedOutput: '', isHidden: false }]);
+  const [expandedCases, setExpandedCases] = useState({ 0: true });
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -83,7 +76,6 @@ export default function AddProblem() {
       const decodedToken = jwtDecode(token);
       const userRole = decodedToken.role?.toLowerCase(); 
       setIsAuthorized(userRole === 'admin' || userRole === 'professor');
-
     } catch (error) {
       setIsAuthorized(false);
     } finally {
@@ -91,11 +83,21 @@ export default function AddProblem() {
     }
   }, [navigate]);
 
-  const handleAddTestCase = () => setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true }]);
+  const toggleTestCase = (index) => {
+    setExpandedCases(prev => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  const handleAddTestCase = () => {
+    const newIndex = testCases.length;
+    setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true }]);
+    setExpandedCases(prev => ({ ...prev, [newIndex]: true }));
+  };
+
   const handleRemoveTestCase = (index) => setTestCases(testCases.filter((_, i) => i !== index));
+
   const updateTestCase = (index, field, value) => {
     const updated = [...testCases];
-    updated[index][field] = value;
+    updated[index] = { ...updated[index], [field]: value };
     setTestCases(updated);
   };
 
@@ -108,18 +110,16 @@ export default function AddProblem() {
     try {
       const zip = new JSZip();
       const loadedZip = await zip.loadAsync(file);
-      
       const inputs = {};
       const outputs = {};
       
-      // 1. Read all files in the ZIP
       for (const [relativePath, zipEntry] of Object.entries(loadedZip.files)) {
-        if (zipEntry.dir) continue; // Skip folders
+        // IGNORE folders and hidden system files
+        if (zipEntry.dir || relativePath.includes('__MACOSX') || relativePath.includes('.DS_Store')) continue;
         
         const content = await zipEntry.async("string");
         const cleanName = relativePath.split('/').pop().toLowerCase();
         
-        // Extract the base number/name (e.g., "1.in" -> "1", "input_5.txt" -> "5")
         const baseMatch = cleanName.match(/(\d+)/); 
         const baseName = baseMatch ? baseMatch[0] : cleanName.split('.')[0];
         
@@ -127,33 +127,30 @@ export default function AddProblem() {
         if (cleanName.includes('out')) outputs[baseName] = content;
       }
 
-      // 2. Pair them up
       const newTestCases = [];
       Object.keys(inputs).forEach(key => {
         if (outputs[key]) {
-          newTestCases.push({
-            input: inputs[key].trim(),
-            expectedOutput: outputs[key].trim(),
-            isHidden: true // Bulk uploads default to hidden
-          });
+          newTestCases.push({ input: inputs[key].trim(), expectedOutput: outputs[key].trim(), isHidden: true });
         }
       });
 
       if (newTestCases.length === 0) {
-        setStatus({ type: 'error', message: 'No matching input/output files found in ZIP. Ensure files have "in" and "out" in their names.' });
+        setStatus({ type: 'error', message: 'No valid input/output files found in ZIP.' });
         return;
       }
 
-      // 3. Append to existing state (PREVENTS OVERWRITES)
-      setTestCases(prev => [...prev, ...newTestCases]);
+      setTestCases(prev => {
+        const updated = [...prev, ...newTestCases];
+        setExpandedCases(e => ({ ...e, [prev.length]: true })); 
+        return updated;
+      });
+      
       setStatus({ type: 'success', message: `Successfully appended ${newTestCases.length} test cases!` });
       setTimeout(() => setStatus({ type: '', message: '' }), 3000);
 
     } catch (err) {
-      console.error(err);
       setStatus({ type: 'error', message: 'Failed to process ZIP file.' });
     }
-    // Reset input so they can upload another zip if needed
     e.target.value = null; 
   };
 
@@ -162,27 +159,17 @@ export default function AddProblem() {
     setStatus({ type: 'info', message: 'Forging problem and syncing test cases... 🚀' });
 
     try {
-      const problemPayload = {
-        title: problemData.title,
-        description: problemData.description,
-        difficulty: problemData.difficulty,
-        time_limit: problemData.time_limit,
-        memory_limit: problemData.memory_limit * 1024,
-        is_public: problemData.is_public
-      };
+      const probRes = await api.post('/problems', {
+        title: problemData.title, description: problemData.description, difficulty: problemData.difficulty,
+        time_limit: problemData.time_limit, memory_limit: problemData.memory_limit * 1024, is_public: problemData.is_public
+      });
       
-      const probRes = await api.post('/problems', problemPayload);
       const newProblemId = probRes.data.problem_id;
 
-      await api.post(`/problems/${newProblemId}/testcases/batch`, {
-        test_cases: testCases
-      });
+      await api.post(`/problems/${newProblemId}/testcases/batch`, { test_cases: testCases });
 
       setStatus({ type: 'success', message: 'Problem published successfully! 🎉' });
-      
-      // Construct the full URL for sharing and trigger the modal
-      const fullUrl = `${window.location.origin}/arena/${newProblemId}`;
-      setPublishedUrl(fullUrl);
+      setPublishedUrl(`${window.location.origin}/arena/${newProblemId}`);
       setShowSuccessModal(true);
 
     } catch (err) {
@@ -199,8 +186,9 @@ export default function AddProblem() {
   };
 
   const resetForm = () => {
-    setProblemData({ title: '', description: DEFAULT_DESCRIPTION, difficulty: 'Easy', time_limit: 2000, memory_limit: 256 });
+    setProblemData({ title: '', description: DEFAULT_DESCRIPTION, difficulty: 'Easy', time_limit: 2000, memory_limit: 256, is_public: false });
     setTestCases([{ input: '', expectedOutput: '', isHidden: false }]);
+    setExpandedCases({ 0: true });
     setStatus({ type: '', message: '' });
     setShowSuccessModal(false);
     setStep(1);
@@ -209,17 +197,12 @@ export default function AddProblem() {
   if (isLoading) return <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg text-white text-xl">Verifying clearance...</div>;
 
   if (!isAuthorized) {
-    return (
-      <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg">
-        {/* ... Access Denied UI remains the same ... */}
-      </div>
-    );
+    return <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg">Unauthorized Access</div>;
   }
 
   return (
     <div className="h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex flex-col overflow-hidden relative">
       
-      {/* Top Status Bar */}
       {status.message && !showSuccessModal && (
         <div className={`p-3 text-center font-bold text-sm ${
           status.type === 'error' ? 'bg-red-900/90 text-red-200' :
@@ -230,10 +213,8 @@ export default function AddProblem() {
         </div>
       )}
 
-      {/* --- STEP 1: SPLIT PANE EDITOR --- */}
       {step === 1 && (
         <div className="flex flex-1 h-full overflow-hidden">
-          {/* Left Pane: Configuration Form */}
           <div className="w-1/2 flex flex-col p-6 overflow-y-auto custom-scrollbar border-r border-dark-border bg-[#1e1e1e]">
             <h2 className="text-2xl font-bold text-white mb-6 tracking-wide">Forge New Problem</h2>
             <div className="space-y-5 flex-1 flex flex-col">
@@ -290,7 +271,6 @@ export default function AddProblem() {
             </div>
           </div>
 
-          {/* Right Pane: Arena Live Preview */}
           <div className="w-1/2 bg-dark-bg p-8 overflow-y-auto custom-scrollbar">
              <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-6 border-b border-gray-800 pb-2">Arena Live Preview</div>
              <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problemData.title || 'Untitled Problem'}</h2>
@@ -302,20 +282,19 @@ export default function AddProblem() {
                   problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 'border-red-800 bg-red-900/20 text-red-400'
                 }`}>{problemData.difficulty}</span>
               </div>
-              <div className="prose prose-invert max-w-none text-[15px] leading-relaxed">
-              <ReactMarkdown 
-                remarkPlugins={[remarkMath, remarkGfm]} 
-                rehypePlugins={[rehypeKatex]}
-                components={markdownComponents}
-              >
-                {problemData.description || '*Preview your problem description here...*'}
-              </ReactMarkdown>
-            </div>
+              <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath, remarkGfm]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={markdownComponents}
+                >
+                  {problemData.description}
+                </ReactMarkdown>
+              </div>
           </div>
         </div>
       )}
 
-      {/* --- STEP 2: TEST CASE CONFIGURATOR --- */}
       {step === 2 && (
         <div className="flex-1 p-8 overflow-y-auto bg-dark-bg flex justify-center custom-scrollbar">
           <div className="w-full max-w-5xl">
@@ -327,39 +306,70 @@ export default function AddProblem() {
               <Button onClick={() => setStep(1)} variant="secondary" size="sm">← Edit Problem Details</Button>
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-3">
               {testCases.map((tc, index) => (
-                <div key={index} className="bg-[#1e1e1e] border border-dark-border rounded-lg p-5 relative shadow-xl transition-all hover:border-gray-600">
-                  <div className="flex justify-between items-center mb-4 border-b border-dark-border/50 pb-3">
-                    <h3 className="text-white font-bold tracking-widest text-sm uppercase flex items-center space-x-2">
-                      <span className="bg-dark-accent text-white px-2 py-0.5 rounded text-[10px]">#{index + 1}</span>
-                      <span>Test Case</span>
-                    </h3>
-                    <div className="flex items-center space-x-5">
-                      <label className="flex items-center space-x-2 text-sm text-gray-400 cursor-pointer hover:text-white transition-colors">
-                        <input type="checkbox" checked={tc.isHidden} onChange={(e) => updateTestCase(index, 'isHidden', e.target.checked)} 
-                          className="w-4 h-4 rounded bg-dark-bg border-dark-border text-dark-accent focus:ring-dark-accent focus:ring-offset-dark-bg" />
-                        <span className="select-none">Hidden Evaluation Case</span>
+                <div key={index} className="border border-dark-border rounded-lg overflow-hidden bg-[#1e1e1e] shadow-lg">
+                  
+                  {/* ACCORDION HEADER */}
+                  <div 
+                    className="flex justify-between items-center p-3 bg-[#2a2a2a] cursor-pointer hover:bg-[#333] transition-colors"
+                    onClick={() => toggleTestCase(index)}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <span className="text-gray-400 font-mono text-xs w-4">
+                        {expandedCases[index] ? '▼' : '▶'}
+                      </span>
+                      <span className="font-bold text-gray-200">Test Case {index + 1}</span>
+                    </div>
+
+                    <div className="flex items-center space-x-4" onClick={(e) => e.stopPropagation()}>
+                      <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={tc.isHidden}
+                          onChange={(e) => updateTestCase(index, 'isHidden', e.target.checked)}
+                          className="rounded border-gray-600 bg-[#121212] text-blue-500 focus:ring-blue-500 focus:ring-offset-[#1e1e1e]"
+                        />
+                        <span className="select-none">Hidden</span>
                       </label>
                       {testCases.length > 1 && (
-                        <button onClick={() => handleRemoveTestCase(index)} className="text-red-500 hover:text-red-400 opacity-70 hover:opacity-100 transition-opacity" title="Remove Test Case">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveTestCase(index)}
+                          className="text-red-400 hover:text-white text-sm font-bold bg-red-900/20 hover:bg-red-600 px-3 py-1 rounded transition-colors"
+                        >
+                          Delete
                         </button>
                       )}
                     </div>
                   </div>
-                  <div className="flex space-x-6">
-                    <div className="w-1/2 flex flex-col">
-                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Input Data (stdin)</label>
-                      <textarea required className="w-full h-40 bg-[#121212] text-gray-300 p-3 rounded border border-dark-border font-mono text-sm outline-none focus:border-dark-accent resize-none custom-scrollbar"
-                        value={tc.input} onChange={(e) => updateTestCase(index, 'input', e.target.value)} placeholder="e.g.,\n5\n1 2 3 4 5" />
+
+                  {/* ACCORDION BODY */}
+                  {expandedCases[index] && (
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#1a1a1a] border-t border-dark-border">
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Input Data (stdin)</label>
+                        <textarea
+                          value={tc.input}
+                          onChange={(e) => updateTestCase(index, 'input', e.target.value)}
+                          rows="6"
+                          className="w-full bg-[#121212] border border-dark-border rounded-lg p-3 text-sm text-gray-200 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all resize-none custom-scrollbar"
+                          placeholder="e.g. 5\n1 2 3 4 5"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Expected Output (stdout)</label>
+                        <textarea
+                          value={tc.expectedOutput}
+                          onChange={(e) => updateTestCase(index, 'expectedOutput', e.target.value)}
+                          rows="6"
+                          className="w-full bg-[#121212] border border-dark-border rounded-lg p-3 text-sm text-green-400/90 font-mono focus:border-green-600 focus:ring-1 focus:ring-green-600 outline-none transition-all resize-none custom-scrollbar"
+                          placeholder="e.g. 15"
+                        />
+                      </div>
                     </div>
-                    <div className="w-1/2 flex flex-col">
-                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Expected Output (stdout)</label>
-                      <textarea required className="w-full h-40 bg-[#121212] text-green-400/90 p-3 rounded border border-dark-border font-mono text-sm outline-none focus:border-green-600 resize-none custom-scrollbar"
-                        value={tc.expectedOutput} onChange={(e) => updateTestCase(index, 'expectedOutput', e.target.value)} placeholder="e.g.,\n15" />
-                    </div>
-                  </div>
+                  )}
+                  
                 </div>
               ))}
             </div>
@@ -370,7 +380,6 @@ export default function AddProblem() {
                   <span className="text-lg leading-none">+</span><span>Add Manually</span>
                 </Button>
                 
-                {/* NEW: ZIP Upload Button */}
                 <label className="flex items-center justify-center space-x-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 px-4 py-2 rounded text-sm font-bold border border-dark-border cursor-pointer transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   <span>Bulk Upload (.zip)</span>
@@ -379,7 +388,7 @@ export default function AddProblem() {
               </div>
 
               <Button onClick={handlePublish} variant="success" className="px-8 shadow-lg shadow-green-900/20" 
-                disabled={isSubmitting || testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())}>
+                disabled={isSubmitting || testCases.some(tc => !tc.input?.trim() || !tc.expectedOutput?.trim())}>
                 {isSubmitting ? 'Syncing to Database...' : 'Finalize & Publish'}
               </Button>
             </div>
