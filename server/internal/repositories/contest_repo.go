@@ -397,6 +397,6 @@ func (r *contestRepo) GetPendingMossAudits(ctx context.Context) ([]string, error
 }
 
 func (r *contestRepo) UpdateMossAuditStatus(ctx context.Context, contestID, status string) error {
-	_, err := r.db.Exec(ctx, "UPDATE contests SET moss_audit_status = $1 WHERE contest_id = $2", status, contestID)
+	_, err := r.db.Exec(ctx, "UPDATE contests SET moss_audit_status = $1, updated_at = NOW() WHERE contest_id = $2", status, contestID)
 	return err
 }

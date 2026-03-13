@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -293,39 +294,48 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// 1. SWEEP FOR PENDING AND STUCK JOBS
+			// Ensure GetPendingMossAudits utilizes the timeout SQL logic mentioned above
 			pendingIDs, err := s.repo.GetPendingMossAudits(ctx)
 			if err != nil || len(pendingIDs) == 0 {
 				continue
 			}
 
 			for _, id := range pendingIDs {
-				// 1. HANDLE MARSHAL ERROR
 				payload, err := json.Marshal(map[string]interface{}{
 					"job_type":   "moss_audit",
 					"contest_id": id,
+					"queued_at":  time.Now().Unix(), // Helpful for worker metrics
 				})
 				if err != nil {
-					fmt.Printf("[!] Failed to marshal MOSS payload for %s: %v\n", id, err)
+					log.Printf("[ERROR] Failed to marshal MOSS payload for %s: %v\n", id, err)
 					continue
 				}
 
-				// 2. CLAIM THE JOB IN DB FIRST
+				// 2. ATOMIC-LIKE DB CLAIM
+				// Claim the job first to prevent other daemon instances from grabbing it
 				if err := s.repo.UpdateMossAuditStatus(ctx, id, "in_progress"); err != nil {
-					fmt.Printf("[!] Failed to update DB status for %s, skipping queue: %v\n", id, err)
+					log.Printf("[ERROR] Failed to claim DB status for %s, skipping queue: %v\n", id, err)
 					continue
 				}
 
-				// 3. ATTEMPT TO QUEUE IN REDIS
+				// 3. PUSH TO REDIS
 				if err := s.redis.LPush(ctx, "submission_queue", payload).Err(); err != nil {
-					fmt.Printf("[!] Failed to queue MOSS audit for %s: %v. Reverting DB state.\n", id, err)
-					// REVERT DB STATE ON QUEUE FAILURE TO PREVENT ZOMBIE JOBS
-					_ = s.repo.UpdateMossAuditStatus(ctx, id, "pending")
+					log.Printf("[CRITICAL] Redis LPush failed for contest %s: %v. Attempting state revert.\n", id, err)
+
+					// 4. EXPLICIT REVERT HANDLING
+					revertErr := s.repo.UpdateMossAuditStatus(ctx, id, "pending")
+					if revertErr != nil {
+						// This is the split-brain scenario. Log as FATAL/ALERT.
+						// We don't panic, because the 30-minute DB sweep will eventually rescue it.
+						log.Printf("[FATAL ALERT] Split-brain! Redis failed AND DB revert failed for %s. Revert Error: %v\n", id, revertErr)
+					}
 					continue
 				}
 
-				// 4. FLAG CONTEST AS DIRTY (Handle error silently but log it)
+				// 5. CACHE / UI UPDATES
 				if err := s.redis.SAdd(ctx, "dirty_contests", id).Err(); err != nil {
-					fmt.Printf("[!] Failed to mark contest %s as dirty: %v\n", id, err)
+					log.Printf("[WARN] Failed to mark contest %s as dirty: %v\n", id, err)
 				}
 			}
 		}
