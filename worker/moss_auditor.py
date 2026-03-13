@@ -94,16 +94,20 @@ def parse_moss_report(moss_url: str) -> List[Dict]:
 def run_moss_audit(contest_id: str):
     print(f"\n[*] Starting Automated MOSS Audit for Contest: {contest_id}")
     
+    # 1. Strict Environment Validation
+    if MOSS_USER_ID == "YOUR_MOSS_ID_HERE" or not MOSS_USER_ID.strip():
+        print("[!] FATAL: MOSS_USER_ID is missing or invalid.")
+        print("[!] Cannot run plagiarism checks. The audit status will remain pending.")
+        return
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # Find all unique problems solved in this contest
         cursor.execute("SELECT DISTINCT problem_id FROM submissions WHERE contest_id = %s", (contest_id,))
         problems = [row['problem_id'] for row in cursor.fetchall()]
 
         for prob_id in problems:
-            # Fetch latest submissions for THIS problem
             cursor.execute("""
                 SELECT DISTINCT ON (user_id) user_id, language, source_code_s3_key
                 FROM submissions
@@ -112,52 +116,43 @@ def run_moss_audit(contest_id: str):
             """, (contest_id, prob_id))
             
             submissions = cursor.fetchall()
-            
             if not submissions:
                 continue
 
-            # 2. Group submissions by language (MOSS cannot cross-compare Python and C++)
             grouped_subs = {'cpp': [], 'java': [], 'python': []}
             for sub in submissions:
                 lang = sub['language']
                 if lang in grouped_subs:
                     grouped_subs[lang].append(sub)
 
-            # 3. Process each language batch
             for lang, subs in grouped_subs.items():
                 if len(subs) < 2:
-                    continue # Need at least 2 submissions to compare
+                    continue 
                     
                 print(f"[*] Analyzing {len(subs)} {lang.upper()} submissions...")
                 
-                # Create a temporary directory for this batch
                 batch_dir = f"/tmp/moss_{contest_id}_{prob_id}_{lang}"
                 os.makedirs(batch_dir, exist_ok=True)
                 
                 moss_lang = LANGUAGE_MAP[lang]
                 m = mosspy.Moss(MOSS_USER_ID, moss_lang)
                 
-                # Download files from MinIO and add to MOSS
                 for sub in subs:
                     user_id = sub['user_id']
                     s3_key = sub['source_code_s3_key']
                     
-                    # Name the file exactly as the user_id so MOSS returns it in the report
                     file_ext = "cpp" if lang == "cpp" else "py" if lang == "python" else "java"
                     local_path = os.path.join(batch_dir, f"{user_id}.{file_ext}")
                     
                     fetch_from_s3(s3_key, local_path)
                     m.addFile(local_path)
                     
-                # Submit to Stanford
                 print("[*] Uploading to Stanford MOSS servers (this may take a minute)...")
                 url = m.send()
                 print(f"[+] MOSS Report URL: {url}")
                 
-                # Scrape the results
                 flagged_pairs = parse_moss_report(url)
                 
-                # 4. Save flagged pairs to the database for faculty review
                 for pair in flagged_pairs:
                     cursor.execute("""
                         INSERT INTO plagiarism_reports (contest_id, problem_id, user_1_id, user_2_id, similarity_score, moss_url)
@@ -167,21 +162,19 @@ def run_moss_audit(contest_id: str):
                 conn.commit()
                 print(f"[+] Logged {len(flagged_pairs)} flagged pairs to the database.")
                 
-                # Cleanup temp files
                 shutil.rmtree(batch_dir, ignore_errors=True)
 
-            # 🔥 RATE LIMIT PROTECTOR 🔥
             print("[*] Sleeping for 20 seconds to respect Stanford MOSS rate limits...")
             time.sleep(20)
 
-        # Audit is completely finished. Update PostgreSQL.
+        # 2. Finalize Database State to 'completed'
         cursor.execute("UPDATE contests SET moss_audit_status = 'completed' WHERE contest_id = %s", (contest_id,))
         conn.commit()
-        print(f"[+] Contest {contest_id} audit finalized and locked.")
+        print(f"[+] Contest {contest_id} audit finalized. Status set to 'completed'.")
 
-        # Ping Redis to force a final Leaderboard UI refresh
+        # 3. Ping Redis to force a final Leaderboard UI refresh
         rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-        rc.sadd("dirty_contests", contest_id)
+        rc.set(f"contest:{contest_id}:is_dirty", "true")
 
     except Exception as e:
         print(f"[!] MOSS Audit crashed: {e}")
