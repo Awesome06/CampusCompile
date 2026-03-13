@@ -54,12 +54,18 @@ export default function useAntiCheat(contestId, isContest) {
   useEffect(() => {
     if (!isContest) return;
 
-    const handleBlur = () => {
-      dispatchTelemetry('blur', { timestamp: Date.now() });
+    const handleVisibilityChange = () => {
+      // Only trigger telemetry if the tab is completely hidden
+      if (document.visibilityState === 'hidden') {
+        dispatchTelemetry('blur', { timestamp: Date.now() });
+      }
     };
 
-    window.addEventListener('blur', handleBlur);
-    return () => window.removeEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [isContest, dispatchTelemetry]);
 
   // ----------------------------------------------------
