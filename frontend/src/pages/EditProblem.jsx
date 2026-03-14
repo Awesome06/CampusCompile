@@ -107,7 +107,28 @@ export default function EditProblem() {
     setExpandedCases(prev => ({ ...prev, [newIndex]: true }));
   };
 
-  const handleRemoveTestCase = (index) => setTestCases(testCases.filter((_, i) => i !== index));
+  const handleRemoveTestCase = (indexToRemove) => {
+    // 1. Remove the test case from the main array
+    setTestCases(prev => prev.filter((_, i) => i !== indexToRemove));
+
+    // 2. Remap the expanded state to account for the shifted indices
+    setExpandedCases(prev => {
+      const newExpanded = {};
+      Object.keys(prev).forEach(key => {
+        const numKey = parseInt(key, 10);
+        
+        if (numKey < indexToRemove) {
+          // Items before the deleted index stay exactly where they are
+          newExpanded[numKey] = prev[numKey];
+        } else if (numKey > indexToRemove) {
+          // Items after the deleted index shift left by 1
+          newExpanded[numKey - 1] = prev[numKey];
+        }
+        // If numKey === indexToRemove, it gets dropped naturally
+      });
+      return newExpanded;
+    });
+  };
 
   const updateTestCase = (index, field, value) => {
     const updated = [...testCases];
@@ -154,12 +175,11 @@ export default function EditProblem() {
         return;
       }
 
-      setTestCases(prev => {
-        const updated = [...prev, ...newTestCases];
-        setExpandedCases(e => ({ ...e, [prev.length]: true })); // Auto-expand the first new case
-        return updated;
-      });
+      const startingIndex = testCases.length;
       
+      setTestCases(prev => [...prev, ...newTestCases]);
+      setExpandedCases(prev => ({ ...prev, [startingIndex]: true }));
+
       setStatus({ type: 'success', message: `Appended ${newTestCases.length} test cases!` });
       setTimeout(() => setStatus({ type: '', message: '' }), 3000);
 
