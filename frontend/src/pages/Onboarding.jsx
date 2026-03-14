@@ -27,12 +27,12 @@ export default function Onboarding() {
     { value: '4', label: 'Batch 4' },
     { value: '27', label: 'Batch 27' },
   ];
-  const SectionOptions = [
+  const sectionOptions = [
     { value: '1', label: 'Section 1' },
     { value: '2', label: 'Section 2' },
     { value: '14', label: 'Section 14' },
   ];
-  const GroupOptions = [
+  const groupOptions = [
     { value: '1', label: 'Group 1' },
     { value: '7', label: 'Group 7' },
   ];
@@ -42,9 +42,9 @@ export default function Onboarding() {
     course: 'B.Tech', 
     department: 'CSE', 
     graduation_year: currentYear + 3, // Default to a standard 4-year degree timeline
-    batch: 'Batch 1', 
-    section: 'Section 1', 
-    student_group: 'Group 1'
+    batch: '1', 
+    section: '1', 
+    student_group: '1'
   });
 
   useEffect(() => {
