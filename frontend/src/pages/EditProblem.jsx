@@ -230,6 +230,7 @@ export default function EditProblem() {
         formData.append('problem_id', id);
         formData.append('input_file', inBlob, 'input.txt');
         formData.append('expected_file', outBlob, 'expected.txt');
+        formData.append('is_hidden', tc.isHidden ? 'true' : 'false');
 
         await api.post('/problems/testcases/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
