@@ -155,17 +155,23 @@ export default function AddProblem() {
       const newTestCases = [];
       Object.keys(inputs).forEach(key => {
         if (outputs[key]) {
-          // 👇 Load the actual text into the textareas
-          newTestCases.push({ 
-            input: inputs[key].trim(), 
-            expectedOutput: outputs[key].trim(), 
-            isHidden: true 
-          });
+          // 👇 NEW: Trim the whitespace immediately
+          const inText = inputs[key].trim();
+          const outText = outputs[key].trim();
+          
+          // 👇 NEW: Only append if the test case actually contains meaningful data
+          if (inText.length > 0 || outText.length > 0) {
+            newTestCases.push({ 
+              input: inText, 
+              expectedOutput: outText, 
+              isHidden: true 
+            });
+          }
         }
       });
 
       if (newTestCases.length === 0) {
-        setStatus({ type: 'error', message: 'No valid input/output files found in ZIP.' });
+        setStatus({ type: 'error', message: 'No valid (non-empty) input/output files found in ZIP.' });
         return;
       }
 
