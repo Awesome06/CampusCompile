@@ -104,6 +104,9 @@ func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, u
 }
 
 func (s *problemService) RemoveProblem(ctx context.Context, problemID string) error {
+	// 👇 NEW: Trigger the garbage collector before deleting the problem
+	s.ClearTestCases(ctx, problemID)
+
 	return s.repo.DeleteProblem(ctx, problemID)
 }
 
@@ -140,6 +143,29 @@ func (s *problemService) FetchAllTestCases(ctx context.Context, problemID string
 }
 
 func (s *problemService) ClearTestCases(ctx context.Context, problemID string) error {
+	// 1. Fetch the old test cases to grab their S3 routing keys
+	oldTestCases, err := s.repo.GetAllTestCases(ctx, problemID)
+
+	if err == nil {
+		for _, tc := range oldTestCases {
+			// Delete the old input file from MinIO
+			if inKey, ok := tc["input_s3_key"].(string); ok && inKey != "" {
+				storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket: aws.String(storage.BucketName),
+					Key:    aws.String(inKey),
+				})
+			}
+			// Delete the old expected output file from MinIO
+			if outKey, ok := tc["expected_s3_key"].(string); ok && outKey != "" {
+				storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket: aws.String(storage.BucketName),
+					Key:    aws.String(outKey),
+				})
+			}
+		}
+	}
+
+	// 2. Now that the bucket is clean, wipe the rows from PostgreSQL
 	return s.repo.DeleteTestCases(ctx, problemID)
 }
 
