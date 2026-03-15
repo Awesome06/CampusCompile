@@ -52,11 +52,12 @@ func (s *contestService) FetchContests(ctx context.Context, user models.UserDemo
 	var rawContests []models.Contest
 	var err error
 
-	if user.Role == "admin" {
+	switch user.Role {
+	case "admin":
 		rawContests, err = s.repo.GetAllContests(ctx)
-	} else if user.Role == "professor" {
+	case "professor":
 		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID)
-	} else {
+	default:
 		rawContests, err = s.repo.GetPublicContests(ctx)
 	}
 

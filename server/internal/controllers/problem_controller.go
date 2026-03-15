@@ -93,7 +93,10 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 		return
 	}
 
-	err := ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), c.MustGet("user_id").(string), req)
+	userRole := c.MustGet("role").(string)
+	userID := c.MustGet("user_id").(string)
+
+	err := ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), userID, userRole, req)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Update failed or unauthorized"})
 		return

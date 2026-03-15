@@ -20,7 +20,7 @@ type ProblemService interface {
 	AddTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error
 	FetchProblems(ctx context.Context) ([]map[string]interface{}, error)
 	FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error)
-	ModifyProblem(ctx context.Context, problemID, userID string, req models.CreateProblemRequest) error
+	ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error
 	RemoveProblem(ctx context.Context, problemID string) error
 	FetchFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
 	SyncTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error
@@ -89,13 +89,14 @@ func (s *problemService) FetchProblemByID(ctx context.Context, problemID string)
 	return meta, nil
 }
 
-func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID string, req models.CreateProblemRequest) error {
+func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error {
 	authorID, err := s.repo.GetProblemAuthor(ctx, problemID)
 	if err != nil {
 		return err
 	}
 
-	if userID != authorID {
+	// 👇 FIX: Allow admins to bypass the author check
+	if userRole != "admin" && userID != authorID {
 		return errors.New("unauthorized: only the original author can edit this problem")
 	}
 
