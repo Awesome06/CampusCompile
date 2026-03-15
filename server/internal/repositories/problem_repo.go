@@ -109,7 +109,7 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT input_data, expected_output, input_s3_key, expected_s3_key 
+		SELECT input_s3_key, expected_s3_key 
 		FROM test_cases WHERE problem_id = $1 AND is_hidden = false
 	`, problemID)
 
@@ -117,26 +117,14 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var inData, outData, inS3, outS3 *string
-			if err := rows.Scan(&inData, &outData, &inS3, &outS3); err == nil {
-				sample := map[string]interface{}{}
-				if inData != nil {
-					sample["input"] = *inData
-				} else {
-					sample["input"] = ""
-				}
-				if outData != nil {
-					sample["output"] = *outData
-				} else {
-					sample["output"] = ""
-				}
-				if inS3 != nil {
-					sample["input_s3_key"] = *inS3
-				}
-				if outS3 != nil {
-					sample["expected_s3_key"] = *outS3
-				}
-				samples = append(samples, sample)
+			var inS3, outS3 string
+			if err := rows.Scan(&inS3, &outS3); err == nil {
+				samples = append(samples, map[string]interface{}{
+					"input":           "", // Will be inflated by the Service layer
+					"output":          "", // Will be inflated by the Service layer
+					"input_s3_key":    inS3,
+					"expected_s3_key": outS3,
+				})
 			}
 		}
 	}
@@ -212,7 +200,7 @@ func (r *problemRepo) SyncTestCasesInTx(ctx context.Context, problemID string, t
 }
 
 func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {
-	rows, err := r.db.Query(ctx, "SELECT input_data, expected_output, is_hidden, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1", problemID)
+	rows, err := r.db.Query(ctx, "SELECT is_hidden, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1", problemID)
 	if err != nil {
 		return nil, err
 	}
@@ -220,30 +208,17 @@ func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]
 
 	var testCases []map[string]interface{}
 	for rows.Next() {
-		var inData, outData, inS3, outS3 *string
+		var inS3, outS3 string
 		var isHidden bool
 
-		// Safely scan NULLs into pointers
-		if err := rows.Scan(&inData, &outData, &isHidden, &inS3, &outS3); err == nil {
-			tc := map[string]interface{}{"is_hidden": isHidden}
-			if inData != nil {
-				tc["input_data"] = *inData
-			} else {
-				tc["input_data"] = ""
-			}
-			if outData != nil {
-				tc["expected_output"] = *outData
-			} else {
-				tc["expected_output"] = ""
-			}
-			if inS3 != nil {
-				tc["input_s3_key"] = *inS3
-			}
-			if outS3 != nil {
-				tc["expected_s3_key"] = *outS3
-			}
-
-			testCases = append(testCases, tc)
+		if err := rows.Scan(&isHidden, &inS3, &outS3); err == nil {
+			testCases = append(testCases, map[string]interface{}{
+				"is_hidden":       isHidden,
+				"input_data":      "", // Will be inflated by the Service layer
+				"expected_output": "", // Will be inflated by the Service layer
+				"input_s3_key":    inS3,
+				"expected_s3_key": outS3,
+			})
 		}
 	}
 	return testCases, nil

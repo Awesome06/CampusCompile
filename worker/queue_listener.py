@@ -63,7 +63,7 @@ def process_submission(submission_id):
             return
 
         cursor.execute("""
-            SELECT test_case_id, input_data, expected_output, input_s3_key, expected_s3_key
+            SELECT test_case_id, input_s3_key, expected_s3_key
             FROM test_cases 
             WHERE problem_id = %s
         """, (submission.get('problem_id'),))
