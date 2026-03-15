@@ -336,13 +336,20 @@ export default function EditProblem() {
           <div className="w-1/2 bg-dark-bg p-8 overflow-y-auto custom-scrollbar">
              <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-6 border-b border-gray-800 pb-2">Arena Live Preview</div>
              <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problemData.title || 'Untitled Problem'}</h2>
-              <div className="flex space-x-3 mb-6">
-                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm">⏱️ {problemData.time_limit}ms</span>
-                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm">💾 {problemData.memory_limit}MB</span>
+              <div className="flex flex-wrap gap-3 mb-6">
+                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
+                  ⏱️ {(problemData.time_limit_ms || 2000) / 1000}s (C++) <span className="text-gray-600">|</span> {((problemData.time_limit_ms || 2000) * 2.0) / 1000}s (Py/Java)
+                </span>
+                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
+                  💾 {problemData.memory_limit_kb / 1024 || 256}MB (C++) <span className="text-gray-600">|</span> {Math.round((problemData.memory_limit_kb / 1024 || 256) * 1.5)}MB (Py/Java)
+                </span>
                 <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${
-                  problemData.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
-                  problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 'border-red-800 bg-red-900/20 text-red-400'
-                }`}>{problemData.difficulty}</span>
+                    problemData.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
+                    problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 
+                    'border-red-800 bg-red-900/20 text-red-400'
+                  }`}>
+                  {problemData.difficulty}
+                </span>
               </div>
               <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
                 <ReactMarkdown

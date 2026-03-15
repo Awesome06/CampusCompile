@@ -76,16 +76,28 @@ def process_submission(submission_id):
             return
 
         print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
+
+        # 👇 NEW: Calculate the language-specific limits dynamically
+        lang = submission.get('language')
+        base_time_ms = submission.get('time_limit_ms', 2000)
+        base_mem_kb = submission.get('memory_limit_kb', 256000)
+
+        # Apply 2.0x time and 1.5x memory for interpreted/JVM languages
+        time_multiplier = 2.0 if lang in ['python', 'java'] else 1.0
+        mem_multiplier = 1.5 if lang in ['python', 'java'] else 1.0
+
+        actual_time_ms = int(base_time_ms * time_multiplier)
+        actual_mem_kb = int(base_mem_kb * mem_multiplier)
         
         result = grade_submission(
             submission_id=submission_id,
             problem_id=submission.get('problem_id'),
-            language=submission.get('language'),
+            language=lang,
             source_code=None, 
             source_s3_key=submission.get('source_code_s3_key'),
             test_cases=test_cases,
-            time_limit_ms=submission.get('time_limit_ms', 2000),
-            memory_limit_kb=submission.get('memory_limit_kb', 256000)
+            time_limit_ms=actual_time_ms, # 👈 Passed scaled time
+            memory_limit_kb=actual_mem_kb # 👈 Passed scaled memory
         )
 
         final_verdict = result['verdict']
@@ -178,15 +190,20 @@ def start_worker():
                     "expected_output": ""
                 }]
                 
+                #Apply the exact same multipliers to Custom Runs
+                lang = submission_data.get('language')
+                time_multiplier = 2.0 if lang in ['python', 'java'] else 1.0
+                mem_multiplier = 1.5 if lang in ['python', 'java'] else 1.0
+
                 result = grade_submission(
                     submission_id=run_id,
                     problem_id="custom",
-                    language=submission_data.get('language'),
+                    language=lang,
                     source_code=submission_data.get('source_code'),
                     source_s3_key=None, 
                     test_cases=custom_tc,
-                    time_limit_ms=2000,
-                    memory_limit_kb=256000
+                    time_limit_ms=int(2000 * time_multiplier),
+                    memory_limit_kb=int(256000 * mem_multiplier)
                 )
                 
                 output_to_show = result.get('actual_output')

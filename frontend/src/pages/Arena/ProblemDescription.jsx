@@ -38,10 +38,20 @@ export default function ProblemDescription({ problem, canEdit, navigate, submitS
         )}
       </div>
       
-      <div className="flex space-x-3 mb-6">
-        <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border">⏱️ {problem.time_limit_ms || 2000}ms</span>
-        <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border">💾 {problem.memory_limit_kb / 1024 || 256}MB</span>
-        <span className={`px-3 py-1 text-xs rounded font-bold border ${problem.difficulty === 'Easy' ? 'border-green-800 text-green-400' : problem.difficulty === 'Medium' ? 'border-yellow-800 text-yellow-400' : 'border-red-800 text-red-400'}`}>{problem.difficulty}</span>
+      <div className="flex flex-wrap gap-3 mb-6">
+        <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
+          ⏱️ {(problem.time_limit_ms || 2000) / 1000}s (C++) <span className="text-gray-600">|</span> {((problem.time_limit_ms || 2000) * 2.0) / 1000}s (Py/Java)
+        </span>
+        <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
+          💾 {problem.memory_limit_kb / 1024 || 256}MB (C++) <span className="text-gray-600">|</span> {Math.round((problem.memory_limit_kb / 1024 || 256) * 1.5)}MB (Py/Java)
+        </span>
+        <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${
+            problem.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
+            problem.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 
+            'border-red-800 bg-red-900/20 text-red-400'
+          }`}>
+          {problem.difficulty}
+        </span>
       </div>
       
       <div className="prose prose-invert max-w-none text-[15px] leading-relaxed">
