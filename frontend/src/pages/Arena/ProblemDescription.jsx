@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import Button from '../../components/ui/Button';
 
-export default function ProblemDescription({ problem, canEdit, navigate, submitStatus }) {
+export default function ProblemDescription({ problem, canEdit, navigate, submitStatus, selectedLanguage = 'cpp' }) {
   const getStatusColor = () => {
     if (['Accepted', 'AC'].includes(submitStatus)) return 'text-green-400 font-bold';
     if (['WA', 'CE', 'RE', 'TLE', 'SE'].includes(submitStatus) || submitStatus.includes('Error')) return 'text-red-400 font-bold';
@@ -27,6 +27,15 @@ export default function ProblemDescription({ problem, canEdit, navigate, submitS
     blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 bg-blue-900/10 p-4 my-4 rounded-r-lg italic text-gray-400" {...props} />
   };
 
+  const LANGUAGE_MULTIPLIERS = {
+    cpp: { time: 1.0, memory: 1.0 },
+    python: { time: 2.0, memory: 1.5 },
+    java: { time: 2.0, memory: 2.0 },
+  };
+  const activeLimits = LANGUAGE_MULTIPLIERS[selectedLanguage] || { time: 1.0, memory: 1.0 };
+  const displayTime = ((problem.time_limit_ms || 2000) * activeLimits.time) / 1000;
+  const displayMem = Math.round((problem.memory_limit_kb / 1024 || 256) * activeLimits.memory);
+
   return (
     <>
       <div className="flex justify-between items-start mb-3">
@@ -38,18 +47,14 @@ export default function ProblemDescription({ problem, canEdit, navigate, submitS
         )}
       </div>
       
-      <div className="flex flex-wrap gap-3 mb-6">
-        <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
-          ⏱️ {(problem.time_limit_ms || 2000) / 1000}s (C++) <span className="text-gray-600">|</span> {((problem.time_limit_ms || 2000) * 2.0) / 1000}s (Py/Java)
+      <div className="flex space-x-3 mb-6">
+        <span className="bg-[#1e1e1e] text-blue-400 px-3 py-1 rounded text-xs font-mono font-bold border border-dark-border transition-all duration-300">
+          ⏱️ {displayTime}s
         </span>
-        <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
-          💾 {problem.memory_limit_kb / 1024 || 256}MB (C++) <span className="text-gray-600">|</span> {Math.round((problem.memory_limit_kb / 1024 || 256) * 1.5)}MB (Py/Java)
+        <span className="bg-[#1e1e1e] text-blue-400 px-3 py-1 rounded text-xs font-mono font-bold border border-dark-border transition-all duration-300">
+          💾 {displayMem}MB
         </span>
-        <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${
-            problem.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
-            problem.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 
-            'border-red-800 bg-red-900/20 text-red-400'
-          }`}>
+        <span className={`px-3 py-1 text-xs rounded font-bold border ${problem.difficulty === 'Easy' ? 'border-green-800 text-green-400' : problem.difficulty === 'Medium' ? 'border-yellow-800 text-yellow-400' : 'border-red-800 text-red-400'}`}>
           {problem.difficulty}
         </span>
       </div>

@@ -51,8 +51,8 @@ export default function Navbar() {
         
         {isLoggedIn && isOnboarded && (
           <div className="flex space-x-6 text-sm font-semibold text-gray-300 items-center">
-            <Link to="/contests" className="hover:text-white transition">Contests</Link>
             <Link to="/problems" className="hover:text-white transition">Problems</Link>
+            <Link to="/contests" className="hover:text-white transition">Contests</Link>
           </div>
         )}
       </div>

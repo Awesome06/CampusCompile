@@ -196,7 +196,7 @@ export default function PracticeArena() {
           {leftTab === 'history' ? (
             <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} />
           ) : (
-            <ProblemDescription problem={problem} canEdit={canEdit} navigate={navigate} submitStatus={submitStatus} />
+            <ProblemDescription problem={problem} canEdit={canEdit} navigate={navigate} submitStatus={submitStatus} selectedLanguage={language}/>
           )}
         </div>
       </div>
