@@ -42,29 +42,6 @@ func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 	})
 }
 
-func (ctrl *ProblemController) AddTestCasesBatch(c *gin.Context) {
-	problemID := c.Param("id")
-
-	var req models.BatchTestCasesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid test cases payload format"})
-		return
-	}
-
-	if len(req.TestCases) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one test case is required"})
-		return
-	}
-
-	err := ctrl.service.AddTestCases(c.Request.Context(), problemID, req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save test cases to database"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Test cases published successfully"})
-}
-
 func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 	problems, err := ctrl.service.FetchProblems(c.Request.Context())
 	if err != nil {
@@ -147,20 +124,6 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 		problems = []map[string]interface{}{}
 	}
 	c.JSON(http.StatusOK, problems)
-}
-
-func (ctrl *ProblemController) SyncTestCasesBatch(c *gin.Context) {
-	var req models.BatchTestCasesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid test cases payload"})
-		return
-	}
-
-	if err := ctrl.service.SyncTestCases(c.Request.Context(), c.Param("id"), req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync test cases"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Test cases synced successfully"})
 }
 
 func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {

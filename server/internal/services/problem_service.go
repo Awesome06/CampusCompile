@@ -17,13 +17,11 @@ import (
 
 type ProblemService interface {
 	ForgeProblem(ctx context.Context, req models.CreateProblemRequest, authorID string) (string, error)
-	AddTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error
 	FetchProblems(ctx context.Context) ([]map[string]interface{}, error)
 	FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error)
 	ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error
 	RemoveProblem(ctx context.Context, problemID string) error
 	FetchFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
-	SyncTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error
 	FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	ClearTestCases(ctx context.Context, problemID string) error
 }
@@ -49,20 +47,6 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 		return "", err
 	}
 	return problemID, nil
-}
-
-func (s *problemService) AddTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error {
-	var dbTestCases []models.TestCaseToInsert
-	for _, tc := range req.TestCases {
-		dbTestCases = append(dbTestCases, models.TestCaseToInsert{
-			ID:             uuid.New().String(),
-			ProblemID:      problemID,
-			InputData:      tc.Input,
-			ExpectedOutput: tc.ExpectedOutput,
-			IsHidden:       tc.IsHidden,
-		})
-	}
-	return s.repo.AddTestCasesInTx(ctx, dbTestCases)
 }
 
 func (s *problemService) FetchProblems(ctx context.Context) ([]map[string]interface{}, error) {
@@ -112,16 +96,6 @@ func (s *problemService) RemoveProblem(ctx context.Context, problemID string) er
 
 func (s *problemService) FetchFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error) {
 	return s.repo.GetFacultyProblems(ctx, authorID)
-}
-
-func (s *problemService) SyncTestCases(ctx context.Context, problemID string, req models.BatchTestCasesRequest) error {
-	var dbTestCases []models.TestCaseToInsert
-	for _, tc := range req.TestCases {
-		dbTestCases = append(dbTestCases, models.TestCaseToInsert{
-			ID: uuid.New().String(), ProblemID: problemID, InputData: tc.Input, ExpectedOutput: tc.ExpectedOutput, IsHidden: tc.IsHidden,
-		})
-	}
-	return s.repo.SyncTestCasesInTx(ctx, problemID, dbTestCases)
 }
 
 func (s *problemService) FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {
