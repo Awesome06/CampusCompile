@@ -72,8 +72,8 @@ func UploadTestCase(c *gin.Context) {
 
 	// 5. Save ONLY the S3 keys to PostgreSQL
 	_, err = database.Pool.Exec(ctx, `
-		INSERT INTO test_cases (problem_id, input_data, expected_output, input_s3_key, expected_s3_key) 
-		VALUES ($1, NULL, NULL, $2, $3)
+		INSERT INTO test_cases (problem_id, is_hidden, input_s3_key, expected_s3_key) 
+		VALUES ($1, true, $2, $3)
 	`, problemID, inputS3Key, expectedS3Key)
 
 	if err != nil {

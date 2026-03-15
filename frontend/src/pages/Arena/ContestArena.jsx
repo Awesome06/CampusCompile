@@ -234,7 +234,7 @@ export default function ContestArena() {
             {leftTab === 'history' ? (
               <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} />
             ) : (
-              <ProblemDescription problem={problem} canEdit={false} navigate={navigate} submitStatus={submitStatus} />
+              <ProblemDescription problem={problem} canEdit={false} navigate={navigate} submitStatus={submitStatus} selectedLanguage={language}/>
             )}
           </div>
         </div>

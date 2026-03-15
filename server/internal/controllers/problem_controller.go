@@ -93,7 +93,10 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 		return
 	}
 
-	err := ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), c.MustGet("user_id").(string), req)
+	userRole := c.MustGet("role").(string)
+	userID := c.MustGet("user_id").(string)
+
+	err := ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), userID, userRole, req)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Update failed or unauthorized"})
 		return
@@ -170,4 +173,16 @@ func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 		testCases = []map[string]interface{}{}
 	}
 	c.JSON(http.StatusOK, gin.H{"test_cases": testCases})
+}
+
+func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
+	problemID := c.Param("id")
+
+	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear old test cases"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Old test cases wiped successfully"})
 }

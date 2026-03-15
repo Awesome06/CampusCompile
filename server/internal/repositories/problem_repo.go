@@ -20,6 +20,7 @@ type ProblemRepository interface {
 	GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
 	SyncTestCasesInTx(ctx context.Context, problemID string, testCases []models.TestCaseToInsert) error
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
+	DeleteTestCases(ctx context.Context, problemID string) error
 }
 
 type problemRepo struct {
@@ -84,9 +85,9 @@ func (r *problemRepo) GetProblems(ctx context.Context) ([]map[string]interface{}
 
 func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error) {
 	var title, description, difficulty string
-	var authorID *string // Null-safe pointer
+	var authorID *string
 	var timeLimit, memoryLimit int
-	var isPublic bool // Fetch the public status
+	var isPublic bool
 
 	err := r.db.QueryRow(ctx, `
 		SELECT title, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public 
@@ -104,20 +105,26 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	problemMeta := map[string]interface{}{
 		"problem_id": problemID, "title": title, "description": description,
 		"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memoryLimit,
-		"author_id": safeAuthorID, "is_public": isPublic, // Pass it to React
+		"author_id": safeAuthorID, "is_public": isPublic,
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT input_data, expected_output FROM test_cases WHERE problem_id = $1 AND is_hidden = false
+		SELECT input_s3_key, expected_s3_key 
+		FROM test_cases WHERE problem_id = $1 AND is_hidden = false
 	`, problemID)
 
 	var samples []map[string]interface{}
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var inData, outData string
-			if err := rows.Scan(&inData, &outData); err == nil {
-				samples = append(samples, map[string]interface{}{"input": inData, "output": outData})
+			var inS3, outS3 string
+			if err := rows.Scan(&inS3, &outS3); err == nil {
+				samples = append(samples, map[string]interface{}{
+					"input":           "", // Will be inflated by the Service layer
+					"output":          "", // Will be inflated by the Service layer
+					"input_s3_key":    inS3,
+					"expected_s3_key": outS3,
+				})
 			}
 		}
 	}
@@ -193,7 +200,7 @@ func (r *problemRepo) SyncTestCasesInTx(ctx context.Context, problemID string, t
 }
 
 func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {
-	rows, err := r.db.Query(ctx, "SELECT input_data, expected_output, is_hidden FROM test_cases WHERE problem_id = $1", problemID)
+	rows, err := r.db.Query(ctx, "SELECT is_hidden, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1", problemID)
 	if err != nil {
 		return nil, err
 	}
@@ -201,11 +208,23 @@ func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]
 
 	var testCases []map[string]interface{}
 	for rows.Next() {
-		var inData, outData string
+		var inS3, outS3 string
 		var isHidden bool
-		if err := rows.Scan(&inData, &outData, &isHidden); err == nil {
-			testCases = append(testCases, map[string]interface{}{"input_data": inData, "expected_output": outData, "is_hidden": isHidden})
+
+		if err := rows.Scan(&isHidden, &inS3, &outS3); err == nil {
+			testCases = append(testCases, map[string]interface{}{
+				"is_hidden":       isHidden,
+				"input_data":      "", // Will be inflated by the Service layer
+				"expected_output": "", // Will be inflated by the Service layer
+				"input_s3_key":    inS3,
+				"expected_s3_key": outS3,
+			})
 		}
 	}
 	return testCases, nil
+}
+
+func (r *problemRepo) DeleteTestCases(ctx context.Context, problemID string) error {
+	_, err := r.db.Exec(ctx, "DELETE FROM test_cases WHERE problem_id = $1", problemID)
+	return err
 }

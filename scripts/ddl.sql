@@ -100,11 +100,9 @@ CREATE TABLE submissions (
 CREATE TABLE test_cases (
     test_case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
-    input_data TEXT,
-    expected_output TEXT,
     is_hidden BOOLEAN DEFAULT true,
-    input_s3_key VARCHAR(512),
-    expected_s3_key VARCHAR(512)
+    input_s3_key VARCHAR(512) NOT NULL,
+    expected_s3_key VARCHAR(512) NOT NULL
 );
 
 -- ==========================================

@@ -27,6 +27,15 @@ DB_CONFIG = {
     "port": "5432"
 }
 
+LANGUAGE_CONFIG = {
+    'cpp':    {'time': 1.0, 'memory': 1.0},
+    'python': {'time': 2.0, 'memory': 1.5},
+    'java':   {'time': 2.0, 'memory': 2.0},
+    # Easily add new languages here later:
+    # 'javascript': {'time': 1.5, 'memory': 1.5},
+    # 'rust':       {'time': 1.0, 'memory': 1.0},
+}
+
 redis_client = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0, decode_responses=True)
 QUEUE_NAME = 'submission_queue'
 
@@ -63,7 +72,7 @@ def process_submission(submission_id):
             return
 
         cursor.execute("""
-            SELECT test_case_id, input_data, expected_output, input_s3_key, expected_s3_key
+            SELECT test_case_id, input_s3_key, expected_s3_key
             FROM test_cases 
             WHERE problem_id = %s
         """, (submission.get('problem_id'),))
@@ -76,16 +85,27 @@ def process_submission(submission_id):
             return
 
         print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
+
+        # Fetch independent language configuration
+        lang = submission.get('language')
+        base_time_ms = submission.get('time_limit_ms', 2000)
+        base_mem_kb = submission.get('memory_limit_kb', 256000)
+
+        # Fallback to 1.0x if language is missing from config
+        limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
+
+        actual_time_ms = int(base_time_ms * limits['time'])
+        actual_mem_kb = int(base_mem_kb * limits['memory'])
         
         result = grade_submission(
             submission_id=submission_id,
             problem_id=submission.get('problem_id'),
-            language=submission.get('language'),
+            language=lang,
             source_code=None, 
             source_s3_key=submission.get('source_code_s3_key'),
             test_cases=test_cases,
-            time_limit_ms=submission.get('time_limit_ms', 2000),
-            memory_limit_kb=submission.get('memory_limit_kb', 256000)
+            time_limit_ms=actual_time_ms, #Passed scaled time
+            memory_limit_kb=actual_mem_kb #Passed scaled memory
         )
 
         final_verdict = result['verdict']
@@ -178,15 +198,19 @@ def start_worker():
                     "expected_output": ""
                 }]
                 
+                #Apply the exact same multipliers to Custom Runs
+                lang = submission_data.get('language')
+                limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
+
                 result = grade_submission(
                     submission_id=run_id,
                     problem_id="custom",
-                    language=submission_data.get('language'),
+                    language=lang,
                     source_code=submission_data.get('source_code'),
                     source_s3_key=None, 
                     test_cases=custom_tc,
-                    time_limit_ms=2000,
-                    memory_limit_kb=256000
+                    time_limit_ms=int(2000 * limits['time']),
+                    memory_limit_kb=int(256000 * limits['memory'])
                 )
                 
                 output_to_show = result.get('actual_output')
