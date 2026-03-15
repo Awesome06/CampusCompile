@@ -123,7 +123,11 @@ export default function AddProblem() {
   };
 
   const handleZipUpload = async (e) => {
-    const file = e.target.files[0];
+    // 👇 Prevent default behavior for drag-and-drop support
+    e.preventDefault(); 
+    
+    // Support both drag-and-drop (e.dataTransfer) and click uploads (e.target)
+    const file = e.dataTransfer ? e.dataTransfer.files[0] : e.target.files[0];
     if (!file) return;
     
     setStatus({ type: 'info', message: 'Extracting test cases from ZIP...' });
@@ -135,23 +139,28 @@ export default function AddProblem() {
       const outputs = {};
       
       for (const [relativePath, zipEntry] of Object.entries(loadedZip.files)) {
-        // IGNORE folders and hidden system files
         if (zipEntry.dir || relativePath.includes('__MACOSX') || relativePath.includes('.DS_Store')) continue;
         
-        const content = await zipEntry.async("string");
+        // 👇 CHANGED: Extract as a string so it renders perfectly in the UI
+        const contentStr = await zipEntry.async("string"); 
         const cleanName = relativePath.split('/').pop().toLowerCase();
         
         const baseMatch = cleanName.match(/(\d+)/); 
         const baseName = baseMatch ? baseMatch[0] : cleanName.split('.')[0];
         
-        if (cleanName.includes('in')) inputs[baseName] = content;
-        if (cleanName.includes('out')) outputs[baseName] = content;
+        if (cleanName.includes('in')) inputs[baseName] = contentStr;
+        if (cleanName.includes('out')) outputs[baseName] = contentStr;
       }
 
       const newTestCases = [];
       Object.keys(inputs).forEach(key => {
         if (outputs[key]) {
-          newTestCases.push({ input: inputs[key].trim(), expectedOutput: outputs[key].trim(), isHidden: true });
+          // 👇 Load the actual text into the textareas
+          newTestCases.push({ 
+            input: inputs[key].trim(), 
+            expectedOutput: outputs[key].trim(), 
+            isHidden: true 
+          });
         }
       });
 
@@ -161,7 +170,6 @@ export default function AddProblem() {
       }
 
       const startingIndex = testCases.length;
-      
       setTestCases(prev => [...prev, ...newTestCases]);
       setExpandedCases(prev => ({ ...prev, [startingIndex]: true }));
       
@@ -171,14 +179,15 @@ export default function AddProblem() {
     } catch (err) {
       setStatus({ type: 'error', message: 'Failed to process ZIP file.' });
     }
-    e.target.value = null; 
+    if(e.target) e.target.value = null; 
   };
 
   const handlePublish = async () => {
     setIsSubmitting(true);
-    setStatus({ type: 'info', message: 'Forging problem and syncing test cases... 🚀' });
+    setStatus({ type: 'info', message: 'Forging problem and syncing test cases to S3... 🚀' });
 
     try {
+      // 1. Create the Problem Metadata (Same as before)
       const probRes = await api.post('/problems', {
         title: problemData.title, description: problemData.description, difficulty: problemData.difficulty,
         time_limit: problemData.time_limit, memory_limit: problemData.memory_limit * 1024, is_public: problemData.is_public
@@ -186,9 +195,23 @@ export default function AddProblem() {
       
       const newProblemId = probRes.data.problem_id;
 
-      await api.post(`/problems/${newProblemId}/testcases/batch`, { test_cases: testCases });
+      // 2. Upload Test Cases sequentially via FormData
+      for (const tc of testCases) {
+        // Fallback: If they typed it manually, convert the string into a Blob
+        const inBlob = tc.inputBlob || new Blob([tc.input], { type: 'text/plain' });
+        const outBlob = tc.expectedBlob || new Blob([tc.expectedOutput], { type: 'text/plain' });
 
-      setStatus({ type: 'success', message: 'Problem published successfully! 🎉' });
+        const formData = new FormData();
+        formData.append('problem_id', newProblemId);
+        formData.append('input_file', inBlob, 'input.txt');
+        formData.append('expected_file', outBlob, 'expected.txt');
+
+        await api.post('/problems/testcases/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      }
+
+      setStatus({ type: 'success', message: 'Problem published securely to MinIO! 🎉' });
       setPublishedUrl(`${window.location.origin}/arena/${newProblemId}`);
       setShowSuccessModal(true);
 
@@ -394,7 +417,12 @@ export default function AddProblem() {
               ))}
             </div>
 
-            <div className="mt-8 flex justify-between items-center bg-[#1e1e1e] p-5 rounded-lg border border-dark-border sticky bottom-4 shadow-2xl z-10">
+            {/* 👇 NEW: Drag and Drop zone wrapper */}
+            <div 
+              onDragOver={(e) => e.preventDefault()} 
+              onDrop={handleZipUpload}
+              className="mt-8 flex justify-between items-center bg-[#1e1e1e] p-5 rounded-lg border border-dark-border sticky bottom-4 shadow-2xl z-10 hover:border-blue-500 transition-colors"
+            >
               <div className="flex space-x-3">
                 <Button onClick={handleAddTestCase} variant="secondary" className="flex items-center space-x-2 border-dashed">
                   <span className="text-lg leading-none">+</span><span>Add Manually</span>
@@ -402,14 +430,15 @@ export default function AddProblem() {
                 
                 <label className="flex items-center justify-center space-x-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 px-4 py-2 rounded text-sm font-bold border border-dark-border cursor-pointer transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  <span>Bulk Upload (.zip)</span>
+                  {/* 👇 NEW: Updated text for UI clarity */}
+                  <span>Drop .zip or Click</span>
                   <input type="file" accept=".zip" className="hidden" onChange={handleZipUpload} />
                 </label>
               </div>
 
               <Button onClick={handlePublish} variant="success" className="px-8 shadow-lg shadow-green-900/20" 
                 disabled={isSubmitting || testCases.some(tc => !tc.input?.trim() || !tc.expectedOutput?.trim())}>
-                {isSubmitting ? 'Syncing to Database...' : 'Finalize & Publish'}
+                {isSubmitting ? 'Streaming to S3...' : 'Finalize & Publish'}
               </Button>
             </div>
           </div>

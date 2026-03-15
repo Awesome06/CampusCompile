@@ -171,3 +171,15 @@ func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"test_cases": testCases})
 }
+
+func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
+	problemID := c.Param("id")
+
+	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear old test cases"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Old test cases wiped successfully"})
+}
