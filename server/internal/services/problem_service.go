@@ -27,6 +27,7 @@ type ProblemService interface {
 	FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	ClearTestCases(ctx context.Context, problemID, userID, userRole string) error
 	SaveTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
+	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
 }
 
 var ErrUnauthorizedAction = errors.New("unauthorized: only the original author or an admin can perform this action")
@@ -41,6 +42,10 @@ func NewProblemService(repo repositories.ProblemRepository) ProblemService {
 
 func (s *problemService) SaveTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error {
 	return s.repo.InsertTestCasesBatch(ctx, problemID, records)
+}
+
+func (s *problemService) GetProblemAuthor(ctx context.Context, problemID string) (string, error) {
+	return s.repo.GetProblemAuthor(ctx, problemID)
 }
 
 func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProblemRequest, authorID string) (string, error) {
