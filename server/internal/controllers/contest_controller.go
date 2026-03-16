@@ -7,14 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
 
-	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
-	"campuscompile/api/internal/storage"
 )
 
 type ContestController struct {
@@ -376,114 +372,6 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"status": "batch_logged", "count": len(payload.Events)})
-}
-
-func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
-	problemID := c.Param("id")
-
-	form, err := c.MultipartForm()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form data"})
-		return
-	}
-
-	inputFiles := form.File["input_files"]
-	expectedFiles := form.File["expected_files"]
-	isHiddenVals := form.Value["is_hidden"]
-
-	if len(inputFiles) != len(expectedFiles) || len(inputFiles) != len(isHiddenVals) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Mismatched file arrays in payload"})
-		return
-	}
-
-	var uploadedKeys []string
-	type tcRecord struct {
-		inKey    string
-		outKey   string
-		isHidden bool
-	}
-	var records []tcRecord
-
-	// 1. Upload everything to S3 sequentially (or concurrently via goroutines if preferred)
-	for i := 0; i < len(inputFiles); i++ {
-		// Upload Input File
-		inFile, _ := inputFiles[i].Open()
-		inKey := fmt.Sprintf("problems/%s/tc_%d_in.txt", problemID, time.Now().UnixNano())
-		_, err := storage.S3Client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-			Bucket: aws.String(storage.BucketName),
-			Key:    aws.String(inKey),
-			Body:   inFile,
-		})
-		inFile.Close()
-
-		if err != nil {
-			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys) // 👈 Rollback S3!
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "S3 input upload failed"})
-			return
-		}
-		uploadedKeys = append(uploadedKeys, inKey)
-
-		// Upload Expected Output File
-		outFile, _ := expectedFiles[i].Open()
-		outKey := fmt.Sprintf("problems/%s/tc_%d_out.txt", problemID, time.Now().UnixNano())
-		_, err = storage.S3Client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-			Bucket: aws.String(storage.BucketName),
-			Key:    aws.String(outKey),
-			Body:   outFile,
-		})
-		outFile.Close()
-
-		if err != nil {
-			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys) // 👈 Rollback S3!
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "S3 expected output upload failed"})
-			return
-		}
-		uploadedKeys = append(uploadedKeys, outKey)
-
-		isHidden := isHiddenVals[i] == "true"
-		records = append(records, tcRecord{inKey, outKey, isHidden})
-	}
-
-	// 2. All S3 uploads succeeded! Execute SQL Transaction
-	tx, err := database.Pool.Begin(c.Request.Context())
-	if err != nil {
-		ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start database transaction"})
-		return
-	}
-	defer tx.Rollback(c.Request.Context()) // Auto-rollbacks if commit isn't called
-
-	// Insert all new test cases
-	for _, rec := range records {
-		_, err = tx.Exec(c.Request.Context(), `
-			INSERT INTO test_cases (problem_id, is_hidden, input_s3_key, expected_s3_key) 
-			VALUES ($1, $2, $3, $4)
-		`, problemID, rec.isHidden, rec.inKey, rec.outKey)
-
-		if err != nil {
-			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database insert failed"})
-			return
-		}
-	}
-
-	if err := tx.Commit(c.Request.Context()); err != nil {
-		ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction commit failed"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Atomic batch upload successful"})
-}
-
-// Helper function to wipe S3 files if the upload loop bombs halfway through
-func (ctrl *ProblemController) cleanupS3Keys(ctx context.Context, keys []string) {
-	for _, key := range keys {
-		storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(storage.BucketName),
-			Key:    aws.String(key),
-		})
-	}
 }
 
 func getString(c *gin.Context, key string) string {
