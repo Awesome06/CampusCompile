@@ -24,13 +24,13 @@ DB_CONFIG = {
 
 # Initialize a Connection Pool (Min: 1 connection, Max: 10 connections)
 try:
-    db_pool = pool.SimpleConnectionPool(
-        1, 10,
+    db_pool = pool.ThreadedConnectionPool(
+        1, 20, # Min 1, Max 20 concurrent connections
         **DB_CONFIG,
         cursor_factory=RealDictCursor
     )
     if db_pool:
-        print("[*] Database connection pool created successfully.")
+        print("[*] Database thread-pool created successfully.")
 except Exception as e:
     sys.stderr.write(f"FATAL STARTUP ERROR: Failed to create database pool: {e}\n")
     sys.exit(1)
