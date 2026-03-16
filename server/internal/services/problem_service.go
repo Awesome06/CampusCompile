@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,10 +22,10 @@ type ProblemService interface {
 	FetchProblems(ctx context.Context) ([]map[string]interface{}, error)
 	FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error)
 	ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error
-	RemoveProblem(ctx context.Context, problemID string) error
+	RemoveProblem(ctx context.Context, problemID, userID, userRole string) error
 	FetchFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
 	FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
-	ClearTestCases(ctx context.Context, problemID string) error
+	ClearTestCases(ctx context.Context, problemID, userID, userRole string) error
 }
 
 type problemService struct {
@@ -87,9 +89,12 @@ func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, u
 	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic)
 }
 
-func (s *problemService) RemoveProblem(ctx context.Context, problemID string) error {
-	// 👇 NEW: Trigger the garbage collector before deleting the problem
-	s.ClearTestCases(ctx, problemID)
+func (s *problemService) RemoveProblem(ctx context.Context, problemID, userID, userRole string) error {
+	// 👇 NEW: Trigger the garbage collector AND check for failure
+	err := s.ClearTestCases(ctx, problemID, userID, userRole)
+	if err != nil {
+		return fmt.Errorf("cannot delete problem: %w", err)
+	}
 
 	return s.repo.DeleteProblem(ctx, problemID)
 }
@@ -116,30 +121,54 @@ func (s *problemService) FetchAllTestCases(ctx context.Context, problemID string
 	return testCases, nil
 }
 
-func (s *problemService) ClearTestCases(ctx context.Context, problemID string) error {
-	// 1. Fetch the old test cases to grab their S3 routing keys
-	oldTestCases, err := s.repo.GetAllTestCases(ctx, problemID)
+func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, userRole string) error {
+	// 1. Verify Ownership / Role
+	authorID, err := s.repo.GetProblemAuthor(ctx, problemID)
+	if err != nil {
+		return err
+	}
+	if userRole != "admin" && userID != authorID {
+		return errors.New("unauthorized: only the original author or an admin can clear test cases")
+	}
 
-	if err == nil {
-		for _, tc := range oldTestCases {
-			// Delete the old input file from MinIO
-			if inKey, ok := tc["input_s3_key"].(string); ok && inKey != "" {
-				storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-					Bucket: aws.String(storage.BucketName),
-					Key:    aws.String(inKey),
-				})
+	// 2. Fetch the old test cases
+	oldTestCases, err := s.repo.GetAllTestCases(ctx, problemID)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve test cases for cleanup: %w", err)
+	}
+
+	// 3. Delete from MinIO/S3 and catch errors
+	var s3Errors []error
+	for _, tc := range oldTestCases {
+		if inKey, ok := tc["input_s3_key"].(string); ok && inKey != "" {
+			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(storage.BucketName),
+				Key:    aws.String(inKey),
+			})
+			if err != nil {
+				log.Printf("[!] S3 Deletion Error (Input): %v", err)
+				s3Errors = append(s3Errors, err)
 			}
-			// Delete the old expected output file from MinIO
-			if outKey, ok := tc["expected_s3_key"].(string); ok && outKey != "" {
-				storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-					Bucket: aws.String(storage.BucketName),
-					Key:    aws.String(outKey),
-				})
+		}
+
+		if outKey, ok := tc["expected_s3_key"].(string); ok && outKey != "" {
+			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(storage.BucketName),
+				Key:    aws.String(outKey),
+			})
+			if err != nil {
+				log.Printf("[!] S3 Deletion Error (Output): %v", err)
+				s3Errors = append(s3Errors, err)
 			}
 		}
 	}
 
-	// 2. Now that the bucket is clean, wipe the rows from PostgreSQL
+	// 4. Abort DB deletion if S3 cleanup failed to prevent orphaned files
+	if len(s3Errors) > 0 {
+		return fmt.Errorf("failed to clean up %d S3 objects, aborting database deletion to prevent state mismatch", len(s3Errors))
+	}
+
+	// 5. Safe to wipe the rows from PostgreSQL
 	return s.repo.DeleteTestCases(ctx, problemID)
 }
 

@@ -107,7 +107,7 @@ func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 		}
 	}
 
-	if err := ctrl.service.RemoveProblem(c.Request.Context(), problemID); err != nil {
+	if err := ctrl.service.RemoveProblem(c.Request.Context(), problemID, userID, userRole); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete problem"})
 		return
 	}
@@ -141,11 +141,21 @@ func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 	problemID := c.Param("id")
 
-	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID)
+	// 👇 NEW: Extract user credentials from the JWT context
+	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string)
+
+	// 👇 NEW: Pass them into the service
+	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID, userID, userRole)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear old test cases"})
+		// Differentiate between an unauthorized attempt vs an S3 failure
+		if err.Error() == "unauthorized: only the original author or an admin can clear test cases" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Old test cases wiped successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "Test cases cleared successfully"})
 }
