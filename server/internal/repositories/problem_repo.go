@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"campuscompile/api/internal/models"
 	"context"
 	"time"
 
@@ -17,6 +18,7 @@ type ProblemRepository interface {
 	GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	DeleteTestCases(ctx context.Context, problemID string) error
+	InsertTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
 }
 
 type problemRepo struct {
@@ -179,4 +181,24 @@ func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]
 func (r *problemRepo) DeleteTestCases(ctx context.Context, problemID string) error {
 	_, err := r.db.Exec(ctx, "DELETE FROM test_cases WHERE problem_id = $1", problemID)
 	return err
+}
+func (r *problemRepo) InsertTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, rec := range records {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO test_cases (problem_id, is_hidden, input_s3_key, expected_s3_key) 
+			VALUES ($1, $2, $3, $4)
+		`, problemID, rec.IsHidden, rec.InputS3Key, rec.ExpectedS3Key)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
