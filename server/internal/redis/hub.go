@@ -56,17 +56,20 @@ func (h *Hub) Unsubscribe(topic string, ch chan string) {
 	h.Lock()
 	defer h.Unlock()
 
-	if _, ok := h.subscribers[topic]; ok {
-		delete(h.subscribers[topic], ch)
-		close(ch)
+	if subs, ok := h.subscribers[topic]; ok {
+		// Strictly verify the channel is registered before closing to prevent double-close panics
+		if _, exists := subs[ch]; exists {
+			delete(subs, ch)
+			close(ch)
 
-		// 🔒 SCALING MAGIC: If 0 students are left watching, sever the Redis connection to save memory
-		if len(h.subscribers[topic]) == 0 {
-			if pubsub, exists := h.redisSubs[topic]; exists {
-				pubsub.Close()
-				delete(h.redisSubs, topic)
+			// If 0 clients are left watching, sever the Redis connection to save memory
+			if len(subs) == 0 {
+				if pubsub, hasPubSub := h.redisSubs[topic]; hasPubSub {
+					pubsub.Close()
+					delete(h.redisSubs, topic)
+				}
+				delete(h.subscribers, topic)
 			}
-			delete(h.subscribers, topic)
 		}
 	}
 }
@@ -74,21 +77,17 @@ func (h *Hub) Unsubscribe(topic string, ch chan string) {
 // broadcast reads from the single Redis channel and fans out to all connected Go clients
 func (h *Hub) broadcast(topic string, redisCh <-chan *redisClient.Message) {
 	for msg := range redisCh {
-		h.RLock()
+		h.RLock() // Hold the Read Lock during the entire fan-out process
 		subs := h.subscribers[topic]
-		targets := make([]chan string, 0, len(subs))
-		for ch := range subs {
-			targets = append(targets, ch)
-		}
-		h.RUnlock()
 
-		for _, ch := range targets {
+		for ch := range subs {
 			select {
 			case ch <- msg.Payload:
 			default:
-				// Drop message for a slow reader so we don't block the other 499 fast readers
+				// Drop message for a slow reader so we don't block the other fast readers
 				log.Printf("[WARN] Dropped message for a slow reader on topic %s", topic)
 			}
 		}
+		h.RUnlock() // Release only after all non-blocking sends are complete
 	}
 }
