@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
@@ -169,18 +170,25 @@ func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	problemID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string)
 
-	// 1. Ownership & Existence Check via Service Layer
-	meta, err := ctrl.service.FetchProblemByID(c.Request.Context(), problemID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
-		return
+	// 👇 FIX 3: Safely get the user role without panicking if the claim is missing
+	var userRole string
+	if roleVal, exists := c.Get("role"); exists {
+		if r, ok := roleVal.(string); ok {
+			userRole = r
+		}
 	}
 
-	var authorID string
-	if aID, ok := meta["author_id"].(string); ok {
-		authorID = aID
+	// 👇 FIX 1 & 4: Use lighter service method (GetProblemAuthor) and differentiate pgx.ErrNoRows vs 500 errors
+	authorID, err := ctrl.service.GetProblemAuthor(c.Request.Context(), problemID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
+		} else {
+			// Operational database issue (connectivity, timeout, etc.)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify problem ownership"})
+		}
+		return
 	}
 
 	if userRole != "admin" && userID != authorID {
@@ -269,7 +277,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 			return
 		}
 
-		// Map to our new DTO
+		// Map to our DTO
 		records = append(records, models.TestCaseUploadRecord{
 			InputS3Key:    inKey,
 			ExpectedS3Key: outKey,
@@ -295,9 +303,9 @@ func (ctrl *ProblemController) cleanupS3Keys(ctx context.Context, keys []string)
 			Bucket: aws.String(storage.BucketName),
 			Key:    aws.String(key),
 		})
-		// Make rollback errors visible to stdout to assist infrastructure debugging
 		if err != nil {
-			log.Printf("[ERROR] Failed to clean up orphaned S3 object (%s): %v\n", key, err)
+			// 👇 FIX 2: Removed trailing newline to prevent double blank lines in logs
+			log.Printf("[ERROR] Failed to clean up orphaned S3 object (%s): %v", key, err)
 		}
 	}
 }
