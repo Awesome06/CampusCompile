@@ -1,45 +1,16 @@
 import os
-import sys
 import shutil
 import mosspy
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import boto3
 import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict
 import time
-import redis
 
-# --- STRICT ENVIRONMENT VALIDATION ---
-def get_required_env(var_name: str) -> str:
-    value = os.getenv(var_name)
-    if not value:
-        # Write cleanly to stderr and terminate without a messy stack trace
-        sys.stderr.write(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.\n")
-        sys.exit(1)
-    return value
+# 👇 NEW: Import everything directly from our centralized config
+from config import get_db_connection, fetch_from_s3, redis_client
 
 # --- CONFIGURATION ---
-DB_CONFIG = {
-    "dbname": "CampusCompile_db",
-    "user": get_required_env("POSTGRES_USER"),         # <-- Wired up
-    "password": get_required_env("POSTGRES_PASSWORD"), # <-- Wired up
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": "5432"
-}
-
-s3_client = boto3.client(
-    's3',
-    endpoint_url=os.getenv('S3_ENDPOINT', 'http://minio:9000'),
-    aws_access_key_id=os.getenv('S3_ACCESS_KEY', 'campus_admin'),
-    aws_secret_access_key=os.getenv('S3_SECRET_KEY', 'campus_password'),
-    region_name='us-east-1' 
-)
-BUCKET_NAME = "campus-testcases"
-
 # You must register for a MOSS ID by emailing: moss@moss.stanford.edu
-# For testing, you can use a placeholder, but it will fail the network request without a real ID.
 MOSS_USER_ID = os.getenv("MOSS_USER_ID", "YOUR_MOSS_ID_HERE") 
 
 # Map CampusCompile language tags to MOSS language tags
@@ -48,15 +19,6 @@ LANGUAGE_MAP = {
     'java': 'java',
     'python': 'python'
 }
-
-def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
-
-def fetch_from_s3(s3_key: str, destination_path: str):
-    try:
-        s3_client.download_file(BUCKET_NAME, s3_key, destination_path)
-    except Exception as e:
-        print(f"[!] Failed to fetch {s3_key} from S3: {e}")
 
 def parse_moss_report(moss_url: str) -> List[Dict]:
     """Scrapes the MOSS HTML report to extract flagged user pairs and their similarity scores."""
@@ -114,8 +76,8 @@ def run_moss_audit(contest_id: str):
             cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
             conn.commit()
             
-            rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-            rc.sadd("dirty_contests", contest_id)
+            # 👇 CHANGED: Replaced local instantiation with centralized client
+            redis_client.sadd("dirty_contests", contest_id)
             return
 
         cursor.execute("SELECT DISTINCT problem_id FROM submissions WHERE contest_id = %s", (contest_id,))
@@ -186,8 +148,8 @@ def run_moss_audit(contest_id: str):
         conn.commit()
         print(f"[+] Contest {contest_id} audit finalized. Status set to 'completed'.")
 
-        rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-        rc.sadd("dirty_contests", contest_id)
+        # 👇 CHANGED: Replaced local instantiation with centralized client
+        redis_client.sadd("dirty_contests", contest_id)
 
     except Exception as e:
         print(f"[!] MOSS Audit crashed: {e}")
@@ -198,8 +160,9 @@ def run_moss_audit(contest_id: str):
         try:
             cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
             conn.commit()
-            rc = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0)
-            rc.sadd("dirty_contests", contest_id)
+            
+            # 👇 CHANGED: Replaced local instantiation with centralized client
+            redis_client.sadd("dirty_contests", contest_id)
         except Exception as inner_e:
             print(f"[!] Failed to update crash status to database: {inner_e}")
             

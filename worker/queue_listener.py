@@ -1,46 +1,19 @@
-import redis
-import sys
 import json
-import psycopg2
-import os
 import traceback
-from datetime import timezone
-from psycopg2.extras import RealDictCursor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
 
-# --- STRICT ENVIRONMENT VALIDATION ---
-def get_required_env(var_name: str) -> str:
-    value = os.getenv(var_name)
-    if not value:
-        # Write cleanly to stderr and terminate without a messy stack trace
-        sys.stderr.write(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.\n")
-        sys.exit(1)
-    return value
+# 👇 NEW: Import everything directly from our centralized config
+from config import redis_client, get_db_connection
 
 # --- CONFIGURATION ---
-DB_CONFIG = {
-    "dbname": "CampusCompile_db",
-    "user": get_required_env("POSTGRES_USER"),         # <-- Wired up
-    "password": get_required_env("POSTGRES_PASSWORD"), # <-- Wired up
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": "5432"
-}
+QUEUE_NAME = 'submission_queue'
 
 LANGUAGE_CONFIG = {
     'cpp':    {'time': 1.0, 'memory': 1.0},
     'python': {'time': 2.0, 'memory': 1.5},
     'java':   {'time': 2.0, 'memory': 2.0},
-    # Easily add new languages here later:
-    # 'javascript': {'time': 1.5, 'memory': 1.5},
-    # 'rust':       {'time': 1.0, 'memory': 1.0},
 }
-
-redis_client = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, db=0, decode_responses=True)
-QUEUE_NAME = 'submission_queue'
-
-def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
 
 def process_submission(submission_id):
     conn = get_db_connection()
@@ -54,7 +27,6 @@ def process_submission(submission_id):
             "status": "Running", "message": "Compiling and executing..."
         }))
 
-        # 👇 FIX: Calculate 'elapsed_minutes' safely inside PostgreSQL
         cursor.execute("""
             SELECT s.source_code_s3_key, s.language, s.problem_id, s.user_id, s.contest_id, s.submitted_at,
                    p.time_limit_ms, p.memory_limit_kb,
@@ -86,12 +58,10 @@ def process_submission(submission_id):
 
         print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
 
-        # Fetch independent language configuration
         lang = submission.get('language')
         base_time_ms = submission.get('time_limit_ms', 2000)
         base_mem_kb = submission.get('memory_limit_kb', 256000)
 
-        # Fallback to 1.0x if language is missing from config
         limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
 
         actual_time_ms = int(base_time_ms * limits['time'])
@@ -104,21 +74,19 @@ def process_submission(submission_id):
             source_code=None, 
             source_s3_key=submission.get('source_code_s3_key'),
             test_cases=test_cases,
-            time_limit_ms=actual_time_ms, #Passed scaled time
-            memory_limit_kb=actual_mem_kb #Passed scaled memory
+            time_limit_ms=actual_time_ms,
+            memory_limit_kb=actual_mem_kb
         )
 
         final_verdict = result['verdict']
-        final_message = result.get('message', 'All test cases passed! 🏆') if final_verdict == 'AC' else result.get('message', f'Verdict: {final_verdict}')
+        final_message = result.get('message', 'All test cases passed! 🚀') if final_verdict == 'AC' else result.get('message', f'Verdict: {final_verdict}')
 
-        # 1. Save the verdict to PostgreSQL
         cursor.execute(
             "UPDATE submissions SET status = %s, error_logs = %s WHERE submission_id = %s",
             (final_verdict, final_message, submission_id)
         )
         conn.commit()
         
-        # 2. Phase 3 ICPC Leaderboard Engine
         if final_verdict == 'AC' and submission.get('contest_id'):
             contest_id = submission['contest_id']
             user_id = submission['user_id']
@@ -142,7 +110,6 @@ def process_submission(submission_id):
                 """, (user_id, problem_id, contest_id, submitted_at))
                 fails = cursor.fetchone()['fails']
 
-                # 👇 FIX: Extract pre-calculated safe float from DB query
                 elapsed_minutes = max(0, float(submission.get('elapsed_minutes') or 0))
                 penalty_minutes = elapsed_minutes + (fails * 20)
 
@@ -152,7 +119,6 @@ def process_submission(submission_id):
                 redis_client.sadd("dirty_contests", contest_id)
                 print(f"[+] ICPC Score Updated for {user_id}. (+1 Solve, {penalty_minutes:.2f} Penalty Mins)")
 
-        # 3. Publish Final Verdict to Redis
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": final_verdict, "message": final_message
         }))
@@ -160,12 +126,10 @@ def process_submission(submission_id):
         print(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")
 
     except Exception as e:
-        # 👇 FIX: Aggressive error logging directly to your terminal
         print(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.py:")
         traceback.print_exc() 
         conn.rollback()
         
-        # We pass the EXACT error text to the frontend console instead of a generic message
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": "SE", "message": f"Worker Crash: {str(e)}"
         }))
@@ -198,7 +162,6 @@ def start_worker():
                     "expected_output": ""
                 }]
                 
-                #Apply the exact same multipliers to Custom Runs
                 lang = submission_data.get('language')
                 limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
 
