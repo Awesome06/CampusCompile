@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log" // <-- Added
 	"net/http"
+	"strconv" // <-- Added
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
 
-	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/storage"
@@ -170,18 +171,24 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	userID := c.MustGet("user_id").(string)
 	userRole := c.MustGet("role").(string)
 
-	// 👇 FIX (Issue 5): Authorization check to prevent cross-professor overwrites
-	var authorID string
-	err := database.Pool.QueryRow(c.Request.Context(), "SELECT author_id FROM problems WHERE problem_id = $1", problemID).Scan(&authorID)
+	// 1. Ownership & Existence Check via Service Layer
+	meta, err := ctrl.service.FetchProblemByID(c.Request.Context(), problemID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify problem ownership"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
 		return
 	}
+
+	var authorID string
+	if aID, ok := meta["author_id"].(string); ok {
+		authorID = aID
+	}
+
 	if userRole != "admin" && userID != authorID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized: only the original author or an admin can upload test cases"})
 		return
 	}
 
+	// 2. Parse Multipart Form
 	form, err := c.MultipartForm()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form data"})
@@ -192,21 +199,23 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	expectedFiles := form.File["expected_files"]
 	isHiddenVals := form.Value["is_hidden"]
 
+	// 3. Strict Payload Validation
+	if len(inputFiles) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No test cases provided in payload"})
+		return
+	}
+
 	if len(inputFiles) != len(expectedFiles) || len(inputFiles) != len(isHiddenVals) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Mismatched file arrays in payload"})
 		return
 	}
 
 	var uploadedKeys []string
-	type tcRecord struct {
-		inKey    string
-		outKey   string
-		isHidden bool
-	}
-	var records []tcRecord
+	var records []models.TestCaseUploadRecord
 
+	// 4. Process Files and Upload to S3
 	for i := 0; i < len(inputFiles); i++ {
-		// 👇 FIX (Issue 6): Handle input file Open() error to prevent nil pointer panic
+		// Process Input File
 		inFile, err := inputFiles[i].Open()
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
@@ -229,7 +238,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		}
 		uploadedKeys = append(uploadedKeys, inKey)
 
-		// 👇 FIX (Issue 1): Handle expected file Open() error to prevent nil pointer panic
+		// Process Expected Output File
 		outFile, err := expectedFiles[i].Open()
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
@@ -252,46 +261,43 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		}
 		uploadedKeys = append(uploadedKeys, outKey)
 
-		isHidden := isHiddenVals[i] == "true"
-		records = append(records, tcRecord{inKey, outKey, isHidden})
-	}
-
-	tx, err := database.Pool.Begin(c.Request.Context())
-	if err != nil {
-		ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start database transaction"})
-		return
-	}
-	defer tx.Rollback(c.Request.Context())
-
-	for _, rec := range records {
-		_, err = tx.Exec(c.Request.Context(), `
-			INSERT INTO test_cases (problem_id, is_hidden, input_s3_key, expected_s3_key) 
-			VALUES ($1, $2, $3, $4)
-		`, problemID, rec.isHidden, rec.inKey, rec.outKey)
-
+		// Parse Boolean strictly
+		isHidden, err := strconv.ParseBool(isHiddenVals[i])
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database insert failed"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid boolean value for is_hidden flag"})
 			return
 		}
+
+		// Map to our new DTO
+		records = append(records, models.TestCaseUploadRecord{
+			InputS3Key:    inKey,
+			ExpectedS3Key: outKey,
+			IsHidden:      isHidden,
+		})
 	}
 
-	if err := tx.Commit(c.Request.Context()); err != nil {
+	// 5. Delegate Database Insertion to Service Layer
+	err = ctrl.service.SaveTestCasesBatch(c.Request.Context(), problemID, records)
+	if err != nil {
 		ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction commit failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist test cases to database"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Atomic batch upload successful"})
 }
 
-// Relocated cleanup function
+// Helper to clean up orphaned S3 objects if the transaction fails mid-flight
 func (ctrl *ProblemController) cleanupS3Keys(ctx context.Context, keys []string) {
 	for _, key := range keys {
-		storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(storage.BucketName),
 			Key:    aws.String(key),
 		})
+		// Make rollback errors visible to stdout to assist infrastructure debugging
+		if err != nil {
+			log.Printf("[ERROR] Failed to clean up orphaned S3 object (%s): %v\n", key, err)
+		}
 	}
 }

@@ -128,6 +128,12 @@ type Problem struct {
 	SampleOutput *string `json:"sample_output,omitempty"`
 }
 
+type TestCaseUploadRecord struct {
+	InputS3Key    string
+	ExpectedS3Key string
+	IsHidden      bool
+}
+
 // ==========================================
 // 5. SUBMISSION & EXECUTION STRUCTS
 // ==========================================
