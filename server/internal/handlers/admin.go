@@ -70,11 +70,14 @@ func UploadTestCase(c *gin.Context) {
 		return
 	}
 
-	// 5. Save ONLY the S3 keys to PostgreSQL
+	isHiddenStr := c.DefaultPostForm("is_hidden", "true")
+	isHidden := isHiddenStr == "true"
+
+	// 5. Save the S3 keys and the dynamic is_hidden flag to PostgreSQL
 	_, err = database.Pool.Exec(ctx, `
 		INSERT INTO test_cases (problem_id, is_hidden, input_s3_key, expected_s3_key) 
-		VALUES ($1, true, $2, $3)
-	`, problemID, inputS3Key, expectedS3Key)
+		VALUES ($1, $2, $3, $4)
+	`, problemID, isHidden, inputS3Key, expectedS3Key)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to link test case in database"})

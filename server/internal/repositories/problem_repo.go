@@ -5,20 +5,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"campuscompile/api/internal/models"
 )
 
 type ProblemRepository interface {
 	CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error
-	AddTestCasesInTx(ctx context.Context, testCases []models.TestCaseToInsert) error
 	GetProblems(ctx context.Context) ([]map[string]interface{}, error)
 	GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error)
 	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
 	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool) error
 	DeleteProblem(ctx context.Context, problemID string) error
 	GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
-	SyncTestCasesInTx(ctx context.Context, problemID string, testCases []models.TestCaseToInsert) error
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	DeleteTestCases(ctx context.Context, problemID string) error
 }
@@ -37,26 +33,6 @@ func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug,
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, problemID, title, slug, description, difficulty, timeLimit, memoryLimit, authorID, isPublic)
 	return err
-}
-
-func (r *problemRepo) AddTestCasesInTx(ctx context.Context, testCases []models.TestCaseToInsert) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	for _, tc := range testCases {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO test_cases (test_case_id, problem_id, input_data, expected_output, is_hidden)
-			VALUES ($1, $2, $3, $4, $5)
-		`, tc.ID, tc.ProblemID, tc.InputData, tc.ExpectedOutput, tc.IsHidden)
-
-		if err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
 }
 
 func (r *problemRepo) GetProblems(ctx context.Context) ([]map[string]interface{}, error) {
@@ -173,30 +149,6 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string) (
 		}
 	}
 	return problems, nil
-}
-
-func (r *problemRepo) SyncTestCasesInTx(ctx context.Context, problemID string, testCases []models.TestCaseToInsert) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	_, err = tx.Exec(ctx, "DELETE FROM test_cases WHERE problem_id = $1", problemID)
-	if err != nil {
-		return err
-	}
-
-	for _, tc := range testCases {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO test_cases (test_case_id, problem_id, input_data, expected_output, is_hidden)
-			VALUES ($1, $2, $3, $4, $5)
-		`, tc.ID, tc.ProblemID, tc.InputData, tc.ExpectedOutput, tc.IsHidden)
-		if err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
 }
 
 func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {

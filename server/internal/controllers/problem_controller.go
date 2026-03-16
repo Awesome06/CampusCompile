@@ -42,29 +42,6 @@ func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 	})
 }
 
-func (ctrl *ProblemController) AddTestCasesBatch(c *gin.Context) {
-	problemID := c.Param("id")
-
-	var req models.BatchTestCasesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid test cases payload format"})
-		return
-	}
-
-	if len(req.TestCases) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one test case is required"})
-		return
-	}
-
-	err := ctrl.service.AddTestCases(c.Request.Context(), problemID, req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save test cases to database"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Test cases published successfully"})
-}
-
 func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 	problems, err := ctrl.service.FetchProblems(c.Request.Context())
 	if err != nil {
@@ -130,7 +107,7 @@ func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 		}
 	}
 
-	if err := ctrl.service.RemoveProblem(c.Request.Context(), problemID); err != nil {
+	if err := ctrl.service.RemoveProblem(c.Request.Context(), problemID, userID, userRole); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete problem"})
 		return
 	}
@@ -149,20 +126,6 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 	c.JSON(http.StatusOK, problems)
 }
 
-func (ctrl *ProblemController) SyncTestCasesBatch(c *gin.Context) {
-	var req models.BatchTestCasesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid test cases payload"})
-		return
-	}
-
-	if err := ctrl.service.SyncTestCases(c.Request.Context(), c.Param("id"), req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync test cases"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Test cases synced successfully"})
-}
-
 func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 	testCases, err := ctrl.service.FetchAllTestCases(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -178,11 +141,21 @@ func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 	problemID := c.Param("id")
 
-	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID)
+	// 👇 NEW: Extract user credentials from the JWT context
+	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string)
+
+	// 👇 NEW: Pass them into the service
+	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID, userID, userRole)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear old test cases"})
+		// Differentiate between an unauthorized attempt vs an S3 failure
+		if err.Error() == "unauthorized: only the original author or an admin can clear test cases" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Old test cases wiped successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "Test cases cleared successfully"})
 }

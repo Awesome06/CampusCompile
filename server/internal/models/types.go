@@ -128,25 +128,6 @@ type Problem struct {
 	SampleOutput *string `json:"sample_output,omitempty"`
 }
 
-type TestCasePayload struct {
-	Input          string `json:"input"`
-	ExpectedOutput string `json:"expectedOutput"`
-	IsHidden       bool   `json:"isHidden"`
-}
-
-type BatchTestCasesRequest struct {
-	TestCases []TestCasePayload `json:"test_cases"`
-}
-
-// Moved from repositories/problem_repo.go
-type TestCaseToInsert struct {
-	ID             string
-	ProblemID      string
-	InputData      string
-	ExpectedOutput string
-	IsHidden       bool
-}
-
 // ==========================================
 // 5. SUBMISSION & EXECUTION STRUCTS
 // ==========================================

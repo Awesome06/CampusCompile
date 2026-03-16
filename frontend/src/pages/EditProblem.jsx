@@ -203,43 +203,71 @@ export default function EditProblem() {
     if(e.target) e.target.value = null; 
   };
 
-  const handleSaveChanges = async () => {
+const handleSaveChanges = async () => {
     setIsSubmitting(true);
     setStatus({ type: 'info', message: 'Saving problem and streaming test cases to S3... 🚀' });
 
+    // 1. Build a SINGLE FormData object for the Atomic Batch
+    const formData = new FormData();
+    testCases.forEach((tc, index) => {
+      const inBlob = tc.inputBlob || new Blob([tc.input], { type: 'text/plain' });
+      const outBlob = tc.expectedBlob || new Blob([tc.expectedOutput], { type: 'text/plain' });
+      
+      // Appending to the same key creates an array on the backend!
+      formData.append('input_files', inBlob, `in_${index}.txt`);
+      formData.append('expected_files', outBlob, `out_${index}.txt`);
+      formData.append('is_hidden', tc.isHidden ? 'true' : 'false');
+    });
+
     try {
-      // 1. Update Problem Metadata
+      // 2. Update Problem Metadata (Sending both key formats to guarantee Go struct binds them)
       await api.put(`/problems/${id}`, {
         title: problemData.title,
         description: problemData.description,
         difficulty: problemData.difficulty,
         time_limit: problemData.time_limit,
+        time_limit_ms: problemData.time_limit,
         memory_limit: problemData.memory_limit * 1024,
+        memory_limit_kb: problemData.memory_limit * 1024,
         is_public: problemData.is_public
       });
 
-      // 👇 2. NEW: Wipe the old test cases from the database to prevent duplicates
+      // 3. Trigger our secure Garbage Collector to wipe old files from S3 and PostgreSQL
       await api.delete(`/problems/${id}/testcases`);
 
-      // 3. Upload the current Test Cases sequentially via FormData to MinIO/S3
-      for (const tc of testCases) {
-        const inBlob = new Blob([tc.input], { type: 'text/plain' });
-        const outBlob = new Blob([tc.expectedOutput], { type: 'text/plain' });
-
-        const formData = new FormData();
-        formData.append('problem_id', id);
-        formData.append('input_file', inBlob, 'input.txt');
-        formData.append('expected_file', outBlob, 'expected.txt');
-
-        await api.post('/problems/testcases/upload', formData, {
+      // 4. Send the single atomic batch
+      if (testCases.length > 0) {
+        await api.post(`/problems/${id}/testcases/batch`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
       }
 
       setStatus({ type: 'success', message: 'Changes saved and streamed to MinIO! 🎉' });
       setTimeout(() => navigate(`/arena/${id}`), 1500);
-    } catch (err) {
-      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save changes.' });
+
+    } catch (error) {
+      console.error("Critical Upload Error:", error);
+      
+      // 👇 COMPENSATING ACTION: Force draft state and alert
+      try {
+        await api.put(`/problems/${id}`, { 
+          title: problemData.title,
+          description: problemData.description,
+          difficulty: problemData.difficulty,
+          time_limit: problemData.time_limit,
+          time_limit_ms: problemData.time_limit,
+          memory_limit: problemData.memory_limit * 1024,
+          memory_limit_kb: problemData.memory_limit * 1024,
+          is_public: false // 👈 Force it to be a private draft
+        });
+        
+        setStatus({ 
+          type: 'error', 
+          message: 'Network error during batch upload! The problem has been forced into a private Draft without test cases to prevent students from accessing a broken problem.' 
+        });
+      } catch (fallbackError) {
+        setStatus({ type: 'error', message: 'CRITICAL ERROR: Upload failed and automatic draft fallback failed.' });
+      }
     } finally {
       setIsSubmitting(false); 
     }
@@ -344,10 +372,10 @@ export default function EditProblem() {
              <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problemData.title || 'Untitled Problem'}</h2>
               <div className="flex flex-wrap gap-3 mb-6">
                 <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
-                  ⏱️ {(problemData.time_limit_ms || 2000) / 1000}s (C++) <span className="text-gray-600">|</span> {((problemData.time_limit_ms || 2000) * 2.0) / 1000}s (Py/Java)
+                  ⏱️ {(problemData.time_limit || 2000) / 1000}s
                 </span>
                 <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
-                  💾 {problemData.memory_limit_kb / 1024 || 256}MB (C++) <span className="text-gray-600">|</span> {Math.round((problemData.memory_limit_kb / 1024 || 256) * 1.5)}MB (Py/Java)
+                  💾 {problemData.memory_limit || 256}MB
                 </span>
                 <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${
                     problemData.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
