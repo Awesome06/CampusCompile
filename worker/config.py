@@ -22,9 +22,27 @@ DB_CONFIG = {
     "port": "5432"
 }
 
-def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
+# Initialize a Connection Pool (Min: 1 connection, Max: 10 connections)
+try:
+    db_pool = pool.SimpleConnectionPool(
+        1, 10,
+        **DB_CONFIG,
+        cursor_factory=RealDictCursor
+    )
+    if db_pool:
+        print("[*] Database connection pool created successfully.")
+except Exception as e:
+    sys.stderr.write(f"FATAL STARTUP ERROR: Failed to create database pool: {e}\n")
+    sys.exit(1)
 
+def get_db_connection():
+    # Borrow a connection from the pool
+    return db_pool.getconn()
+
+def release_db_connection(conn):
+    # Safely return the connection to the pool for the next job
+    if conn:
+        db_pool.putconn(conn)
 # --- REDIS CONFIGURATION ---
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "redis"), 

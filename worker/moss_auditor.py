@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict
 import time
+from config import redis_client, get_db_connection, release_db_connection
 
 # 👇 NEW: Import everything directly from our centralized config
 from config import get_db_connection, fetch_from_s3, redis_client
@@ -168,4 +169,4 @@ def run_moss_audit(contest_id: str):
             
     finally:
         cursor.close()
-        conn.close()
+        release_db_connection(conn)

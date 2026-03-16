@@ -60,12 +60,15 @@ def compile_code(language: str, work_dir: str, source_code: str):
         else:
             return {"verdict": "CE", "message": "Unsupported language"}
 
-        # Compile container: Auto-remove enabled, hard limits set
+        # 👇 NEW: Give Java the headroom it needs to boot the JVM compiler
+        compilation_mem = "1g" if language == 'java' else "512m"
+
+        # Compile container: Auto-remove enabled, dynamic limits set
         container = client.containers.run(
             image=img, command=cmd, 
             volumes={'sandbox_volume': {'bind': SANDBOX_BASE, 'mode': 'rw'}},
             working_dir=work_dir, detach=True, network_disabled=True, 
-            mem_limit="512m", memswap_limit="512m", auto_remove=True
+            mem_limit=compilation_mem, memswap_limit=compilation_mem, auto_remove=True
         )
         
         res = container.wait(timeout=10)

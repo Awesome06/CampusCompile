@@ -2,6 +2,7 @@ import json
 import traceback
 from runner import grade_submission
 from moss_auditor import run_moss_audit
+from config import redis_client, get_db_connection, release_db_connection
 
 # 👇 NEW: Import everything directly from our centralized config
 from config import redis_client, get_db_connection
@@ -135,7 +136,7 @@ def process_submission(submission_id):
         }))
     finally:
         cursor.close()
-        conn.close()
+        release_db_connection(conn)
         
 def start_worker():
     print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
