@@ -1,187 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import ProblemDescription from './ProblemDescription';
 import SubmissionHistory from './SubmissionHistory';
 import CodeEditor from './CodeEditor';
 import ExecutionConsole from './ExecutionConsole';
-// 👇 1. Import some icons for the new banner
+import useExecutionEngine, { boilerplates } from '../../hooks/useExecutionEngine';
 import { ArrowLeft, LogOut, ShieldAlert } from 'lucide-react'; 
-
-const boilerplates = {
-  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}`,
-  python: `# Write your Python code here`,
-  java: `import java.util.*;\nimport java.io.*;\n\n public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}`
-};
 
 export default function ContestArena() {
   const { id: contestId, problemId } = useParams(); 
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  
-  const [problem, setProblem] = useState(null);
-  const [code, setCode] = useState(boilerplates['cpp']);
-  const [language, setLanguage] = useState('cpp');
-  const [submitStatus, setSubmitStatus] = useState(''); 
   const [leftTab, setLeftTab] = useState('description');
-  const [history, setHistory] = useState([]);
   
-  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('input');
-  const [customInput, setCustomInput] = useState('');
-  const [consoleOutput, setConsoleOutput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  const sseRef = useRef(null);
-
-  const draftKey = currentUser ? `draft_contest_${contestId}_${currentUser.id}_${problemId}` : null;
-
-  useEffect(() => {
-    return () => {
-      // If the component unmounts while a connection is open, sever it
-      if (sseRef.current) {
-        sseRef.current.close();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (draftKey) {
-      const savedDraft = localStorage.getItem(draftKey);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          setLanguage(parsed.language);
-          setCode(parsed.code);
-          return; 
-        } catch (e) {
-          console.error("Failed to parse draft", e);
-        }
-      }
-    }
-    setCode(boilerplates['cpp']);
-  }, [problemId, draftKey]);
-
-  useEffect(() => {
-    if (!draftKey || !code) return;
-    const timer = setTimeout(() => {
-      if (code !== boilerplates[language]) {
-         localStorage.setItem(draftKey, JSON.stringify({ language, code }));
-      }
-    }, 1000); 
-    return () => clearTimeout(timer);
-  }, [code, language, draftKey]);
-
-  useEffect(() => {
-    api.get(`/problems/${problemId}`)
-      .then(res => setProblem(res.data))
-      .catch(err => console.error("Could not fetch problem details", err));
-    fetchHistory();
-  }, [problemId]);
-
-  const fetchHistory = async () => {
-    try {
-      const res = await api.get(`/submissions/history/${problemId}?contest_id=${contestId}`);
-      setHistory(res.data || []);
-    } catch (err) {
-      console.error("Could not fetch history:", err);
-    }
-  };
-
-  const handleSubmit = async () => {
-    setIsProcessing(true); // 🔒 Lock the UI
-    setSubmitStatus('Pending... ⏳');
-    setIsConsoleOpen(false);
-
-    // Sever any existing connection just to be safe
-    if (sseRef.current) sseRef.current.close();
-
-    try {
-      const response = await api.post('/submit', { 
-        problem_id: problemId, 
-        contest_id: contestId, 
-        language, 
-        source_code: code 
-      });
-      
-      const token = localStorage.getItem('token');
-      
-      // USE THE REF HERE
-      sseRef.current = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
-      
-      sseRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        const status = data.status;
-        
-        if (status === 'Running') {
-          setSubmitStatus('Running... ⚙️');
-        } else {
-          setSubmitStatus(status);
-          fetchHistory();
-          
-          if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(status)) {
-            setConsoleOutput(data.message || `Verdict: ${status}`);
-            setActiveTab('output');
-            setIsConsoleOpen(true);
-          } else if (status === 'AC' || status === 'Accepted') {
-            setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
-            setActiveTab('output');
-            setIsConsoleOpen(true);
-            if (draftKey) localStorage.removeItem(draftKey);
-          }
-          setIsProcessing(false); // 🔓 Unlock UI on completion
-          sseRef.current.close(); // USE THE REF HERE
-        }
-      };
-
-      sseRef.current.onerror = () => { 
-        setIsProcessing(false); // 🔓 Unlock on connection error
-        sseRef.current.close(); // USE THE REF HERE
-      };
-    } catch (error) {
-      setSubmitStatus('Error: Submission Failed');
-      setIsProcessing(false); // 🔓 Unlock on API failure
-    }
-  };
-
-  const handleRunCode = async () => {
-    setIsProcessing(true); // 🔒 Lock the UI
-    setConsoleOutput('Queuing... ⚙️');
-    setActiveTab('output');
-    setIsConsoleOpen(true);
-
-    // Sever any existing connection just to be safe
-    if (sseRef.current) sseRef.current.close();
-
-    try {
-      const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
-      const token = localStorage.getItem('token');
-      
-      // USE THE REF HERE
-      sseRef.current = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
-      
-      sseRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.status === 'Running') {
-          setConsoleOutput('Running... ⚙️');
-        } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
-          setConsoleOutput(data.output || data.message || "Program finished with no output.");
-          setIsProcessing(false); // 🔓 Unlock UI on completion
-          sseRef.current.close(); // USE THE REF HERE
-        }
-      };
-
-      sseRef.current.onerror = () => {
-        setConsoleOutput('Error streaming execution status.');
-        setIsProcessing(false); // 🔓 Unlock on connection error
-        sseRef.current.close(); // USE THE REF HERE
-      };
-    } catch (error) {
-      setConsoleOutput('Error: Could not connect to execution engine.');
-      setIsProcessing(false); // 🔓 Unlock on API failure
-    }
-  };
+  // 👇 Connect the Brain and pass the contestId
+  const {
+    problem, code, setCode, language, setLanguage, submitStatus, history,
+    isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
+    customInput, setCustomInput, consoleOutput, isProcessing,
+    handleSubmit, handleRunCode
+  } = useExecutionEngine(problemId, contestId);
 
   if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Contest Arena...</div>;
 
