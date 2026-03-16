@@ -65,7 +65,7 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return
 		case msg := <-ch:
-			c.SSEvent("message", msg.Payload)
+			c.SSEvent("message", msg)
 			c.Writer.Flush()
 		}
 	}

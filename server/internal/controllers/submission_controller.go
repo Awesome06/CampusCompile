@@ -121,7 +121,7 @@ func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return // Client disconnected/closed the tab
 		case msg := <-ch:
-			c.SSEvent("message", msg.Payload)
+			c.SSEvent("message", msg)
 			c.Writer.Flush() // Force the data down the wire immediately
 
 			// If we want, we could parse the JSON and break the loop on terminal states,
@@ -145,7 +145,7 @@ func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return
 		case msg := <-ch:
-			c.SSEvent("message", msg.Payload)
+			c.SSEvent("message", msg)
 			c.Writer.Flush()
 		}
 	}

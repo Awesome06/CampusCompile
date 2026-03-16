@@ -11,6 +11,8 @@ import (
 	"campuscompile/api/internal/repositories"
 	"campuscompile/api/internal/storage"
 
+	myredis "campuscompile/api/internal/redis"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
@@ -23,7 +25,7 @@ type SubmissionService interface {
 	FetchRunStatus(ctx context.Context, runID string) (map[string]interface{}, error)
 	FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error)
 	FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error)
-	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
+	SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func())
 }
 
 type submissionService struct {
@@ -148,7 +150,8 @@ func (s *submissionService) FetchSubmissionHistory(ctx context.Context, userID, 
 	return s.repo.GetSubmissionHistory(ctx, userID, problemID, contestID)
 }
 
-func (s *submissionService) SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func()) {
-	pubsub := s.redis.Subscribe(ctx, channel)
-	return pubsub.Channel(), func() { pubsub.Close() }
+func (s *submissionService) SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func()) {
+	ch := myredis.GlobalHub.Subscribe(channel)
+	cleanup := func() { myredis.GlobalHub.Unsubscribe(channel, ch) }
+	return ch, cleanup
 }
