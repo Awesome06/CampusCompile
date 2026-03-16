@@ -52,6 +52,9 @@ func RequireAuth(c *gin.Context) {
 
 		if roleRaw, exists := claims["role"]; exists {
 			c.Set("role", fmt.Sprintf("%v", roleRaw))
+		} else {
+			// Fallback for legacy tokens minted before role claims were strictly enforced
+			c.Set("role", "student")
 		}
 
 		// Extract demographic context if the user is onboarded
