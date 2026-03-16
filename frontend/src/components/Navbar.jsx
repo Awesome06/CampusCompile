@@ -1,46 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { jwtDecode } from 'jwt-decode';
+import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
-  const [userRole, setUserRole] = useState(localStorage.getItem('role'));
-  const [isOnboarded, setIsOnboarded] = useState(false);
-
-  const checkOnboardingStatus = () => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try {
-        const decoded = jwtDecode(token);
-        setIsOnboarded(!!decoded.is_onboarded); 
-      } catch (e) {
-        setIsOnboarded(false); 
-      }
-    } else {
-      setIsOnboarded(false);
-    }
-  };
-
-  useEffect(() => {
-    checkOnboardingStatus();
-
-    const syncAuthState = () => {
-      setIsLoggedIn(!!localStorage.getItem('token'));
-      setUserRole(localStorage.getItem('role'));
-      checkOnboardingStatus(); 
-    };
-
-    window.addEventListener('storage', syncAuthState);
-    return () => window.removeEventListener('storage', syncAuthState);
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.clear(); 
-    setIsLoggedIn(false);
-    setUserRole(null);
-    setIsOnboarded(false);
-    window.location.href = '/login'; 
-  };
+  const { isLoggedIn, currentUser, logout } = useAuth(); 
+  const isOnboarded = currentUser?.isOnboarded;
 
   return (
     <nav className="p-4 bg-dark-surface border-b border-dark-border flex justify-between items-center shadow-md">
@@ -60,7 +24,7 @@ export default function Navbar() {
       <div className="space-x-4 flex items-center">
         {isLoggedIn ? (
           <button 
-            onClick={handleLogout} 
+            onClick={logout} 
             className="text-sm font-medium text-red-400 hover:text-red-300 transition"
           >
             Logout

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import Button from '../components/ui/Button';
 import MicrosoftIcon from '../components/icons/MicrosoftIcon';
+import api from '../services/api';
 
 export default function Login() {
   useEffect(() => {
@@ -9,7 +10,8 @@ export default function Login() {
   }, []);
 
   const handleSSOLogin = () => {
-    window.location.href = 'http://localhost:8080/api/auth/login';
+    const baseUrl = api.defaults.baseURL;
+    window.location.href = `${baseUrl}/auth/login`;
   };
 
   return (

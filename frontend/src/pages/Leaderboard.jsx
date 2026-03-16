@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Trophy, Clock, CheckCircle, AlertTriangle } from 'lucide-react'; 
+import api from '../services/api';
 
 export default function Leaderboard() {
   const { id: contestId } = useParams();
@@ -21,7 +22,7 @@ export default function Leaderboard() {
       return;
     }
 
-    const sseUrl = `http://localhost:8080/api/contests/${contestId}/leaderboard/stream?token=${token}`;
+    const sseUrl = `${api.defaults.baseURL}/contests/${contestId}/leaderboard/stream?token=${token}`;
     const source = new EventSource(sseUrl);
 
     source.onmessage = (event) => {

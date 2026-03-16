@@ -9,29 +9,14 @@ import JSZip from 'jszip';
 import remarkGfm from 'remark-gfm';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
+import { parseZipTestCases } from '../utils/testCaseParser';
+import { markdownComponents } from '../utils/markdownConfig';
 
 export default function EditProblem() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // CodeChef-Style Custom Renderers
-  const markdownComponents = {
-    h3: ({node, ...props}) => <h3 className="text-xl font-bold text-blue-400 mt-8 mb-4 border-b border-dark-border pb-2 tracking-wide uppercase" {...props} />,
-    pre: ({node, ...props}) => <pre className="bg-[#121212] border border-dark-border rounded-lg p-5 overflow-x-auto my-4 font-mono text-sm text-gray-300 shadow-inner" {...props} />,
-    code: ({node, className, children, ...props}) => {
-      const isInline = !className || !className.includes('language-');
-      return isInline 
-        ? <code className="bg-[#2a2a2a] text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono border border-dark-border" {...props}>{children}</code> 
-        : <code className={className} {...props}>{children}</code>;
-    },
-    ul: ({node, ...props}) => <ul className="list-disc list-inside my-4 space-y-2 text-gray-300 marker:text-blue-500" {...props} />,
-    li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-    p: ({node, ...props}) => <p className="my-4 leading-relaxed text-gray-300" {...props} />,
-    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 bg-blue-900/10 p-4 my-4 rounded-r-lg italic text-gray-400" {...props} />
-  };
-
   const [step, setStep] = useState(1);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -138,68 +123,26 @@ export default function EditProblem() {
 
   // 🛡️ ZIP PARSER FIX: Ignore macOS Ghost Files
   const handleZipUpload = async (e) => {
-    // 👇 Prevent default behavior for drag-and-drop support
     e.preventDefault(); 
-    
-    // Support both drag-and-drop (e.dataTransfer) and click uploads (e.target)
     const file = e.dataTransfer ? e.dataTransfer.files[0] : e.target.files[0];
     if (!file) return;
     
     setStatus({ type: 'info', message: 'Extracting test cases from ZIP...' });
     
-    try {
-      const zip = new JSZip();
-      const loadedZip = await zip.loadAsync(file);
-      const inputs = {};
-      const outputs = {};
-      
-      for (const [relativePath, zipEntry] of Object.entries(loadedZip.files)) {
-        if (zipEntry.dir || relativePath.includes('__MACOSX') || relativePath.includes('.DS_Store')) continue;
-        
-        // 👇 CHANGED: Extract as a string so it renders perfectly in the UI
-        const contentStr = await zipEntry.async("string"); 
-        const cleanName = relativePath.split('/').pop().toLowerCase();
-        
-        const baseMatch = cleanName.match(/(\d+)/); 
-        const baseName = baseMatch ? baseMatch[0] : cleanName.split('.')[0];
-        
-        if (cleanName.includes('in')) inputs[baseName] = contentStr;
-        if (cleanName.includes('out')) outputs[baseName] = contentStr;
-      }
-
-      const newTestCases = [];
-      Object.keys(inputs).forEach(key => {
-        if (outputs[key]) {
-          // 👇 NEW: Trim the whitespace immediately
-          const inText = inputs[key].trim();
-          const outText = outputs[key].trim();
-          
-          // 👇 NEW: Only append if the test case actually contains meaningful data
-          if (inText.length > 0 || outText.length > 0) {
-            newTestCases.push({ 
-              input: inText, 
-              expectedOutput: outText, 
-              isHidden: true 
-            });
-          }
-        }
-      });
-
-      if (newTestCases.length === 0) {
-        setStatus({ type: 'error', message: 'No valid (non-empty) input/output files found in ZIP.' });
-        return;
-      }
-
+    const { testCases: parsedCases, error } = await parseZipTestCases(file);
+    
+    if (error) {
+      setStatus({ type: 'error', message: error });
+    } else {
       const startingIndex = testCases.length;
-      setTestCases(prev => [...prev, ...newTestCases]);
-      setExpandedCases(prev => ({ ...prev, [startingIndex]: true }));
+      setTestCases(prev => [...prev, ...parsedCases]);
       
-      setStatus({ type: 'success', message: `Successfully appended ${newTestCases.length} test cases!` });
+      // Expand the first newly added test case
+      setExpandedCases(prev => ({ ...prev, [startingIndex]: true }));
+      setStatus({ type: 'success', message: `Successfully appended ${parsedCases.length} test cases!` });
       setTimeout(() => setStatus({ type: '', message: '' }), 3000);
-
-    } catch (err) {
-      setStatus({ type: 'error', message: 'Failed to process ZIP file.' });
     }
+    
     if(e.target) e.target.value = null; 
   };
 

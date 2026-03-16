@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import Button from '../../components/ui/Button';
+import { markdownComponents } from '../../utils/markdownConfig';
 
 export default function ProblemDescription({ problem, canEdit, navigate, submitStatus, selectedLanguage = 'cpp' }) {
   const getStatusColor = () => {
@@ -12,19 +13,6 @@ export default function ProblemDescription({ problem, canEdit, navigate, submitS
     if (['WA', 'CE', 'RE', 'TLE', 'SE'].includes(submitStatus) || submitStatus.includes('Error')) return 'text-red-400 font-bold';
     if (['Pending', 'Running'].includes(submitStatus) || submitStatus.includes('⏳')) return 'text-yellow-400 animate-pulse';
     return 'text-gray-400';
-  };
-
-  // 👇 NEW: Custom Component Renderers for Tier-1 UI
-  const markdownComponents = {
-    h3: ({node, ...props}) => <h3 className="text-sm font-bold text-blue-400 mt-8 mb-4 border-b border-dark-border pb-2 tracking-wide uppercase" {...props} />,
-    pre: ({node, ...props}) => <pre className="bg-[#121212] border border-dark-border rounded-lg p-5 overflow-x-auto my-4 font-mono text-sm text-gray-300 shadow-inner" {...props} />,
-    code: ({node, inline, ...props}) => inline 
-        ? <code className="bg-[#2a2a2a] text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono border border-dark-border" {...props} /> 
-        : <code {...props} />,
-    ul: ({node, ...props}) => <ul className="list-disc list-inside my-4 space-y-2 text-gray-300 marker:text-blue-500" {...props} />,
-    li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-    p: ({node, ...props}) => <p className="my-4 leading-relaxed text-gray-300" {...props} />,
-    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 bg-blue-900/10 p-4 my-4 rounded-r-lg italic text-gray-400" {...props} />
   };
 
   const LANGUAGE_MULTIPLIERS = {

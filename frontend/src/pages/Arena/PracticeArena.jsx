@@ -1,189 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import ProblemDescription from './ProblemDescription';
 import SubmissionHistory from './SubmissionHistory';
 import CodeEditor from './CodeEditor';
 import ExecutionConsole from './ExecutionConsole';
-
-const boilerplates = {
-  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}`,
-  python: `# Write your Python code here`,
-  java: `import java.util.*;\nimport java.io.*;\n\n public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}`
-};
+import useExecutionEngine, { boilerplates } from '../../hooks/useExecutionEngine';
 
 export default function PracticeArena() {
   const { id } = useParams(); // id is the problem_id
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  
-  const [problem, setProblem] = useState(null);
-  const [code, setCode] = useState(boilerplates['cpp']);
-  const [language, setLanguage] = useState('cpp');
-  const [submitStatus, setSubmitStatus] = useState(''); 
   const [leftTab, setLeftTab] = useState('description');
-  const [history, setHistory] = useState([]);
   
-  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('input');
-  const [customInput, setCustomInput] = useState('');
-  const [consoleOutput, setConsoleOutput] = useState('');
-  
-  // 👇 Added processing state for UI locks
-  const [isProcessing, setIsProcessing] = useState(false);
-  
-  const sseRef = useRef(null);
-  const draftKey = currentUser ? `draft_${currentUser.id}_${id}` : null;
-
-  useEffect(() => {
-    return () => {
-      // If the component unmounts while a connection is open, sever it
-      if (sseRef.current) {
-        sseRef.current.close();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (draftKey) {
-      const savedDraft = localStorage.getItem(draftKey);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          setLanguage(parsed.language);
-          setCode(parsed.code);
-          return; 
-        } catch (e) {
-          console.error("Failed to parse draft", e);
-        }
-      }
-    }
-    setCode(boilerplates['cpp']);
-  }, [id, draftKey]);
-
-  useEffect(() => {
-    if (!draftKey || !code) return;
-    const timer = setTimeout(() => {
-      if (code !== boilerplates[language]) {
-         localStorage.setItem(draftKey, JSON.stringify({ language, code }));
-      }
-    }, 1000); 
-    return () => clearTimeout(timer);
-  }, [code, language, draftKey]);
-
-  useEffect(() => {
-    api.get(`/problems/${id}`)
-      .then(res => setProblem(res.data))
-      .catch(err => console.error("Could not fetch problem details", err));
-    fetchHistory();
-  }, [id]);
+  // 👇 Connect the Brain
+  const {
+    problem, code, setCode, language, setLanguage, submitStatus, history,
+    isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
+    customInput, setCustomInput, consoleOutput, isProcessing,
+    handleSubmit, handleRunCode
+  } = useExecutionEngine(id);
 
   const canEdit = currentUser && problem && (currentUser.role === 'admin' || (currentUser.role === 'professor' && currentUser.id === problem.author_id));
 
-  const fetchHistory = async () => {
-    try {
-      const res = await api.get(`/submissions/history/${id}`);
-      setHistory(res.data || []);
-    } catch (err) {
-      console.error("Could not fetch history:", err);
-    }
-  };
-
-  const handleSubmit = async () => {
-    setIsProcessing(true);
-    setSubmitStatus('Pending... ⏳');
-    setIsConsoleOpen(false);
-    
-    // Sever any existing connection just to be safe
-    if (sseRef.current) sseRef.current.close();
-
-    try {
-      const response = await api.post('/submit', { 
-        problem_id: id, 
-        language, 
-        source_code: code 
-      });
-      
-      const token = localStorage.getItem('token');
-      
-      // USE THE REF HERE
-      sseRef.current = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
-      
-      sseRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        const status = data.status;
-        
-        if (status === 'Running') {
-          setSubmitStatus('Running... ⚙️');
-        } else {
-          setSubmitStatus(status);
-          fetchHistory();
-          
-          if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(status)) {
-            setConsoleOutput(data.message || `Verdict: ${status}`);
-            setActiveTab('output');
-            setIsConsoleOpen(true);
-          } else if (status === 'AC' || status === 'Accepted') {
-            setConsoleOutput("Execution Successful! 🎉\nAll test cases passed.");
-            setActiveTab('output');
-            setIsConsoleOpen(true);
-            if (draftKey) localStorage.removeItem(draftKey);
-          }
-          setIsProcessing(false);
-          sseRef.current.close(); // USE THE REF HERE
-        }
-      };
-
-      sseRef.current.onerror = () => { 
-        setIsProcessing(false);
-        sseRef.current.close(); // USE THE REF HERE
-      };
-    } catch (error) {
-      setSubmitStatus('Error: Submission Failed');
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRunCode = async () => {
-    setIsProcessing(true);
-    setConsoleOutput('Queuing... ⚙️');
-    setActiveTab('output');
-    setIsConsoleOpen(true);
-
-    // Sever any existing connection just to be safe
-    if (sseRef.current) sseRef.current.close();
-
-    try {
-      const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
-      const token = localStorage.getItem('token');
-      
-      // USE THE REF HERE
-      sseRef.current = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
-      
-      sseRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.status === 'Running') {
-          setConsoleOutput('Running... ⚙️');
-        } else if (data.status === 'Completed' || data.status === 'CE' || data.status === 'RE' || data.status === 'TLE' || data.status === 'SE') {
-          setConsoleOutput(data.output || data.message || "Program finished with no output.");
-          setIsProcessing(false);
-          sseRef.current.close(); // USE THE REF HERE
-        }
-      };
-
-      sseRef.current.onerror = () => {
-        setConsoleOutput('Error streaming execution status.');
-        setIsProcessing(false);
-        sseRef.current.close(); // USE THE REF HERE
-      };
-    } catch (error) {
-      setConsoleOutput('Error: Could not connect to execution engine.');
-      setIsProcessing(false);
-    }
-  };
-
-  if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Practice Arena...</div>;
+  if (!problem) return <div className="flex justify-center items-center h-[calc(100vh-61px)] bg-dark-bg text-white text-xl font-mono">Loading Practice Arena...</div>;
 
   return (
     <div className="flex h-[calc(100vh-61px)] w-full font-sans relative overflow-hidden"> 
