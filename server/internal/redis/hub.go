@@ -54,40 +54,52 @@ func (h *Hub) Subscribe(topic string) chan string {
 // Unsubscribe removes the local Go channel. If it's the last one, it closes the Redis connection.
 func (h *Hub) Unsubscribe(topic string, ch chan string) {
 	h.Lock()
-	defer h.Unlock()
+
+	var pubsubToClose *redisClient.PubSub
 
 	if subs, ok := h.subscribers[topic]; ok {
-		// Strictly verify the channel is registered before closing to prevent double-close panics
 		if _, exists := subs[ch]; exists {
 			delete(subs, ch)
 			close(ch)
 
-			// If 0 clients are left watching, sever the Redis connection to save memory
+			// If 0 clients are left watching, queue the Redis connection for closure
 			if len(subs) == 0 {
-				if pubsub, hasPubSub := h.redisSubs[topic]; hasPubSub {
-					pubsub.Close()
+				if ps, hasPubSub := h.redisSubs[topic]; hasPubSub {
+					pubsubToClose = ps
 					delete(h.redisSubs, topic)
 				}
 				delete(h.subscribers, topic)
 			}
 		}
 	}
+
+	h.Unlock() // Manually release the lock BEFORE executing network I/O
+
+	// Safely close the Redis connection outside the critical section
+	if pubsubToClose != nil {
+		pubsubToClose.Close()
+	}
 }
 
 // broadcast reads from the single Redis channel and fans out to all connected Go clients
 func (h *Hub) broadcast(topic string, redisCh <-chan *redisClient.Message) {
 	for msg := range redisCh {
-		h.RLock() // Hold the Read Lock during the entire fan-out process
+		h.RLock()
 		subs := h.subscribers[topic]
+		droppedCount := 0
 
 		for ch := range subs {
 			select {
 			case ch <- msg.Payload:
 			default:
-				// Drop message for a slow reader so we don't block the other fast readers
-				log.Printf("[WARN] Dropped message for a slow reader on topic %s", topic)
+				droppedCount++
 			}
 		}
-		h.RUnlock() // Release only after all non-blocking sends are complete
+		h.RUnlock()
+
+		// Execute I/O-heavy logging strictly outside the read lock
+		if droppedCount > 0 {
+			log.Printf("[WARN] Dropped %d messages for slow readers on topic %s", droppedCount, topic)
+		}
 	}
 }
