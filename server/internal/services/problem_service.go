@@ -28,6 +28,8 @@ type ProblemService interface {
 	ClearTestCases(ctx context.Context, problemID, userID, userRole string) error
 }
 
+var ErrUnauthorizedAction = errors.New("unauthorized: only the original author or an admin can perform this action")
+
 type problemService struct {
 	repo repositories.ProblemRepository
 }
@@ -128,7 +130,7 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 		return err
 	}
 	if userRole != "admin" && userID != authorID {
-		return errors.New("unauthorized: only the original author or an admin can clear test cases")
+		return ErrUnauthorizedAction // 👈 Return the Sentinel Error
 	}
 
 	// 2. Fetch the old test cases
@@ -137,8 +139,7 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 		return fmt.Errorf("failed to retrieve test cases for cleanup: %w", err)
 	}
 
-	// 3. Delete from MinIO/S3 and catch errors
-	var s3Errors []error
+	// 3. Delete from MinIO/S3 and log errors, but don't stop execution
 	for _, tc := range oldTestCases {
 		if inKey, ok := tc["input_s3_key"].(string); ok && inKey != "" {
 			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -146,8 +147,7 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 				Key:    aws.String(inKey),
 			})
 			if err != nil {
-				log.Printf("[!] S3 Deletion Error (Input): %v", err)
-				s3Errors = append(s3Errors, err)
+				log.Printf("[!] S3 Deletion Error (Input) for key %s: %v", inKey, err)
 			}
 		}
 
@@ -157,18 +157,13 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 				Key:    aws.String(outKey),
 			})
 			if err != nil {
-				log.Printf("[!] S3 Deletion Error (Output): %v", err)
-				s3Errors = append(s3Errors, err)
+				log.Printf("[!] S3 Deletion Error (Output) for key %s: %v", outKey, err)
 			}
 		}
 	}
 
-	// 4. Abort DB deletion if S3 cleanup failed to prevent orphaned files
-	if len(s3Errors) > 0 {
-		return fmt.Errorf("failed to clean up %d S3 objects, aborting database deletion to prevent state mismatch", len(s3Errors))
-	}
-
-	// 5. Safe to wipe the rows from PostgreSQL
+	// 👇 FIX (Issue 4): ALWAYS delete the DB rows even if S3 fails.
+	// This prevents the DB from pointing to S3 objects that might no longer exist or are in a partial state.
 	return s.repo.DeleteTestCases(ctx, problemID)
 }
 
