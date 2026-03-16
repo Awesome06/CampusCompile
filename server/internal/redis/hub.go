@@ -75,9 +75,11 @@ func (h *Hub) Unsubscribe(topic string, ch chan string) {
 
 	h.Unlock() // Manually release the lock BEFORE executing network I/O
 
-	// Safely close the Redis connection outside the critical section
+	// Safely close the Redis connection outside the critical section and log failures
 	if pubsubToClose != nil {
-		pubsubToClose.Close()
+		if err := pubsubToClose.Close(); err != nil {
+			log.Printf("[ERROR] Failed to cleanly close Redis PubSub for topic %s: %v", topic, err)
+		}
 	}
 }
 
@@ -99,7 +101,7 @@ func (h *Hub) broadcast(topic string, redisCh <-chan *redisClient.Message) {
 
 		// Execute I/O-heavy logging strictly outside the read lock
 		if droppedCount > 0 {
-			log.Printf("[WARN] Dropped %d messages for slow readers on topic %s", droppedCount, topic)
+			log.Printf("[WARN] Dropped delivery for %d slow subscribers on topic %s", droppedCount, topic)
 		}
 	}
 }
