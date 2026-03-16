@@ -1,49 +1,21 @@
 import os
-import sys
 import boto3
 import redis
-import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
-# --- STRICT ENVIRONMENT VALIDATION ---
+class ConfigurationError(Exception):
+    """Custom exception for missing environment variables to avoid raw sys.exit() calls."""
+    pass
+
 def get_required_env(var_name: str) -> str:
     value = os.getenv(var_name)
     if not value:
-        sys.stderr.write(f"FATAL STARTUP ERROR: Required environment variable '{var_name}' is missing or empty.\n")
-        sys.exit(1)
+        raise ConfigurationError(f"Required environment variable '{var_name}' is missing or empty.")
     return value
 
-# --- DATABASE CONFIGURATION ---
-DB_CONFIG = {
-    "dbname": "CampusCompile_db",
-    "user": get_required_env("POSTGRES_USER"),
-    "password": get_required_env("POSTGRES_PASSWORD"),
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": "5432"
-}
-
-# Initialize a Connection Pool (Min: 1 connection, Max: 10 connections)
-try:
-    db_pool = pool.ThreadedConnectionPool(
-        1, 20, # Min 1, Max 20 concurrent connections
-        **DB_CONFIG,
-        cursor_factory=RealDictCursor
-    )
-    if db_pool:
-        print("[*] Database thread-pool created successfully.")
-except Exception as e:
-    sys.stderr.write(f"FATAL STARTUP ERROR: Failed to create database pool: {e}\n")
-    sys.exit(1)
-
-def get_db_connection():
-    # Borrow a connection from the pool
-    return db_pool.getconn()
-
-def release_db_connection(conn):
-    # Safely return the connection to the pool for the next job
-    if conn:
-        db_pool.putconn(conn)
 # --- REDIS CONFIGURATION ---
+# Safe at module level: redis-py connects lazily and won't crash on import if host is missing
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "redis"), 
     port=6379, 
@@ -51,19 +23,53 @@ redis_client = redis.Redis(
     decode_responses=True
 )
 
-# --- S3 / MINIO CONFIGURATION ---
-s3_client = boto3.client(
-    's3',
-    endpoint_url=os.getenv('S3_ENDPOINT', 'http://minio:9000'),
-    aws_access_key_id=os.getenv('S3_ACCESS_KEY', 'campus_admin'),
-    aws_secret_access_key=os.getenv('S3_SECRET_KEY', 'campus_password'),
-    region_name='us-east-1' 
-)
-BUCKET_NAME = "campus-testcases"
+# --- LAZY DATABASE CONFIGURATION ---
+_db_pool = None
+
+def get_db_connection():
+    global _db_pool
+    if _db_pool is None:
+        # ISSUES 1 & 4 FIXED: Env vars are checked and the pool is created ONLY 
+        # when a database connection is explicitly requested by the caller.
+        db_config = {
+            "dbname": "CampusCompile_db",
+            "user": get_required_env("POSTGRES_USER"),
+            "password": get_required_env("POSTGRES_PASSWORD"),
+            "host": os.getenv("DB_HOST", "localhost"),
+            "port": "5432"
+        }
+        _db_pool = pool.ThreadedConnectionPool(1, 20, **db_config, cursor_factory=RealDictCursor)
+        print("[*] Database thread-pool created successfully.")
+        
+    return _db_pool.getconn()
+
+def release_db_connection(conn):
+    if _db_pool and conn:
+        _db_pool.putconn(conn)
+
+# --- LAZY S3 / MINIO CONFIGURATION ---
+_s3_client = None
+BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "campus-testcases")
+
+def get_s3_client():
+    global _s3_client
+    if _s3_client is None:
+        # ISSUE 2 FIXED: Removed insecure default credentials. 
+        # Forces explicit configuration, but safely deferred until S3 is actually needed.
+        _s3_client = boto3.client(
+            's3',
+            endpoint_url=os.getenv('S3_ENDPOINT', 'http://minio:9000'),
+            aws_access_key_id=get_required_env('S3_ACCESS_KEY'),
+            aws_secret_access_key=get_required_env('S3_SECRET_KEY'),
+            region_name='us-east-1' 
+        )
+    return _s3_client
 
 def fetch_from_s3(s3_key: str, destination_path: str):
     try:
-        s3_client.download_file(BUCKET_NAME, s3_key, destination_path)
+        client = get_s3_client()
+        client.download_file(BUCKET_NAME, s3_key, destination_path)
     except Exception as e:
-        # Raise instead of silently printing so the caller (like the grader) knows it failed
-        raise Exception(f"Failed to fetch {s3_key} from S3: {e}")
+        # ISSUE 3 FIXED: Exception chaining ('from e') preserves the original 
+        # boto3 traceback so you can accurately debug upstream failures.
+        raise RuntimeError(f"Failed to fetch {s3_key} from S3") from e

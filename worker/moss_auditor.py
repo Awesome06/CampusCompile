@@ -67,10 +67,12 @@ def parse_moss_report(moss_url: str) -> List[Dict]:
 def run_moss_audit(contest_id: str):
     print(f"\n[*] Starting Automated MOSS Audit for Contest: {contest_id}")
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
     
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         # 1. Strict Environment Validation -> Triggers 'failed' state
         if MOSS_USER_ID == "YOUR_MOSS_ID_HERE" or not MOSS_USER_ID.strip():
             print("[!] FATAL: MOSS_USER_ID is missing or invalid. Audit Failed.")
@@ -154,19 +156,25 @@ def run_moss_audit(contest_id: str):
 
     except Exception as e:
         print(f"[!] MOSS Audit crashed: {e}")
-        # Rollback any half-finished transactions
-        conn.rollback() 
         
-        # 3. Explicitly mark as failed in the event of a runtime crash
-        try:
-            cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
-            conn.commit()
+        # Only rollback and attempt updates if the connection was actually established
+        if conn and cursor:
+            conn.rollback() 
             
-            # 👇 CHANGED: Replaced local instantiation with centralized client
-            redis_client.sadd("dirty_contests", contest_id)
-        except Exception as inner_e:
-            print(f"[!] Failed to update crash status to database: {inner_e}")
+            # 3. Explicitly mark as failed in the event of a runtime crash
+            try:
+                cursor.execute("UPDATE contests SET moss_audit_status = 'failed' WHERE contest_id = %s", (contest_id,))
+                conn.commit()
+                
+                # 👇 CHANGED: Replaced local instantiation with centralized client
+                redis_client.sadd("dirty_contests", contest_id)
+            except Exception as inner_e:
+                print(f"[!] Failed to update crash status to database: {inner_e}")
+        else:
+            print("[!] Could not update crash status: Database connection or cursor was not established.")
             
     finally:
-        cursor.close()
-        release_db_connection(conn)
+        if cursor:
+            cursor.close()
+        if conn:
+            release_db_connection(conn)

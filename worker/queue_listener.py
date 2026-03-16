@@ -1,12 +1,12 @@
 import json
 import traceback
+import sys  # 👇 NEW: Needed for graceful startup exits
+from concurrent.futures import ThreadPoolExecutor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
-from config import redis_client, get_db_connection, release_db_connection
-from concurrent.futures import ThreadPoolExecutor
 
-# 👇 NEW: Import everything directly from our centralized config
-from config import redis_client, get_db_connection
+# 👇 NEW: Import ConfigurationError
+from config import redis_client, get_db_connection, release_db_connection, ConfigurationError
 
 # --- CONFIGURATION ---
 QUEUE_NAME = 'submission_queue'
@@ -17,61 +17,15 @@ LANGUAGE_CONFIG = {
     'java':   {'time': 2.0, 'memory': 2.0},
 }
 
-def route_job(submission_data):
-    if submission_data.get('job_type') == 'moss_audit':
-        contest_id = submission_data.get('contest_id')
-        problem_id = submission_data.get('problem_id')
-        print(f"\n[+] Picked up MOSS Audit Job for Problem: {problem_id}")
-        run_moss_audit(contest_id)
-        
-    elif submission_data.get('is_custom'):
-        run_id = submission_data.get('run_id')
-        print(f"\n[+] Processing Custom Run: {run_id}")
-
-        redis_client.publish(f"run_updates:{run_id}", json.dumps({"status": "Running"}))
-        
-        custom_tc = [{
-            "test_case_id": "custom",
-            "input_data": submission_data.get('custom_input', ''),
-            "expected_output": ""
-        }]
-        
-        lang = submission_data.get('language')
-        limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
-
-        result = grade_submission(
-            submission_id=run_id,
-            problem_id="custom",
-            language=lang,
-            source_code=submission_data.get('source_code'),
-            source_s3_key=None, 
-            test_cases=custom_tc,
-            time_limit_ms=int(2000 * limits['time']),
-            memory_limit_kb=int(256000 * limits['memory'])
-        )
-        
-        output_to_show = result.get('actual_output')
-        if result['verdict'] in ['CE', 'RE', 'TLE', 'SE']:
-            output_to_show = result.get('message', f"Error: {result['verdict']}")
-            
-        redis_client.set(f"run_result:{run_id}", json.dumps({
-            "status": "Completed", "output": output_to_show, "verdict": result['verdict']
-        }), ex=600) 
-
-        redis_client.publish(f"run_updates:{run_id}", json.dumps({
-            "status": "Completed", "output": output_to_show, "verdict": result['verdict']
-        }))
-    else:
-        sub_id = submission_data.get('submission_id')
-        if sub_id:
-            print(f"\n[+] Picked up submission ID: {sub_id}")
-            process_submission(sub_id)
-
 def process_submission(submission_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    # 👇 FIX: Safely initialize variables before the try block to prevent UnboundLocalError
+    conn = None
+    cursor = None
     
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         cursor.execute("UPDATE submissions SET status = 'Running' WHERE submission_id = %s", (submission_id,))
         conn.commit()
 
@@ -177,30 +131,99 @@ def process_submission(submission_id):
         
         print(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")
 
+    except ConfigurationError as ce:
+        # 👇 FIX: Specifically catch configuration errors so they aren't masked as random worker crashes
+        print(f"\n[!] INFRASTRUCTURE ERROR: {ce}")
+        redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
+            "status": "SE", "message": "System Error: Missing infrastructure credentials."
+        }))
     except Exception as e:
         print(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.py:")
         traceback.print_exc() 
-        conn.rollback()
+        if conn:
+            conn.rollback()
         
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": "SE", "message": f"Worker Crash: {str(e)}"
         }))
     finally:
-        cursor.close()
-        release_db_connection(conn)
+        # 👇 FIX: Ensure we only close objects if they were actually created
+        if cursor:
+            cursor.close()
+        if conn:
+            release_db_connection(conn)
+
+def route_job(submission_data):
+    if submission_data.get('job_type') == 'moss_audit':
+        contest_id = submission_data.get('contest_id')
+        problem_id = submission_data.get('problem_id')
+        print(f"\n[+] Picked up MOSS Audit Job for Problem: {problem_id}")
+        run_moss_audit(contest_id)
         
+    elif submission_data.get('is_custom'):
+        run_id = submission_data.get('run_id')
+        print(f"\n[+] Processing Custom Run: {run_id}")
+
+        redis_client.publish(f"run_updates:{run_id}", json.dumps({"status": "Running"}))
+        
+        custom_tc = [{
+            "test_case_id": "custom",
+            "input_data": submission_data.get('custom_input', ''),
+            "expected_output": ""
+        }]
+        
+        lang = submission_data.get('language')
+        limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
+
+        result = grade_submission(
+            submission_id=run_id,
+            problem_id="custom",
+            language=lang,
+            source_code=submission_data.get('source_code'),
+            source_s3_key=None, 
+            test_cases=custom_tc,
+            time_limit_ms=int(2000 * limits['time']),
+            memory_limit_kb=int(256000 * limits['memory'])
+        )
+        
+        output_to_show = result.get('actual_output')
+        if result['verdict'] in ['CE', 'RE', 'TLE', 'SE']:
+            output_to_show = result.get('message', f"Error: {result['verdict']}")
+            
+        redis_client.set(f"run_result:{run_id}", json.dumps({
+            "status": "Completed", "output": output_to_show, "verdict": result['verdict']
+        }), ex=600) 
+
+        redis_client.publish(f"run_updates:{run_id}", json.dumps({
+            "status": "Completed", "output": output_to_show, "verdict": result['verdict']
+        }))
+    else:
+        sub_id = submission_data.get('submission_id')
+        if sub_id:
+            print(f"\n[+] Picked up submission ID: {sub_id}")
+            process_submission(sub_id)
+
 def start_worker():
+    # 👇 NEW: Pre-flight Check. Force the lazy initialization to trigger BEFORE we accept jobs.
+    try:
+        print("[*] Performing startup infrastructure checks...")
+        test_conn = get_db_connection()
+        release_db_connection(test_conn)
+    except ConfigurationError as e:
+        sys.stderr.write(f"FATAL STARTUP ERROR: {e}\n")
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f"FATAL STARTUP ERROR: Database connection failed: {e}\n")
+        sys.exit(1)
+
     print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
     
-    # 👇 NEW: Spin up a thread pool with 10 concurrent workers
     with ThreadPoolExecutor(max_workers=10) as executor:
         while True:
-            # Main thread strictly handles fetching from Redis (blocking is fine here)
             queue, message = redis_client.brpop(QUEUE_NAME)
             if message:
                 submission_data = json.loads(message)
-                # Instantly offload the job to a background thread
                 executor.submit(route_job, submission_data)
-                
+
 if __name__ == "__main__":
     start_worker()
