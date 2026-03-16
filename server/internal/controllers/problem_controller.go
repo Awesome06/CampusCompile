@@ -171,7 +171,6 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	problemID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
 
-	// 👇 FIX 3: Safely get the user role without panicking if the claim is missing
 	var userRole string
 	if roleVal, exists := c.Get("role"); exists {
 		if r, ok := roleVal.(string); ok {
@@ -179,7 +178,6 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		}
 	}
 
-	// 👇 FIX 1 & 4: Use lighter service method (GetProblemAuthor) and differentiate pgx.ErrNoRows vs 500 errors
 	authorID, err := ctrl.service.GetProblemAuthor(c.Request.Context(), problemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -304,7 +302,6 @@ func (ctrl *ProblemController) cleanupS3Keys(ctx context.Context, keys []string)
 			Key:    aws.String(key),
 		})
 		if err != nil {
-			// 👇 FIX 2: Removed trailing newline to prevent double blank lines in logs
 			log.Printf("[ERROR] Failed to clean up orphaned S3 object (%s): %v", key, err)
 		}
 	}
