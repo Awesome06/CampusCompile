@@ -5,7 +5,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import JSZip from 'jszip';
 import api from '../services/api'; 
 import Button from '../components/ui/Button';
 import remarkGfm from 'remark-gfm';
