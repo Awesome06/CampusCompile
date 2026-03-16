@@ -20,7 +20,8 @@ export const AuthProvider = ({ children }) => {
                     token,
                     currentUser: {
                         id: decoded.user_id || decoded.sub || decoded.id,
-                        role: decoded.role?.toLowerCase()
+                        role: decoded.role?.toLowerCase(),
+                        isOnboarded: !!decoded.is_onboarded
                     },
                     isLoggedIn: true,
                     isLoading: false
