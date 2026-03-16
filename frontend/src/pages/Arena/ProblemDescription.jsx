@@ -5,7 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import Button from '../../components/ui/Button';
-import { markdownComponents } from '../utils/markdownConfig';
+import { markdownComponents } from '../../utils/markdownConfig';
 
 export default function ProblemDescription({ problem, canEdit, navigate, submitStatus, selectedLanguage = 'cpp' }) {
   const getStatusColor = () => {
