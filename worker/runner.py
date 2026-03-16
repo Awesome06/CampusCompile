@@ -2,30 +2,17 @@ import docker
 import os
 import shutil
 import itertools
-import boto3
 from typing import Optional
+
+# 👇 NEW: Import the shared S3 fetcher from our centralized config
+from config import fetch_from_s3
 
 # --- CONFIGURATION ---
 client = docker.from_env()
 SANDBOX_BASE = "/sandbox_shared"
 CACHE_BASE = os.path.join(SANDBOX_BASE, "cache")
 
-s3_client = boto3.client(
-    's3',
-    endpoint_url=os.getenv('S3_ENDPOINT', 'http://minio:9000'),
-    aws_access_key_id=os.getenv('S3_ACCESS_KEY', 'campus_admin'),
-    aws_secret_access_key=os.getenv('S3_SECRET_KEY', 'campus_password'),
-    region_name='us-east-1' 
-)
-BUCKET_NAME = "campus-testcases"
-
 # --- CACHING & I/O HELPERS ---
-def fetch_from_s3(s3_key: str, destination_path: str):
-    try:
-        s3_client.download_file(BUCKET_NAME, s3_key, destination_path)
-    except Exception as e:
-        raise Exception(f"Failed to fetch file from S3: {str(e)}")
-
 def ensure_cached_testcase(work_dir, problem_id, tc_id, input_data, expected_output, input_s3_key, expected_s3_key):
     if str(problem_id) == "custom":
         tc_dir = work_dir 
