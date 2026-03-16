@@ -11,6 +11,8 @@ import (
 	"campuscompile/api/internal/repositories"
 	"campuscompile/api/internal/storage"
 
+	myredis "campuscompile/api/internal/redis"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
@@ -22,8 +24,8 @@ type SubmissionService interface {
 	ProcessRun(ctx context.Context, req models.RunRequest) (string, error)
 	FetchRunStatus(ctx context.Context, runID string) (map[string]interface{}, error)
 	FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error)
-	FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error)
-	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
+	FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string, limit, offset int) ([]models.SubmissionHistoryEntry, error)
+	SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func())
 }
 
 type submissionService struct {
@@ -114,8 +116,6 @@ func (s *submissionService) FetchRunStatus(ctx context.Context, runID string) (m
 }
 
 func (s *submissionService) FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error) {
-	// Note: You must update the GetSubmissionStatus method in your SubmissionRepository
-	// to return the `s3Key` instead of the raw code.
 	status, language, message, s3Key, err := s.repo.GetSubmissionStatus(ctx, submissionID)
 	if err != nil {
 		return nil, err
@@ -146,11 +146,12 @@ func (s *submissionService) FetchSubmissionStatus(ctx context.Context, submissio
 	}, nil
 }
 
-func (s *submissionService) FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error) {
-	return s.repo.GetSubmissionHistory(ctx, userID, problemID, contestID)
+func (s *submissionService) FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string, limit, offset int) ([]models.SubmissionHistoryEntry, error) {
+	return s.repo.GetSubmissionHistory(ctx, userID, problemID, contestID, limit, offset)
 }
 
-func (s *submissionService) SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func()) {
-	pubsub := s.redis.Subscribe(ctx, channel)
-	return pubsub.Channel(), func() { pubsub.Close() }
+func (s *submissionService) SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func()) {
+	ch := myredis.GlobalHub.Subscribe(channel)
+	cleanup := func() { myredis.GlobalHub.Unsubscribe(channel, ch) }
+	return ch, cleanup
 }

@@ -8,6 +8,8 @@ import (
 	"math"
 	"time"
 
+	myredis "campuscompile/api/internal/redis"
+
 	redisClient "github.com/redis/go-redis/v9"
 
 	"campuscompile/api/internal/models"
@@ -20,7 +22,7 @@ type ContestService interface {
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
-	SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func())
+	SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func())
 	FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error)
 	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error)
 	FetchContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
@@ -110,9 +112,10 @@ func (s *contestService) IsUserEnrolled(ctx context.Context, contestID, userID s
 	return s.repo.CheckRegistration(ctx, contestID, userID)
 }
 
-func (s *contestService) SubscribeToChannel(ctx context.Context, channel string) (<-chan *redisClient.Message, func()) {
-	pubsub := s.redis.Subscribe(ctx, channel)
-	return pubsub.Channel(), func() { pubsub.Close() }
+func (s *contestService) SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func()) {
+	ch := myredis.GlobalHub.Subscribe(channel)
+	cleanup := func() { myredis.GlobalHub.Unsubscribe(channel, ch) }
+	return ch, cleanup
 }
 
 func (s *contestService) FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error) {
@@ -127,6 +130,7 @@ func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("[*] Leaderboard Daemon cleanly shutting down...")
 			return
 		case <-ticker.C:
 			// 1. Fetch all contest IDs currently flagged as dirty using SMembers (O(N) where N is dirty count)
@@ -293,6 +297,7 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("[*] MOSS Audit Daemon cleanly shutting down...")
 			return
 		case <-ticker.C:
 			// 1. SWEEP FOR PENDING AND STUCK JOBS

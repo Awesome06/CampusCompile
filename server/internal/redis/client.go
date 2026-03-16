@@ -23,4 +23,7 @@ func InitRedis(host string) {
 	}
 
 	fmt.Println("[*] Connected to Redis successfully!")
+
+	// 👇 NEW: Boot up the multiplexer
+	InitHub(Client)
 }

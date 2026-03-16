@@ -125,13 +125,13 @@ func HandleAzureCallback(c *gin.Context) {
 		initialOnboarded = true // Auto-skip onboarding for faculty
 	}
 
-	// 👇 NEW: Define pointers to handle PostgreSQL NULL values safely
+	// Define pointers to handle PostgreSQL NULL values safely
 	var userID, finalRole string
 	var isOnboarded bool
 	var course, department, batch, section, studentGroup *string
 	var graduationYear *int
 
-	// 👇 NEW: Expanded RETURNING clause to fetch demographic data on login
+	// Expanded RETURNING clause to fetch demographic data on login
 	err = database.Pool.QueryRow(reqCtx, `
 		INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
 		VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
@@ -150,37 +150,11 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	// 👇 NEW: Dynamically build the JWT claims
-	claims := jwt.MapClaims{
-		"user_id":      userID,
-		"role":         finalRole,
-		"is_onboarded": isOnboarded,
-		"exp":          time.Now().Add(time.Hour * 72).Unix(),
-	}
-
-	// Only attach demographic claims if they are NOT null (Admins/Professors will bypass this)
-	if course != nil {
-		claims["course"] = *course
-	}
-	if department != nil {
-		claims["department"] = *department
-	}
-	if graduationYear != nil {
-		claims["graduation_year"] = *graduationYear
-	}
-	if batch != nil {
-		claims["batch"] = *batch
-	}
-	if section != nil {
-		claims["section"] = *section
-	}
-	if studentGroup != nil {
-		claims["student_group"] = *studentGroup
-	}
-
-	ccToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	tokenString, err := ccToken.SignedString(middleware.JwtSecret)
+	// 👇 Centralized JWT Generation
+	tokenString, err := generateUserToken(
+		userID, finalRole, isOnboarded,
+		course, department, batch, section, studentGroup, graduationYear,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate JWT"})
 		return
@@ -211,31 +185,54 @@ func CompleteOnboarding(c *gin.Context) {
 		return
 	}
 
-	// 👇 1. Generate the NEW token immediately
-	// 👇 1. Generate the NEW token immediately, now packed with demographic claims
-	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id":         userID,
-		"role":            "student",
-		"is_onboarded":    true,
-		"course":          req.Course,
-		"department":      req.Department,
-		"graduation_year": req.GraduationYear,
-		"batch":           req.Batch,
-		"section":         req.Section,
-		"student_group":   req.StudentGroup,
-		"exp":             time.Now().Add(time.Hour * 72).Unix(),
-	})
-
-	tokenString, err := newToken.SignedString(middleware.JwtSecret)
+	// 👇 Centralized JWT Generation (Passing addresses of the struct fields)
+	tokenString, err := generateUserToken(
+		userID, "student", true,
+		&req.Course, &req.Department, &req.Batch, &req.Section, &req.StudentGroup, &req.GraduationYear,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new session"})
 		return
 	}
 
-	// 👇 2. Send ONE SINGLE JSON response containing everything
+	// Send ONE SINGLE JSON response containing everything
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Profile forged successfully!",
 		"token":   tokenString,
 		"role":    "student",
 	})
+}
+
+// generateUserToken centralizes JWT creation to prevent drift between login and onboarding
+func generateUserToken(userID, role string, isOnboarded bool, course, dept, batch, section, group *string, gradYear *int) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id":      userID,
+		"role":         role,
+		"is_onboarded": isOnboarded,
+		"exp":          time.Now().Add(time.Hour * 72).Unix(),
+	}
+
+	if isOnboarded {
+		if course != nil {
+			claims["course"] = *course
+		}
+		if dept != nil {
+			claims["department"] = *dept
+		}
+		if gradYear != nil {
+			claims["graduation_year"] = *gradYear
+		}
+		if batch != nil {
+			claims["batch"] = *batch
+		}
+		if section != nil {
+			claims["section"] = *section
+		}
+		if group != nil {
+			claims["student_group"] = *group
+		}
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(middleware.JwtSecret)
 }

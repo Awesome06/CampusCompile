@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -116,7 +121,6 @@ func main() {
 		{
 			faculty.POST("/problems", problemController.CreateProblem)
 			faculty.PUT("/problems/:id", problemController.UpdateProblem)
-			faculty.POST("/problems/testcases/upload", handlers.UploadTestCase)
 			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem)
 			faculty.DELETE("/problems/:id/testcases", problemController.ClearTestCases)
 			faculty.POST("/problems/:id/testcases/batch", problemController.UploadTestCasesBatch)
@@ -137,9 +141,45 @@ func main() {
 
 		}
 	}
-	// 5. START SERVER
+	// 5. START SERVER WITH GRACEFUL SHUTDOWN
+
+	// Create a context that listens for the interrupt signals (Ctrl+C or Docker stop)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	fmt.Println("[*] API Server running on http://localhost:8080")
-	go contestService.StartAuditDaemon(context.Background())
-	go contestService.StartLeaderboardDaemon(context.Background())
-	router.Run(":8080")
+
+	// Pass the cancellable context to the daemons instead of context.Background()
+	go contestService.StartAuditDaemon(ctx)
+	go contestService.StartLeaderboardDaemon(ctx)
+
+	// Configure the HTTP server manually instead of using router.Run()
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: router,
+	}
+
+	// Run the server in a non-blocking goroutine
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("[!] Listen error: %s\n", err)
+		}
+	}()
+
+	// Block main thread until the interrupt signal is received
+	<-ctx.Done()
+
+	// Restore default behavior on the interrupt signal
+	stop()
+	fmt.Println("\n[*] Shutting down gracefully. Pressing Ctrl+C again will force exit.")
+
+	// Give the server and active HTTP connections 5 seconds to finish their work
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatal("[!] Server forced to shutdown: ", err)
+	}
+
+	fmt.Println("[*] API Server cleanly exited")
 }
