@@ -119,6 +119,7 @@ func main() {
 			faculty.POST("/problems/testcases/upload", handlers.UploadTestCase)
 			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem)
 			faculty.DELETE("/problems/:id/testcases", problemController.ClearTestCases)
+			faculty.POST("/problems/:id/testcases/batch", problemController.UploadTestCasesBatch)
 			faculty.GET("/faculty/problems", problemController.GetFacultyProblems)
 
 			// Faculty Contest Management

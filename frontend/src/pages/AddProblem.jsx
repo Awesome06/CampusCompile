@@ -188,32 +188,41 @@ export default function AddProblem() {
     if(e.target) e.target.value = null; 
   };
 
-  const handlePublish = async () => {
+const handlePublish = async () => {
     setIsSubmitting(true);
     setStatus({ type: 'info', message: 'Forging problem and syncing test cases to S3... 🚀' });
 
+    // 1. Build a SINGLE FormData object for the Atomic Batch
+    const formData = new FormData();
+    testCases.forEach((tc, index) => {
+      const inBlob = tc.inputBlob || new Blob([tc.input], { type: 'text/plain' });
+      const outBlob = tc.expectedBlob || new Blob([tc.expectedOutput], { type: 'text/plain' });
+      
+      formData.append('input_files', inBlob, `in_${index}.txt`);
+      formData.append('expected_files', outBlob, `out_${index}.txt`);
+      formData.append('is_hidden', tc.isHidden ? 'true' : 'false');
+    });
+
+    let newProblemId = null;
+
     try {
-      // 1. Create the Problem Metadata (Same as before)
+      // 2. Create the Problem Metadata (Sending both key formats to guarantee Go struct binds them)
       const probRes = await api.post('/problems', {
-        title: problemData.title, description: problemData.description, difficulty: problemData.difficulty,
-        time_limit: problemData.time_limit, memory_limit: problemData.memory_limit * 1024, is_public: problemData.is_public
+        title: problemData.title, 
+        description: problemData.description, 
+        difficulty: problemData.difficulty,
+        time_limit: problemData.time_limit, 
+        time_limit_ms: problemData.time_limit,
+        memory_limit: problemData.memory_limit * 1024, 
+        memory_limit_kb: problemData.memory_limit * 1024,
+        is_public: problemData.is_public
       });
       
-      const newProblemId = probRes.data.problem_id;
+      newProblemId = probRes.data.problem_id;
 
-      // 2. Upload Test Cases sequentially via FormData
-      for (const tc of testCases) {
-        // Fallback: If they typed it manually, convert the string into a Blob
-        const inBlob = tc.inputBlob || new Blob([tc.input], { type: 'text/plain' });
-        const outBlob = tc.expectedBlob || new Blob([tc.expectedOutput], { type: 'text/plain' });
-
-        const formData = new FormData();
-        formData.append('problem_id', newProblemId);
-        formData.append('input_file', inBlob, 'input.txt');
-        formData.append('expected_file', outBlob, 'expected.txt');
-        formData.append('is_hidden', tc.isHidden ? 'true' : 'false');
-
-        await api.post('/problems/testcases/upload', formData, {
+      // 3. Send the single atomic batch
+      if (testCases.length > 0) {
+        await api.post(`/problems/${newProblemId}/testcases/batch`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
       }
@@ -222,8 +231,27 @@ export default function AddProblem() {
       setPublishedUrl(`${window.location.origin}/arena/${newProblemId}`);
       setShowSuccessModal(true);
 
-    } catch (err) {
-      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to publish problem.' });
+    } catch (error) {
+      console.error("Upload Error:", error);
+      
+      // 👇 COMPENSATING ACTION: Rollback the problem creation if it failed mid-flight
+      if (newProblemId) {
+        try {
+          await api.delete(`/problems/${newProblemId}`);
+          setStatus({ 
+            type: 'error', 
+            message: 'Network error during batch upload. The problem creation was aborted and safely rolled back.' 
+          });
+        } catch (rollbackError) {
+          setStatus({ 
+            type: 'error', 
+            message: `CRITICAL ERROR: Upload failed, and rollback failed! Orphaned Problem ID: ${newProblemId}` 
+          });
+        }
+      } else {
+        // This handles errors that occur BEFORE the problem is even created (e.g. duplicate slug)
+        setStatus({ type: 'error', message: error.response?.data?.error || 'Failed to create problem metadata.' });
+      }
     } finally {
       setIsSubmitting(false);
     }
