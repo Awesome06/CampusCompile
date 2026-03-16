@@ -11,7 +11,7 @@ import (
 type SubmissionRepository interface {
 	CreateSubmission(ctx context.Context, submissionID, userID, problemID, language, s3Key string, contestID *string) error
 	GetSubmissionStatus(ctx context.Context, submissionID string) (status, language, message, s3Key string, err error)
-	GetSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error)
+	GetSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string, limit, offset int) ([]models.SubmissionHistoryEntry, error)
 }
 
 type submissionRepo struct {
@@ -56,7 +56,7 @@ func (r *submissionRepo) GetSubmissionStatus(ctx context.Context, submissionID s
 	return status, language, message, key, nil
 }
 
-func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error) {
+func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string, limit, offset int) ([]models.SubmissionHistoryEntry, error) {
 	var rows pgx.Rows
 	var err error
 
@@ -67,7 +67,8 @@ func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, probl
 			FROM submissions 
 			WHERE user_id = $1 AND problem_id = $2 AND contest_id = $3
 			ORDER BY submitted_at DESC
-		`, userID, problemID, *contestID)
+			LIMIT $4 OFFSET $5
+		`, userID, problemID, *contestID, limit, offset)
 	} else {
 		// 🔓 PRACTICE MODE
 		rows, err = r.db.Query(ctx, `
@@ -77,7 +78,8 @@ func (r *submissionRepo) GetSubmissionHistory(ctx context.Context, userID, probl
 			WHERE s.user_id = $1 AND s.problem_id = $2 
 			AND (s.contest_id IS NULL OR c.end_time <= NOW())
 			ORDER BY s.submitted_at DESC
-		`, userID, problemID)
+			LIMIT $3 OFFSET $4
+		`, userID, problemID, limit, offset)
 	}
 
 	if err != nil {

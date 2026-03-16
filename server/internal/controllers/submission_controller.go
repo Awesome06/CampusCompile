@@ -5,6 +5,7 @@ import (
 	"campuscompile/api/internal/services"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,18 +83,32 @@ func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
 func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 	problemID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
 
-	// Check if the frontend passed a specific contest context
 	contestIDQuery := c.Query("contest_id")
 	var contestID *string
 	if contestIDQuery != "" {
 		contestID = &contestIDQuery
 	}
 
-	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID)
+	// Safely extract limit and offset with robust defaults
+	limitStr := c.DefaultQuery("limit", "50")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 100 {
+		limit = 50 // Cap at 100 to prevent malicious mega-queries
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
 		return

@@ -24,7 +24,7 @@ type SubmissionService interface {
 	ProcessRun(ctx context.Context, req models.RunRequest) (string, error)
 	FetchRunStatus(ctx context.Context, runID string) (map[string]interface{}, error)
 	FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error)
-	FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error)
+	FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string, limit, offset int) ([]models.SubmissionHistoryEntry, error)
 	SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func())
 }
 
@@ -146,8 +146,8 @@ func (s *submissionService) FetchSubmissionStatus(ctx context.Context, submissio
 	}, nil
 }
 
-func (s *submissionService) FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string) ([]models.SubmissionHistoryEntry, error) {
-	return s.repo.GetSubmissionHistory(ctx, userID, problemID, contestID)
+func (s *submissionService) FetchSubmissionHistory(ctx context.Context, userID, problemID string, contestID *string, limit, offset int) ([]models.SubmissionHistoryEntry, error) {
+	return s.repo.GetSubmissionHistory(ctx, userID, problemID, contestID, limit, offset)
 }
 
 func (s *submissionService) SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func()) {
