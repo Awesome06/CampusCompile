@@ -114,8 +114,6 @@ func (s *submissionService) FetchRunStatus(ctx context.Context, runID string) (m
 }
 
 func (s *submissionService) FetchSubmissionStatus(ctx context.Context, submissionID string) (map[string]interface{}, error) {
-	// Note: You must update the GetSubmissionStatus method in your SubmissionRepository
-	// to return the `s3Key` instead of the raw code.
 	status, language, message, s3Key, err := s.repo.GetSubmissionStatus(ctx, submissionID)
 	if err != nil {
 		return nil, err
