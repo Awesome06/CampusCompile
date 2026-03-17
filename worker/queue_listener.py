@@ -6,6 +6,7 @@ import time # 👇 NEW: For Redis backoff
 from concurrent.futures import ThreadPoolExecutor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
+import redis
 
 # Import our robust, thread-safe configuration elements
 from config import (
@@ -301,7 +302,6 @@ def start_worker():
             job_semaphore.acquire() 
             
             try:
-                # Use a timeout on brpop so it doesn't hang indefinitely if we need to shut down later
                 queue_result = redis_client.brpop(QUEUE_NAME, timeout=5)
                 if queue_result:
                     _, message = queue_result
@@ -310,11 +310,24 @@ def start_worker():
                 else:
                     # Timeout reached without a job; release the semaphore so it isn't lost
                     job_semaphore.release()
-            except Exception as e:
-                # 👇 FIX: Backoff sleep to prevent tight looping / CPU spike when Redis drops
-                print(f"[!] Redis fetch error: {e}. Retrying in 5 seconds...")
+                    
+            except redis.exceptions.RedisError as re:
+                # 👇 FIX: Only apply the 5-second backoff to actual Redis infrastructure failures
+                print(f"[!] Redis network error: {re}. Retrying in 5 seconds...")
                 time.sleep(5) 
                 job_semaphore.release()
-
+                
+            except json.JSONDecodeError as je:
+                # 👇 FIX: Catch bad payloads. Log and drop them immediately without sleeping.
+                print(f"[!] Dropping malformed JSON payload from queue: {je}")
+                job_semaphore.release()
+                
+            except Exception as e:
+                # 👇 FIX: Catch generic executor or system crashes. Brief 1s pause to prevent tight crash-loops.
+                print(f"[!] Unexpected error in main worker loop: {e}")
+                traceback.print_exc()
+                time.sleep(1)
+                job_semaphore.release()
+                
 if __name__ == "__main__":
     start_worker()
