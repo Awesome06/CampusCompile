@@ -313,14 +313,15 @@ def start_worker():
                     job_semaphore.release()
                     
             except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as net_err:
-                # 👇 FIX: Only apply the 5-second backoff to true network disconnects
+                # Only apply the 5-second backoff to true network disconnects
                 print(f"[!] Redis network error: {net_err}. Retrying in 5 seconds...")
                 time.sleep(5) 
                 job_semaphore.release()
                 
             except redis.exceptions.RedisError as cmd_err:
-                # 👇 FIX: Catch protocol/command errors (like WRONGTYPE). Log and drop without sleeping.
-                print(f"[!] Redis command/data error: {cmd_err}. Bypassing invalid state.")
+                #Added 2-second rate limit for persistent command errors (like WRONGTYPE)
+                print(f"[!] Redis command/data error: {cmd_err}. Rate-limiting logs. Retrying in 2 seconds...")
+                time.sleep(2) 
                 job_semaphore.release()
                 
             except json.JSONDecodeError as je:
