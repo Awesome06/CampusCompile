@@ -129,16 +129,19 @@ func main() {
 		faculty := protected.Group("")
 		faculty.Use(middleware.RequireRole("professor", "admin"))
 		{
-			faculty.POST("/problems", jsonArmor, problemController.CreateProblem)
-			faculty.PUT("/problems/:id", jsonArmor, problemController.UpdateProblem)
 			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem)
 			faculty.DELETE("/problems/:id/testcases", problemController.ClearTestCases)
-			faculty.POST("/problems/:id/testcases/batch", uploadArmor, problemController.UploadTestCasesBatch)
 			faculty.GET("/faculty/problems", problemController.GetFacultyProblems)
 
-			// Faculty Contest Management
-			faculty.POST("/contests", contestController.CreateContest)
-			faculty.PUT("/contests/:id", contestController.UpdateContest)
+			faculty.POST("/problems", jsonArmor, problemController.CreateProblem)
+			faculty.PUT("/problems/:id", jsonArmor, problemController.UpdateProblem)
+
+			// 🛡️ Apply jsonArmor to Contest creation and modification
+			faculty.POST("/contests", jsonArmor, contestController.CreateContest)
+			faculty.PUT("/contests/:id", jsonArmor, contestController.UpdateContest)
+
+			// Test case uploads remain under the heavier uploadArmor
+			faculty.POST("/problems/:id/testcases/batch", uploadArmor, problemController.UploadTestCasesBatch)
 
 			faculty.DELETE("/problems/:id", problemController.DeleteProblem)
 			faculty.DELETE("/contests/:id", contestController.DeleteContest)
