@@ -84,7 +84,9 @@ func main() {
 	// --- PROTECTED ROUTES (Requires JWT) ---
 	protected := router.Group("/api")
 	protected.Use(middleware.RequireAuth)
-	protected.Use(middleware.PayloadArmor())
+
+	const maxJSONSize = 128 * 1024
+	protected.Use(middleware.PayloadArmor(maxJSONSize))
 	{
 		protected.POST("/auth/onboard", handlers.CompleteOnboarding)
 		protected.GET("/problems/:id", problemController.GetProblemByID)
