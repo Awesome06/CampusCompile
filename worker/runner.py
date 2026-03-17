@@ -2,6 +2,7 @@ import docker
 import os
 import shutil
 import itertools
+import math
 from typing import Optional
 
 # Import the shared S3 fetcher from our centralized config
@@ -79,6 +80,7 @@ def compile_code(language: str, work_dir: str, source_code: str):
         if container:
             try: container.kill()
             except: pass
+        print(f"[!] Compilation Container Error: {e}")
         return {"verdict": "CE", "message": "Compilation Timed Out or Failed"}
 
 def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_seconds: float, memory_limit_kb: int):
@@ -86,6 +88,8 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
     container = None
     
     script_path = os.path.join(work_dir, 'execute.sh')
+    
+    timeout_int = math.ceil(time_limit_seconds)
     
     if language == 'python':
         img = "campus-python"
@@ -107,7 +111,7 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
             elif language == 'java':
                 cmd = f"java -Xmx{int(memory_limit_kb/1024)}m Main < {input_path} > out_{idx}.txt 2> err_{idx}.txt"
                 
-            f.write(f"timeout {time_limit_seconds} sh -c '{cmd}'\n")
+            f.write(f"timeout {timeout_int} sh -c '{cmd}'\n")
             f.write(f"RES=$?\n")
             f.write(f"echo $RES > status_{idx}.txt\n")
             f.write(f"if [ $RES -ne 0 ]; then exit 0; fi\n")
@@ -131,7 +135,9 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
             except: pass
         if "Timeout" in str(e) or "Read timed out" in str(e): 
             return {"status": "Container Timeout Exceeded"}
-        return {"status": "System Error", "message": str(e)}
+        
+        print(f"[!] Container Execution Error: {e}")
+        return {"status": "System Error", "message": "Internal execution environment failed."}
 
 def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> str:
     def get_clean_lines(path):
@@ -184,7 +190,8 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 with open(download_path, 'r', encoding='utf-8') as f:
                     source_code = f.read()
             except Exception as e:
-                return {"verdict": "SE", "message": f"Failed to download source code: {str(e)}", "actual_output": ""}
+                print(f"[!] Failed to fetch source from S3: {e}")
+                return {"verdict": "SE", "message": "Failed to retrieve source code for execution.", "actual_output": ""}
 
         if not source_code:
             return {"verdict": "SE", "message": "Source code is empty.", "actual_output": ""}
@@ -192,11 +199,9 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         compile_err = compile_code(language, work_dir, source_code)
         if compile_err: return compile_err 
             
-        # 1. Gather all file paths and cache test cases
         tc_meta = []
         for idx, tc in enumerate(test_cases):
             tc_id = tc.get('test_case_id', f"custom_{idx}")
-            # 👇 SECURITY FIX: Default to False for custom runs, track visibility
             is_hidden = tc.get('is_hidden', False) 
             
             input_path, expected_path = ensure_cached_testcase(
@@ -207,10 +212,9 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 'index': idx,
                 'input_path': input_path,
                 'expected_path': expected_path,
-                'is_hidden': is_hidden # Track visibility per test case
+                'is_hidden': is_hidden
             })
             
-        # 2. RUN ONE SINGLE CONTAINER for all test cases
         run_result = run_all_cases(language, work_dir, tc_meta, time_limit_sec, memory_limit_kb)
         
         if run_result["status"] == "Container Timeout Exceeded":
@@ -218,7 +222,6 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         elif run_result["status"] != "Success":
             return {"verdict": "SE", "message": run_result.get("message", "System Error"), "actual_output": ""}
 
-        # 3. Evaluate the generated text files sequentially
         for meta in tc_meta:
             idx = meta['index']
             expected_path = meta['expected_path']
@@ -237,24 +240,18 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 
             status_code = int(status_code_str)
             
-            # Interpret Alpine's exit codes
             if status_code in [124, 137, 143]: 
-                # 👇 UX FIX: Clean TLE error message
                 return {"verdict": "TLE", "message": f"Time Limit Exceeded on Test Case {idx+1}", "actual_output": ""}
             elif status_code != 0:
-                # 👇 SECURITY FIX: Completely scrub the stack trace unless it is a Custom Run
                 if str(problem_id) == "custom":
                     err_log = read_file_safely(err_file)
                     return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
                 else:
                     return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}. (Stack trace hidden)", "actual_output": ""}
                 
-            # Check for WA using Python
             verdict = evaluate_output(out_file, expected_path)
             if verdict != "AC":
-                # 👇 UX FIX: Only reveal actual vs expected output if the test case is public
                 if str(problem_id) == "custom" or not is_hidden:
-                    # Truncate outputs to 1000 characters to prevent DB payload bloat
                     actual_out = read_file_safely(out_file, max_chars=1000)
                     expected_out = read_file_safely(expected_path, max_chars=1000)
                     msg = f"Wrong Answer on Test Case {idx+1}.\n\nExpected Output:\n{expected_out}\n\nYour Output:\n{actual_out}"
@@ -262,11 +259,11 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 else:
                     return {"verdict": "WA", "message": f"Wrong Answer on Hidden Test Case {idx+1}", "actual_output": ""}
                 
-        # If we passed everything, return the output of the final test case
         last_idx = tc_meta[-1]['index']
         return {"verdict": "AC", "actual_output": read_file_safely(os.path.join(work_dir, f'out_{last_idx}.txt'))}
         
     except Exception as e:
-        return {"verdict": "SE", "message": str(e), "actual_output": ""}
+        print(f"[!] Master Grader Exception (Problem {problem_id}): {e}")
+        return {"verdict": "SE", "message": "System Error: The execution engine encountered an unexpected failure.", "actual_output": ""}
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
