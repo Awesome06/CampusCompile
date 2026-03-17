@@ -319,7 +319,7 @@ def start_worker():
                 job_semaphore.release()
                 
             except redis.exceptions.RedisError as cmd_err:
-                #Added 2-second rate limit for persistent command errors (like WRONGTYPE)
+                # Added a 2-second rate limit for persistent command errors (like WRONGTYPE).
                 print(f"[!] Redis command/data error: {cmd_err}. Rate-limiting logs. Retrying in 2 seconds...")
                 time.sleep(2) 
                 job_semaphore.release()
