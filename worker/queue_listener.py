@@ -296,6 +296,8 @@ def start_worker():
 
     print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
     
+    print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
+    
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         while True:
             # Apply backpressure: Block here if all MAX_WORKERS threads are busy
@@ -308,26 +310,28 @@ def start_worker():
                     submission_data = json.loads(message)
                     executor.submit(route_job, submission_data)
                 else:
-                    # Timeout reached without a job; release the semaphore so it isn't lost
                     job_semaphore.release()
                     
-            except redis.exceptions.RedisError as re:
-                # 👇 FIX: Only apply the 5-second backoff to actual Redis infrastructure failures
-                print(f"[!] Redis network error: {re}. Retrying in 5 seconds...")
+            except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as net_err:
+                # 👇 FIX: Only apply the 5-second backoff to true network disconnects
+                print(f"[!] Redis network error: {net_err}. Retrying in 5 seconds...")
                 time.sleep(5) 
                 job_semaphore.release()
                 
+            except redis.exceptions.RedisError as cmd_err:
+                # 👇 FIX: Catch protocol/command errors (like WRONGTYPE). Log and drop without sleeping.
+                print(f"[!] Redis command/data error: {cmd_err}. Bypassing invalid state.")
+                job_semaphore.release()
+                
             except json.JSONDecodeError as je:
-                # 👇 FIX: Catch bad payloads. Log and drop them immediately without sleeping.
                 print(f"[!] Dropping malformed JSON payload from queue: {je}")
                 job_semaphore.release()
                 
             except Exception as e:
-                # 👇 FIX: Catch generic executor or system crashes. Brief 1s pause to prevent tight crash-loops.
                 print(f"[!] Unexpected error in main worker loop: {e}")
                 traceback.print_exc()
                 time.sleep(1)
                 job_semaphore.release()
-                
+
 if __name__ == "__main__":
     start_worker()
