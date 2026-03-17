@@ -3,29 +3,54 @@ package controllers
 import (
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
+	"campuscompile/api/internal/utils"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 type SubmissionController struct {
 	service services.SubmissionService
+	rdb     *redis.Client
 }
 
-func NewSubmissionController(service services.SubmissionService) *SubmissionController {
-	return &SubmissionController{service: service}
+func NewSubmissionController(service services.SubmissionService, rdb *redis.Client) *SubmissionController {
+	return &SubmissionController{service: service, rdb: rdb}
 }
 
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
 	userID := c.MustGet("user_id").(string)
+
+	// 3. Determine Context-Aware Cooldown
+	cooldownDuration := 3 * time.Second
+	if req.ContestID != nil && *req.ContestID != "" {
+		cooldownDuration = 10 * time.Second
+	}
+
+	// 4. Enforce Redis Rate Limit
+	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
+		return
+	}
+
+	if !allowed {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":    "You are submitting too fast.",
+			"retry_in": remaining.Seconds(), // Provide float seconds to frontend
+		})
+		return
+	}
 
 	// Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)

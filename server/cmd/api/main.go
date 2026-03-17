@@ -59,7 +59,7 @@ func main() {
 	// --- Initialize Submissions Domain ---
 	submissionRepo := repositories.NewSubmissionRepository(database.Pool)
 	submissionService := services.NewSubmissionService(submissionRepo, redisPkg.Client)
-	submissionController := controllers.NewSubmissionController(submissionService)
+	submissionController := controllers.NewSubmissionController(submissionService, redisPkg.Client)
 
 	// --- Initialize Problems Domain ---
 	problemRepo := repositories.NewProblemRepository(database.Pool)
