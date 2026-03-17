@@ -2,6 +2,7 @@ import json
 import traceback
 import sys
 import threading
+import time # 👇 NEW: For Redis backoff
 from concurrent.futures import ThreadPoolExecutor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
@@ -150,14 +151,19 @@ def process_submission(submission_id):
         if conn and cursor:
             try:
                 conn.rollback()
-                cursor.execute("UPDATE submissions SET status = 'SE', error_logs = %s WHERE submission_id = %s", (str(ce), submission_id))
+                # 👇 FIX: Use a generic, safe string so infrastructure info is not leaked to the frontend UI
+                cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'System Error: Infrastructure temporarily unavailable.' WHERE submission_id = %s", (submission_id,))
                 conn.commit()
             except Exception as db_err:
                 print(f"[!] Failed to log SE to DB: {db_err}")
                 
-        redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
-            "status": "SE", "message": "System Error: Missing infrastructure credentials."
-        }))
+        # 👇 FIX: Wrap Redis publish in try/except so a Redis outage doesn't crash the recovery path
+        try:
+            redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
+                "status": "SE", "message": "System Error: Infrastructure temporarily unavailable."
+            }))
+        except Exception as r_err:
+            print(f"[!] Failed to publish SE to Redis: {r_err}")
         
     except Exception as e:
         print(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.process_submission:")
@@ -167,14 +173,20 @@ def process_submission(submission_id):
         if conn and cursor:
             try:
                 conn.rollback()
-                cursor.execute("UPDATE submissions SET status = 'SE', error_logs = %s WHERE submission_id = %s", (f"Worker Crash: {str(e)}", submission_id))
+                # 👇 FIX: Hide internal exception tracebacks from the user-facing DB column
+                cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'System Error: An unexpected issue occurred during grading.' WHERE submission_id = %s", (submission_id,))
                 conn.commit()
             except Exception as db_err:
                 print(f"[!] Failed to log SE crash to DB: {db_err}")
         
-        redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
-            "status": "SE", "message": f"Worker Crash: {str(e)}"
-        }))
+        # 👇 FIX: Wrap Redis publish in try/except
+        try:
+            redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
+                "status": "SE", "message": "System Error: An unexpected issue occurred during grading."
+            }))
+        except Exception as r_err:
+            print(f"[!] Failed to publish crash SE to Redis: {r_err}")
+            
     finally:
         # Always safely cleanup resources
         if cursor:
@@ -238,6 +250,22 @@ def route_job(submission_data):
     except Exception as e:
         print(f"\n[!] CRITICAL THREAD CRASH handling job:")
         traceback.print_exc()
+        
+        # 👇 FIX: Ensure custom runs don't hang the UI indefinitely if the thread crashes mid-execution
+        try:
+            if submission_data and submission_data.get('is_custom'):
+                run_id = submission_data.get('run_id')
+                if run_id:
+                    error_payload = json.dumps({
+                        "status": "Completed", 
+                        "output": "System error during custom run.", 
+                        "verdict": "SE"
+                    })
+                    redis_client.set(f"run_result:{run_id}", error_payload, ex=600)
+                    redis_client.publish(f"run_updates:{run_id}", error_payload)
+        except Exception as recovery_err:
+            print(f"[!] Failed to push terminal error state for custom run: {recovery_err}")
+            
     finally:
         # MUST execute to free up the thread pool slot, regardless of success or crash
         job_semaphore.release()
@@ -283,7 +311,9 @@ def start_worker():
                     # Timeout reached without a job; release the semaphore so it isn't lost
                     job_semaphore.release()
             except Exception as e:
-                print(f"[!] Redis fetch error: {e}")
+                # 👇 FIX: Backoff sleep to prevent tight looping / CPU spike when Redis drops
+                print(f"[!] Redis fetch error: {e}. Retrying in 5 seconds...")
+                time.sleep(5) 
                 job_semaphore.release()
 
 if __name__ == "__main__":
