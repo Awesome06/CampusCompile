@@ -2,7 +2,7 @@ import json
 import traceback
 import sys
 import threading
-import time # 👇 NEW: For Redis backoff
+import time # NEW: For Redis backoff
 from concurrent.futures import ThreadPoolExecutor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
@@ -62,10 +62,12 @@ def process_submission(submission_id):
             print(f"[!] Submission {submission_id} not found in database.")
             return
 
+        # 👇 SECURITY FIX: Added is_hidden and ordered by test_case_id
         cursor.execute("""
-            SELECT test_case_id, input_s3_key, expected_s3_key
+            SELECT test_case_id, input_s3_key, expected_s3_key, is_hidden
             FROM test_cases 
             WHERE problem_id = %s
+            ORDER BY test_case_id
         """, (submission.get('problem_id'),))
         test_cases = cursor.fetchall()
 
@@ -133,7 +135,6 @@ def process_submission(submission_id):
                 elapsed_minutes = max(0, float(submission.get('elapsed_minutes') or 0))
                 penalty_minutes = elapsed_minutes + (fails * 20)
 
-                # Convert to a fractional score so Redis ZSET natively sorts it
                 score_increment = 1.0 - (penalty_minutes / 100000.0)
 
                 redis_client.zincrby(f"contest:leaderboard:{contest_id}", score_increment, user_id)
@@ -148,17 +149,14 @@ def process_submission(submission_id):
 
     except ConfigurationError as ce:
         print(f"\n[!] INFRASTRUCTURE ERROR: {ce}")
-        # Best-effort DB update so the submission isn't stuck "Running"
         if conn and cursor:
             try:
                 conn.rollback()
-                # 👇 FIX: Use a generic, safe string so infrastructure info is not leaked to the frontend UI
                 cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'System Error: Infrastructure temporarily unavailable.' WHERE submission_id = %s", (submission_id,))
                 conn.commit()
             except Exception as db_err:
                 print(f"[!] Failed to log SE to DB: {db_err}")
                 
-        # 👇 FIX: Wrap Redis publish in try/except so a Redis outage doesn't crash the recovery path
         try:
             redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
                 "status": "SE", "message": "System Error: Infrastructure temporarily unavailable."
@@ -170,17 +168,14 @@ def process_submission(submission_id):
         print(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.process_submission:")
         traceback.print_exc() 
         
-        # Best-effort DB update on runtime crash
         if conn and cursor:
             try:
                 conn.rollback()
-                # 👇 FIX: Hide internal exception tracebacks from the user-facing DB column
                 cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'System Error: An unexpected issue occurred during grading.' WHERE submission_id = %s", (submission_id,))
                 conn.commit()
             except Exception as db_err:
                 print(f"[!] Failed to log SE crash to DB: {db_err}")
         
-        # 👇 FIX: Wrap Redis publish in try/except
         try:
             redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
                 "status": "SE", "message": "System Error: An unexpected issue occurred during grading."
@@ -189,7 +184,6 @@ def process_submission(submission_id):
             print(f"[!] Failed to publish crash SE to Redis: {r_err}")
             
     finally:
-        # Always safely cleanup resources
         if cursor:
             cursor.close()
         if conn:
@@ -252,7 +246,6 @@ def route_job(submission_data):
         print(f"\n[!] CRITICAL THREAD CRASH handling job:")
         traceback.print_exc()
         
-        # 👇 FIX: Ensure custom runs don't hang the UI indefinitely if the thread crashes mid-execution
         try:
             if submission_data and submission_data.get('is_custom'):
                 run_id = submission_data.get('run_id')
@@ -268,7 +261,6 @@ def route_job(submission_data):
             print(f"[!] Failed to push terminal error state for custom run: {recovery_err}")
             
     finally:
-        # MUST execute to free up the thread pool slot, regardless of success or crash
         job_semaphore.release()
 
 def start_worker():
@@ -276,15 +268,12 @@ def start_worker():
     try:
         print("[*] Performing startup infrastructure checks...")
         
-        # 1. Check Redis (Fastest fail)
         if not redis_client.ping():
             raise ConfigurationError("Redis ping failed.")
             
-        # 2. Check Database Pool
         test_conn = get_db_connection()
         release_db_connection(test_conn)
         
-        # 3. Check S3 Config
         get_s3_client() 
         
     except ConfigurationError as e:
@@ -293,14 +282,11 @@ def start_worker():
     except Exception as e:
         sys.stderr.write(f"FATAL STARTUP ERROR: Infrastructure connection failed: {e}\n")
         sys.exit(1)
-
-    print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
     
     print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         while True:
-            # Apply backpressure: Block here if all MAX_WORKERS threads are busy
             job_semaphore.acquire() 
             
             try:
@@ -313,13 +299,11 @@ def start_worker():
                     job_semaphore.release()
                     
             except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as net_err:
-                # Only apply the 5-second backoff to true network disconnects
                 print(f"[!] Redis network error: {net_err}. Retrying in 5 seconds...")
                 time.sleep(5) 
                 job_semaphore.release()
                 
             except redis.exceptions.RedisError as cmd_err:
-                # Added a 2-second rate limit for persistent command errors (like WRONGTYPE).
                 print(f"[!] Redis command/data error: {cmd_err}. Rate-limiting logs. Retrying in 2 seconds...")
                 time.sleep(2) 
                 job_semaphore.release()

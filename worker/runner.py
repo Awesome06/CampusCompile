@@ -4,7 +4,7 @@ import shutil
 import itertools
 from typing import Optional
 
-# 👇 NEW: Import the shared S3 fetcher from our centralized config
+# Import the shared S3 fetcher from our centralized config
 from config import fetch_from_s3
 
 # --- CONFIGURATION ---
@@ -60,10 +60,8 @@ def compile_code(language: str, work_dir: str, source_code: str):
         else:
             return {"verdict": "CE", "message": "Unsupported language"}
 
-        # 👇 NEW: Give Java the headroom it needs to boot the JVM compiler
         compilation_mem = "1g" if language == 'java' else "512m"
 
-        # Compile container: Auto-remove enabled, dynamic limits set
         container = client.containers.run(
             image=img, command=cmd, 
             volumes={'sandbox_volume': {'bind': SANDBOX_BASE, 'mode': 'rw'}},
@@ -79,7 +77,7 @@ def compile_code(language: str, work_dir: str, source_code: str):
 
     except Exception as e:
         if container:
-            try: container.kill() # Aggressively prune if hung
+            try: container.kill()
             except: pass
         return {"verdict": "CE", "message": "Compilation Timed Out or Failed"}
 
@@ -96,7 +94,6 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
     elif language == 'java':
         img = "campus-java"
         
-    # Dynamically build a shell script to run ALL test cases sequentially
     with open(script_path, 'w', encoding='utf-8') as f:
         f.write("#!/bin/sh\n")
         for meta in tc_meta:
@@ -110,13 +107,9 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
             elif language == 'java':
                 cmd = f"java -Xmx{int(memory_limit_kb/1024)}m Main < {input_path} > out_{idx}.txt 2> err_{idx}.txt"
                 
-            # Use Alpine's 'timeout' command. 
-            # If the process exceeds the time limit, it exits with code 124, 137, or 143.
             f.write(f"timeout {time_limit_seconds} sh -c '{cmd}'\n")
             f.write(f"RES=$?\n")
             f.write(f"echo $RES > status_{idx}.txt\n")
-            
-            # FAST-FAIL: If it Time Limits (TLE) or Runtime Errors (RE), immediately stop the script.
             f.write(f"if [ $RES -ne 0 ]; then exit 0; fi\n")
 
     try:
@@ -128,7 +121,6 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
             cap_drop=["ALL"], security_opt=["no-new-privileges"]
         )
         
-        # The absolute maximum time the container is allowed to stay alive
         max_wait = (time_limit_seconds * len(tc_meta)) + 5.0
         container.wait(timeout=max_wait)
         return {"status": "Success"}
@@ -143,14 +135,12 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
 
 def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> str:
     def get_clean_lines(path):
-        """Yields right-stripped lines, ignoring any trailing empty lines at the end of the file."""
         if not os.path.exists(path):
             return
             
         with open(path, 'r', encoding='utf-8', errors='replace') as f:
             lines = f.readlines()
             
-        # Strip trailing empty lines completely from the buffer
         while lines and lines[-1].strip() == "":
             lines.pop()
             
@@ -162,7 +152,6 @@ def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> 
 
     sentinel = object()
     for a_line, e_line in itertools.zip_longest(actual_iter, expected_iter, fillvalue=sentinel):
-        # If one file has more lines than the other (and they aren't empty)
         if a_line is sentinel or e_line is sentinel:
             return "WA"
             
@@ -176,12 +165,8 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
     time_limit_sec = time_limit_ms / 1000.0
     work_dir = os.path.join(SANDBOX_BASE, str(submission_id))
     os.makedirs(work_dir, exist_ok=True)
-    # 1. Ensure the container user can traverse the parent directory
     os.chmod(SANDBOX_BASE, 0o755)
     
-    # TODO(Deployment): Change 0o777 back to 0o750 when pushing to a native Linux production server.
-    # We are using 0o777 here locally as a workaround for Docker Desktop (Win/Mac) failing 
-    # to properly map os.chown permissions on shared host volumes.
     os.chmod(work_dir, 0o777)
     try:
         os.chown(work_dir, 1001, 1001) 
@@ -211,6 +196,9 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         tc_meta = []
         for idx, tc in enumerate(test_cases):
             tc_id = tc.get('test_case_id', f"custom_{idx}")
+            # 👇 SECURITY FIX: Default to False for custom runs, track visibility
+            is_hidden = tc.get('is_hidden', False) 
+            
             input_path, expected_path = ensure_cached_testcase(
                 work_dir, problem_id, tc_id, tc.get('input_data'), tc.get('expected_output'), 
                 tc.get('input_s3_key'), tc.get('expected_s3_key')
@@ -218,7 +206,8 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
             tc_meta.append({
                 'index': idx,
                 'input_path': input_path,
-                'expected_path': expected_path
+                'expected_path': expected_path,
+                'is_hidden': is_hidden # Track visibility per test case
             })
             
         # 2. RUN ONE SINGLE CONTAINER for all test cases
@@ -233,12 +222,12 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         for meta in tc_meta:
             idx = meta['index']
             expected_path = meta['expected_path']
+            is_hidden = meta['is_hidden']
             
             status_file = os.path.join(work_dir, f'status_{idx}.txt')
             out_file = os.path.join(work_dir, f'out_{idx}.txt')
             err_file = os.path.join(work_dir, f'err_{idx}.txt')
             
-            # If the script stopped early due to a previous TLE/RE, this file won't exist.
             if not os.path.exists(status_file):
                 return {"verdict": "SE", "message": f"Execution halted unexpectedly before Test Case {idx+1}", "actual_output": ""}
 
@@ -250,16 +239,28 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
             
             # Interpret Alpine's exit codes
             if status_code in [124, 137, 143]: 
-                return {"verdict": "TLE", "message": f"Execution took too long on Test Case {idx+1}", "actual_output": ""}
+                # 👇 UX FIX: Clean TLE error message
+                return {"verdict": "TLE", "message": f"Time Limit Exceeded on Test Case {idx+1}", "actual_output": ""}
             elif status_code != 0:
-                err_log = read_file_safely(err_file)
-                return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
+                # 👇 SECURITY FIX: Completely scrub the stack trace unless it is a Custom Run
+                if str(problem_id) == "custom":
+                    err_log = read_file_safely(err_file)
+                    return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
+                else:
+                    return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}. (Stack trace hidden)", "actual_output": ""}
                 
             # Check for WA using Python
             verdict = evaluate_output(out_file, expected_path)
             if verdict != "AC":
-                actual_out = read_file_safely(out_file)
-                return {"verdict": "WA", "message": f"Wrong Answer on Test Case {idx+1}", "actual_output": actual_out}
+                # 👇 UX FIX: Only reveal actual vs expected output if the test case is public
+                if str(problem_id) == "custom" or not is_hidden:
+                    # Truncate outputs to 1000 characters to prevent DB payload bloat
+                    actual_out = read_file_safely(out_file, max_chars=1000)
+                    expected_out = read_file_safely(expected_path, max_chars=1000)
+                    msg = f"Wrong Answer on Test Case {idx+1}.\n\nExpected Output:\n{expected_out}\n\nYour Output:\n{actual_out}"
+                    return {"verdict": "WA", "message": msg.strip(), "actual_output": actual_out}
+                else:
+                    return {"verdict": "WA", "message": f"Wrong Answer on Hidden Test Case {idx+1}", "actual_output": ""}
                 
         # If we passed everything, return the output of the final test case
         last_idx = tc_meta[-1]['index']
@@ -268,5 +269,4 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
     except Exception as e:
         return {"verdict": "SE", "message": str(e), "actual_output": ""}
     finally:
-        # Aggressive sweeping: Ensure the directory is wiped so disk space isn't exhausted
         shutil.rmtree(work_dir, ignore_errors=True)
