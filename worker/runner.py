@@ -89,7 +89,7 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
     
     script_path = os.path.join(work_dir, 'execute.sh')
     
-    timeout_int = math.ceil(time_limit_seconds)
+    timeout_int = max(1, math.ceil(time_limit_seconds))
     
     if language == 'python':
         img = "campus-python"
@@ -125,7 +125,7 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
             cap_drop=["ALL"], security_opt=["no-new-privileges"]
         )
         
-        max_wait = (time_limit_seconds * len(tc_meta)) + 5.0
+        max_wait = (timeout_int * len(tc_meta)) + 5.0
         container.wait(timeout=max_wait)
         return {"status": "Success"}
         
