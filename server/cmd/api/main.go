@@ -46,6 +46,16 @@ func main() {
 	router := gin.Default()
 	router.SetTrustedProxies(nil)
 
+	router.MaxMultipartMemory = 8 << 20 // 8 MiB
+
+	// Define strict, type-safe limits
+	const maxJSONSize int64 = 128 * 1024         // 128 KB for Source Code & JSON
+	const maxUploadSize int64 = 15 * 1024 * 1024 // 15 MB for Test Case ZIPs
+
+	// Instantiate our armors
+	jsonArmor := middleware.PayloadArmor(maxJSONSize)
+	uploadArmor := middleware.PayloadArmor(maxUploadSize)
+
 	// --- Initialize Submissions Domain ---
 	submissionRepo := repositories.NewSubmissionRepository(database.Pool)
 	submissionService := services.NewSubmissionService(submissionRepo, redisPkg.Client)
@@ -84,16 +94,13 @@ func main() {
 	// --- PROTECTED ROUTES (Requires JWT) ---
 	protected := router.Group("/api")
 	protected.Use(middleware.RequireAuth)
-
-	const maxJSONSize = 128 * 1024
-	protected.Use(middleware.PayloadArmor(maxJSONSize))
 	{
-		protected.POST("/auth/onboard", handlers.CompleteOnboarding)
+		protected.POST("/auth/onboard", jsonArmor, handlers.CompleteOnboarding)
 		protected.GET("/problems/:id", problemController.GetProblemByID)
 
 		// Submissions
-		protected.POST("/submit", submissionController.SubmitCode)
-		protected.POST("/run", submissionController.RunCode)
+		protected.POST("/submit", jsonArmor, submissionController.SubmitCode)
+		protected.POST("/run", jsonArmor, submissionController.RunCode)
 		protected.GET("/run/:id", submissionController.GetRunStatus)
 		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)
 		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory)
@@ -114,19 +121,19 @@ func main() {
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
 			arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
 			arena.GET("/problems", contestController.GetContestProblems)
-			arena.POST("/telemetry", contestController.LogTelemetry)
-			arena.POST("/telemetry/batch", contestController.LogTelemetryBatch)
+			arena.POST("/telemetry", jsonArmor, contestController.LogTelemetry)
+			arena.POST("/telemetry/batch", jsonArmor, contestController.LogTelemetryBatch)
 		}
 
 		// --- FACULTY & ADMIN ROUTES ---
 		faculty := protected.Group("")
 		faculty.Use(middleware.RequireRole("professor", "admin"))
 		{
-			faculty.POST("/problems", problemController.CreateProblem)
-			faculty.PUT("/problems/:id", problemController.UpdateProblem)
+			faculty.POST("/problems", jsonArmor, problemController.CreateProblem)
+			faculty.PUT("/problems/:id", jsonArmor, problemController.UpdateProblem)
 			faculty.GET("/problems/:id/testcases/all", problemController.GetAllTestCasesForProblem)
 			faculty.DELETE("/problems/:id/testcases", problemController.ClearTestCases)
-			faculty.POST("/problems/:id/testcases/batch", problemController.UploadTestCasesBatch)
+			faculty.POST("/problems/:id/testcases/batch", uploadArmor, problemController.UploadTestCasesBatch)
 			faculty.GET("/faculty/problems", problemController.GetFacultyProblems)
 
 			// Faculty Contest Management
