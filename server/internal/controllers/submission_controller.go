@@ -95,12 +95,12 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 	}
 
 	// Safely extract limit and offset with robust defaults
-	limitStr := c.DefaultQuery("limit", "50")
+	limitStr := c.DefaultQuery("limit", "10")
 	offsetStr := c.DefaultQuery("offset", "0")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 || limit > 100 {
-		limit = 50 // Cap at 100 to prevent malicious mega-queries
+		limit = 10 // Cap at 100 to prevent malicious mega-queries
 	}
 
 	offset, err := strconv.Atoi(offsetStr)
