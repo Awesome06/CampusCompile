@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	redisPkg "campuscompile/api/internal/redis"
 
@@ -65,20 +67,28 @@ func RequireAuth(c *gin.Context) {
 
 		// 2. Query Redis for the single source of truth
 		redisKey := fmt.Sprintf("active_session:%s", userID)
-		activeSession, err := redisPkg.Client.Get(c.Request.Context(), redisKey).Result()
+
+		// 🚨 CIRCUIT BREAKER: Enforce a strict 200ms timeout
+		// If Redis doesn't answer instantly, assume it's dead and fail closed to protect the Go scheduler
+		redisCtx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		defer cancel()
+
+		activeSession, err := redisPkg.Client.Get(redisCtx, redisKey).Result()
 
 		// 3. The Guillotine Logic
 		if err == redis.Nil {
+			// Expected failure: Key doesn't exist (User logged out or TTL expired)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired. Please log in again."})
 			c.Abort()
 			return
 		} else if err != nil {
-			// 2. Unexpected failure: Redis is unreachable (Fail closed)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify session integrity. Authentication server unavailable."})
+			// Unexpected failure: Redis is unreachable or timed out (Fail closed gracefully)
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Authentication layer temporarily unavailable. Please retry."})
 			c.Abort()
 			return
 		} else if activeSession != sessionID {
-			// 3. Cryptographically valid, but legally dead
+			// Cryptographically valid, but legally dead
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session superseded by a login on another device."})
 			c.Abort()
 			return
@@ -108,7 +118,7 @@ func RequireAuth(c *gin.Context) {
 			if group, ok := claims["student_group"].(string); ok {
 				c.Set("student_group", group)
 			}
-			// JWT unmarshals numbers as float64; safely cast them	 back
+			// JWT unmarshals numbers as float64; safely cast them back
 			if gradYear, ok := claims["graduation_year"].(float64); ok {
 				c.Set("graduation_year", int(gradYear))
 			}

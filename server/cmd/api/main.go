@@ -115,13 +115,21 @@ func main() {
 		// The Bouncer: You must pass demographic clearance to enter the arena or view the leaderboard
 		arena := protected.Group("/contests/:id")
 		arena.Use(middleware.RequireContestClearance())
-		arena.Use(middleware.TrackContestIP())
 		{
-			arena.GET("", contestController.GetContestDetails)
-			arena.POST("/register", contestController.RegisterForContest)
+			// 1. The Tracker
+			ipTracker := middleware.TrackContestIP()
+
+			// 2. High-Value Endpoints (Tracked)
+			// We only care about IP shifts when they initially load the arena, register, or view problems.
+			// (If your /submit endpoint is routed inside the arena group, attach it there too).
+			arena.GET("", ipTracker, contestController.GetContestDetails)
+			arena.POST("/register", ipTracker, contestController.RegisterForContest)
+			arena.GET("/problems", ipTracker, contestController.GetContestProblems)
+
+			// 3. High-Frequency Endpoints (Untracked)
+			// Do NOT run Lua scripts on telemetry streams or leaderboards
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
 			arena.GET("/leaderboard/stream", middleware.RequireSSECap(2), contestController.StreamLeaderboard)
-			arena.GET("/problems", contestController.GetContestProblems)
 			arena.POST("/telemetry", jsonArmor, contestController.LogTelemetry)
 			arena.POST("/telemetry/batch", jsonArmor, contestController.LogTelemetryBatch)
 		}

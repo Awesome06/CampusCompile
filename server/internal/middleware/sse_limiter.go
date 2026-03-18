@@ -13,7 +13,6 @@ import (
 )
 
 // 1. The Increment Script (The Bouncer)
-// Atomically checks if current < max. If true, increments and sets a 5-min rolling TTL.
 var incrementScript = redis.NewScript(`
 	local current = tonumber(redis.call('GET', KEYS[1]) or '0')
 	local max_conns = tonumber(ARGV[1])
@@ -28,7 +27,6 @@ var incrementScript = redis.NewScript(`
 `)
 
 // 2. The Decrement Script (The Janitor)
-// Safely decrements the connection count. If it hits 0, deletes the key to save memory.
 var decrementScript = redis.NewScript(`
 	local current = tonumber(redis.call('DECR', KEYS[1]) or '0')
 	if current <= 0 then
