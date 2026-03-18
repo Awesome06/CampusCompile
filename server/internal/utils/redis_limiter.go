@@ -36,22 +36,25 @@ func EnforceCooldown(ctx context.Context, rdb *redis.Client, userID string, acti
 			return false, 0, err
 		}
 
-		// Lock failed; fetch the remaining TTL in milliseconds
+		// Lock failed; fetch the remaining TTL
 		pttl, err := rdb.PTTL(ctx, key).Result()
 		if err != nil {
 			return false, 0, err
 		}
 
-		if pttl == -2 {
-			// Key expired right after our SetArgs failed.
-			// Loop around and try to acquire the lock again.
+		// go-redis maps Redis's -2 response to -2 * time.Nanosecond
+		if pttl == -2*time.Nanosecond {
+			// Key expired right after our SetArgs failed. Loop around and retry.
 			continue
 		}
 
-		if pttl == -1 {
+		// go-redis maps Redis's -1 response to -1 * time.Nanosecond
+		if pttl == -1*time.Nanosecond {
 			// Infinite lock bug: Key exists but has no expiration.
-			// Repair the state by enforcing the intended duration.
-			rdb.Expire(ctx, key, duration)
+			// Repair the state and catch potential errors.
+			if err := rdb.Expire(ctx, key, duration).Err(); err != nil {
+				return false, 0, fmt.Errorf("failed to repair infinite lock: %w", err)
+			}
 			return false, duration, nil
 		}
 
