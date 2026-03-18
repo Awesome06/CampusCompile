@@ -38,6 +38,13 @@ func main() {
 
 	// 2. INITIALIZE SERVICES
 	database.InitDB(dbHost)
+	// Initialize security config only if IP_HASH_SALT is set, to avoid hard-failing
+	// startup in environments (e.g., local/dev) where IP tracking is not configured.
+	if ipHashSalt := os.Getenv("IP_HASH_SALT"); ipHashSalt == "" {
+		log.Println("warning: IP_HASH_SALT is not set; IP-based security features are disabled")
+	} else {
+		middleware.InitSecurityConfig()
+	}
 	redisPkg.InitRedis(redisHost)
 	handlers.InitOAuthConfig()
 	storage.InitS3()
@@ -105,8 +112,8 @@ func main() {
 		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)
 		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory)
 
-		protected.GET("/submissions/stream/:id", submissionController.StreamSubmissionStatus)
-		protected.GET("/run/stream/:id", submissionController.StreamRunStatus)
+		protected.GET("/submissions/stream/:id", middleware.RequireSSECap("submission", 3), submissionController.StreamSubmissionStatus)
+		protected.GET("/run/stream/:id", middleware.RequireSSECap("run", 3), submissionController.StreamRunStatus)
 
 		// 👇 --- CONTEST ROUTES (PHASE 3) ---
 		// ANY logged-in user can view the list of upcoming/past contests
@@ -116,11 +123,20 @@ func main() {
 		arena := protected.Group("/contests/:id")
 		arena.Use(middleware.RequireContestClearance())
 		{
-			arena.GET("", contestController.GetContestDetails)
-			arena.POST("/register", contestController.RegisterForContest)
+			// 1. The Tracker
+			ipTracker := middleware.TrackContestIP()
+
+			// 2. High-Value Endpoints (Tracked)
+			// We only care about IP shifts when they initially load the arena, register, or view problems.
+			// (If your /submit endpoint is routed inside the arena group, attach it there too).
+			arena.GET("", ipTracker, contestController.GetContestDetails)
+			arena.POST("/register", ipTracker, contestController.RegisterForContest)
+			arena.GET("/problems", ipTracker, contestController.GetContestProblems)
+
+			// 3. High-Frequency Endpoints (Untracked)
+			// Do NOT run Lua scripts on telemetry streams or leaderboards
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
-			arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
-			arena.GET("/problems", contestController.GetContestProblems)
+			arena.GET("/leaderboard/stream", middleware.RequireSSECap("leaderboard", 2), contestController.StreamLeaderboard)
 			arena.POST("/telemetry", jsonArmor, contestController.LogTelemetry)
 			arena.POST("/telemetry/batch", jsonArmor, contestController.LogTelemetryBatch)
 		}

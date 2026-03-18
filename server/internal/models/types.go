@@ -174,7 +174,8 @@ type TelemetryAlerts struct {
 	PasteAttempt             int `json:"paste_attempt"`
 	AutotyperSuspected       int `json:"autotyper_suspected"`
 	VisibilitySpoofSuspected int `json:"visibility_spoof_suspected"`
-	Plagiarism               int `json:"plagiarism"` // NEW
+	Plagiarism               int `json:"plagiarism"`
+	AnomalousRouting         int `json:"anomalous_routing"`
 }
 
 type BatchTelemetryPayload struct {

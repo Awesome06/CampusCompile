@@ -134,7 +134,18 @@ export default function useExecutionEngine(problemId, contestId = null) {
         sseRef.current.close(); 
       };
     } catch (error) {
-      setSubmitStatus('Error: Submission Failed');
+      const errorMessage = error.customMessage || 'Error: Submission Failed';
+      const status = error.response?.status;
+      
+      // Dynamically assign the visual status based on the actual HTTP code
+      let finalStatus = 'Error ❌';
+      if (status === 429) finalStatus = 'Rate Limited 🛑';
+      else if (status === 503) finalStatus = 'Unavailable ⚠️';
+      
+      setSubmitStatus(finalStatus);
+      setConsoleOutput(`[SYSTEM REJECTED]\n${errorMessage}`);
+      setActiveTab('output');
+      setIsConsoleOpen(true);
       setIsProcessing(false);
     }
   };
@@ -169,7 +180,12 @@ export default function useExecutionEngine(problemId, contestId = null) {
         sseRef.current.close();
       };
     } catch (error) {
-      setConsoleOutput('Error: Could not connect to execution engine.');
+      const errorMessage = error.customMessage || 'Error: Could not connect to execution engine.';
+      
+      // Keep the console output descriptive without falsely claiming they were "blocked"
+      setConsoleOutput(`[SYSTEM REJECTED]\n${errorMessage}`);
+      setActiveTab('output');
+      setIsConsoleOpen(true);
       setIsProcessing(false);
     }
   };

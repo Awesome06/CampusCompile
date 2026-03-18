@@ -1,15 +1,43 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
+	"time"
+
+	redisPkg "campuscompile/api/internal/redis"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 var JwtSecret = []byte("super_secret_campus_key_change_me")
+
+const defaultRedisAuthTimeout = 1 * time.Second
+
+var redisAuthTimeout = loadRedisAuthTimeout()
+
+func loadRedisAuthTimeout() time.Duration {
+	envVal, ok := os.LookupEnv("REDIS_AUTH_TIMEOUT")
+	if !ok || strings.TrimSpace(envVal) == "" {
+		// Silently fall back to default, or optionally add an [INFO] log here
+		return defaultRedisAuthTimeout
+	}
+
+	d, err := time.ParseDuration(envVal)
+	if err != nil || d <= 0 {
+		// Use standard logger with a severity tag for observability
+		log.Printf("[WARNING] Invalid REDIS_AUTH_TIMEOUT %q, using default %s: %v\n", envVal, defaultRedisAuthTimeout, err)
+		return defaultRedisAuthTimeout
+	}
+
+	return d
+}
 
 func RequireAuth(c *gin.Context) {
 	var tokenString string
@@ -50,6 +78,45 @@ func RequireAuth(c *gin.Context) {
 			return
 		}
 
+		// 1. Extract the Session ID from the JWT
+		sessionIDRaw, exists := claims["session_id"]
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload: missing session_id"})
+			c.Abort()
+			return
+		}
+		sessionID := fmt.Sprintf("%v", sessionIDRaw)
+		userID := fmt.Sprintf("%v", claims["user_id"])
+
+		// 2. Query Redis for the single source of truth
+		redisKey := fmt.Sprintf("active_session:%s", userID)
+
+		// 🚨 CIRCUIT BREAKER: Enforce a bounded Redis auth check timeout
+		// Timeout is controlled by REDIS_AUTH_TIMEOUT (default 1s); on timeout/unreachability, fail closed to protect the Go scheduler
+		redisCtx, cancel := context.WithTimeout(c.Request.Context(), redisAuthTimeout)
+		defer cancel()
+
+		activeSession, err := redisPkg.Client.Get(redisCtx, redisKey).Result()
+
+		// 3. The Guillotine Logic
+		if err == redis.Nil {
+			// Expected failure: Key doesn't exist (User logged out or TTL expired)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired. Please log in again."})
+			c.Abort()
+			return
+		} else if err != nil {
+			// Unexpected failure: Redis is unreachable or timed out (Fail closed gracefully)
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Authentication layer temporarily unavailable. Please retry."})
+			c.Abort()
+			return
+		} else if activeSession != sessionID {
+			// Cryptographically valid, but legally dead
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session superseded by a login on another device."})
+			c.Abort()
+			return
+		}
+
 		if roleRaw, exists := claims["role"]; exists {
 			c.Set("role", fmt.Sprintf("%v", roleRaw))
 		} else {
@@ -74,7 +141,7 @@ func RequireAuth(c *gin.Context) {
 			if group, ok := claims["student_group"].(string); ok {
 				c.Set("student_group", group)
 			}
-			// JWT unmarshals numbers as float64; safely cast them	 back
+			// JWT unmarshals numbers as float64; safely cast them back
 			if gradYear, ok := claims["graduation_year"].(float64); ok {
 				c.Set("graduation_year", int(gradYear))
 			}
