@@ -14,12 +14,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
 
 	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/middleware"
 	"campuscompile/api/internal/models"
+	redisPkg "campuscompile/api/internal/redis"
 )
 
 var oauthConfig *oauth2.Config
@@ -115,11 +117,6 @@ func HandleAzureCallback(c *gin.Context) {
 		assignedRole = "professor"
 	}
 
-	// Admin Set Up
-	if emailLower == "mrigank.bhatnagar@bennett.edu.in" {
-		assignedRole = "admin"
-	}
-
 	initialOnboarded := false
 	if assignedRole == "professor" || assignedRole == "admin" {
 		initialOnboarded = true // Auto-skip onboarding for faculty
@@ -150,15 +147,20 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
+	sessionID := uuid.New().String()
+
 	// 👇 Centralized JWT Generation
 	tokenString, err := generateUserToken(
-		userID, finalRole, isOnboarded,
+		userID, finalRole, isOnboarded, sessionID,
 		course, department, batch, section, studentGroup, graduationYear,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate JWT"})
 		return
 	}
+
+	redisKey := fmt.Sprintf("active_session:%s", userID)
+	redisPkg.Client.Set(reqCtx, redisKey, sessionID, 72*time.Hour)
 
 	frontendRedirectURL := fmt.Sprintf("http://localhost:5173/oauth-success?token=%s&role=%s&onboarded=%t", tokenString, finalRole, isOnboarded)
 	c.Redirect(http.StatusTemporaryRedirect, frontendRedirectURL)
@@ -186,14 +188,18 @@ func CompleteOnboarding(c *gin.Context) {
 	}
 
 	// 👇 Centralized JWT Generation (Passing addresses of the struct fields)
+	sessionID := uuid.New().String()
+
 	tokenString, err := generateUserToken(
-		userID, "student", true,
+		userID, "student", true, sessionID,
 		&req.Course, &req.Department, &req.Batch, &req.Section, &req.StudentGroup, &req.GraduationYear,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new session"})
 		return
 	}
+
+	redisPkg.Client.Set(c.Request.Context(), fmt.Sprintf("active_session:%s", userID), sessionID, 72*time.Hour)
 
 	// Send ONE SINGLE JSON response containing everything
 	c.JSON(http.StatusOK, gin.H{
@@ -204,9 +210,10 @@ func CompleteOnboarding(c *gin.Context) {
 }
 
 // generateUserToken centralizes JWT creation to prevent drift between login and onboarding
-func generateUserToken(userID, role string, isOnboarded bool, course, dept, batch, section, group *string, gradYear *int) (string, error) {
+func generateUserToken(userID, role string, isOnboarded bool, sessionID string, course, dept, batch, section, group *string, gradYear *int) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":      userID,
+		"session_id":   sessionID,
 		"role":         role,
 		"is_onboarded": isOnboarded,
 		"exp":          time.Now().Add(time.Hour * 72).Unix(),
