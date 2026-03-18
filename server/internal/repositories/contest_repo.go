@@ -331,7 +331,7 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 				COUNT(CASE WHEN event_type = 'visibility_spoof_suspected' THEN 1 END) as spoof,
 				COUNT(CASE WHEN event_type = 'anomalous_routing' THEN 1 END) as routing_anomaly
 			FROM contest_telemetry
-			WHERE contest_id = $1 AND user_id = ANY($2)
+			WHERE contest_id = $1 AND user_id = ANY($2::uuid[])
 			GROUP BY user_id
 		),
 		PlagiarismCounts AS (

@@ -55,8 +55,13 @@ func RequireSSECap(streamType string, maxConnections int) gin.HandlerFunc {
 			return
 		}
 
+		// Unified 429 Response Contract
 		if allowed == 0 {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("Too many active %s streams. Please close other tabs.", streamType)})
+			c.Header("Retry-After", "5") // Tell the browser/client to back off for 5 seconds
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":    fmt.Sprintf("Too many active %s streams. Please close other tabs.", streamType),
+				"retry_in": 5, // Match the exact JSON contract used by the submission controller
+			})
 			c.Abort()
 			return
 		}
@@ -82,7 +87,6 @@ func RequireSSECap(streamType string, maxConnections int) gin.HandlerFunc {
 
 				case <-ticker.C:
 					// Refresh the TTL to prevent mid-stream expiration
-					// We use context.Background() here because we want this to fire even if the request context is busy
 					redisPkg.Client.Expire(context.Background(), connectionKey, 12*time.Hour)
 				}
 			}
