@@ -2,13 +2,16 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
+	"campuscompile/api/internal/database"
 	redisPkg "campuscompile/api/internal/redis"
+	"campuscompile/api/internal/repositories"
 	// Import your repository/telemetry package here
 )
 
@@ -74,15 +77,29 @@ func TrackContestIP() gin.HandlerFunc {
 
 		// If result > 0, the threshold was breached for the very first time
 		if result >= 3 {
-			// Fire a background goroutine to log the anomaly so we don't block the HTTP response
 			go func(uid, cid, ip string, totalIPs int) {
-				// Use a fresh background context, as the request context will die soon
 				ctx := context.Background()
 
-				// TODO: Replace with your actual database repository call
-				// e.g., db.RecordTelemetryEvent(ctx, cid, uid, "anomalous_routing", ...)
-				fmt.Printf("[SECURITY ALERT] User %s used %d distinct IPs in Contest %s. Latest IP: %s\n",
-					uid, totalIPs, cid, ip)
+				// 1. Package the metadata
+				metadata := map[string]interface{}{
+					"total_ips": totalIPs,
+					"latest_ip": ip,
+				}
+				metaBytes, _ := json.Marshal(metadata)
+
+				// 2. Log to Postgres using the existing repository
+				repo := repositories.NewContestRepository(database.Pool)
+				err := repo.LogTelemetry(ctx, cid, uid, "anomalous_routing", metaBytes)
+				if err != nil {
+					fmt.Printf("[ERROR] Failed to log IP anomaly for %s: %v\n", uid, err)
+					return
+				}
+
+				// 3. 🚨 THE SECRET SAUCE: Wake up the Leaderboard Daemon!
+				// This tells the background worker to fetch the updated logs and broadcast to the professors.
+				redisPkg.Client.SAdd(ctx, "dirty_contests", cid)
+
+				fmt.Printf("[SECURITY] Logged anomalous_routing for User %s. IPs: %d\n", uid, totalIPs)
 			}(userID, contestID, clientIP, result)
 		}
 

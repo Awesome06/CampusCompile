@@ -185,6 +185,12 @@ export default function Leaderboard() {
                                 <span className="font-mono text-red-400">{player.alerts.visibility_spoof_suspected}</span>
                               </div>
                             )}
+                            {player.alerts.anomalous_routing > 0 && (
+                              <div className="flex justify-between">
+                                <span>IP Hopping:</span> 
+                                <span className="font-mono text-red-400">{player.alerts.anomalous_routing}</span>
+                              </div>
+                            )}
                           </div>
                           <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-[#2a2a2a]"></div>
                         </div>

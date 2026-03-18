@@ -328,7 +328,8 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 				COUNT(CASE WHEN event_type = 'blur' THEN 1 END) as blur,
 				COUNT(CASE WHEN event_type = 'paste_attempt' THEN 1 END) as paste_attempt,
 				COUNT(CASE WHEN event_type = 'autotyper_suspected' THEN 1 END) as autotyper,
-				COUNT(CASE WHEN event_type = 'visibility_spoof_suspected' THEN 1 END) as spoof
+				COUNT(CASE WHEN event_type = 'visibility_spoof_suspected' THEN 1 END) as spoof,
+				COUNT(CASE WHEN event_type = 'anomalous_routing' THEN 1 END) as routing_anomaly
 			FROM contest_telemetry
 			WHERE contest_id = $1 AND user_id = ANY($2)
 			GROUP BY user_id
@@ -347,6 +348,7 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 			COALESCE(t.autotyper, 0),
 			COALESCE(t.spoof, 0),
 			COALESCE(p.plagiarism, 0)
+			COALESCE(t.routing_anomaly, 0)
 		FROM unnest($2::uuid[]) AS u(user_id)
 		LEFT JOIN TelemetryCounts t ON u.user_id = t.user_id
 		LEFT JOIN PlagiarismCounts p ON u.user_id = p.user_id
@@ -361,7 +363,7 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 	for rows.Next() {
 		var userID string
 		var alerts models.TelemetryAlerts
-		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected, &alerts.Plagiarism); err == nil {
+		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected, &alerts.Plagiarism, &alerts.AnomalousRouting); err == nil {
 			alertsMap[userID] = alerts
 		}
 	}
