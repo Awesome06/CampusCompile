@@ -366,7 +366,8 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 
 		// Fast-fail on schema mismatch instead of silently ignoring it
 		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected, &alerts.Plagiarism, &alerts.AnomalousRouting); err != nil {
-			return nil, fmt.Errorf("schema mismatch scanning telemetry alerts: %w", err)
+			// Provide accurate, contextual debugging information
+			return nil, fmt.Errorf("failed scanning telemetry alerts for user %s: %w", userID, err)
 		}
 		alertsMap[userID] = alerts
 	}

@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -24,13 +25,17 @@ var redisAuthTimeout = loadRedisAuthTimeout()
 func loadRedisAuthTimeout() time.Duration {
 	envVal, ok := os.LookupEnv("REDIS_AUTH_TIMEOUT")
 	if !ok || strings.TrimSpace(envVal) == "" {
+		// Silently fall back to default, or optionally add an [INFO] log here
 		return defaultRedisAuthTimeout
 	}
+
 	d, err := time.ParseDuration(envVal)
 	if err != nil || d <= 0 {
-		fmt.Printf("invalid REDIS_AUTH_TIMEOUT %q, using default %s\n", envVal, defaultRedisAuthTimeout)
+		// Use standard logger with a severity tag for observability
+		log.Printf("[WARNING] Invalid REDIS_AUTH_TIMEOUT %q, using default %s: %v\n", envVal, defaultRedisAuthTimeout, err)
 		return defaultRedisAuthTimeout
 	}
+
 	return d
 }
 
@@ -86,8 +91,8 @@ func RequireAuth(c *gin.Context) {
 		// 2. Query Redis for the single source of truth
 		redisKey := fmt.Sprintf("active_session:%s", userID)
 
-		// 🚨 CIRCUIT BREAKER: Enforce a strict 200ms timeout
-		// If Redis doesn't answer instantly, assume it's dead and fail closed to protect the Go scheduler
+		// 🚨 CIRCUIT BREAKER: Enforce a bounded Redis auth check timeout
+		// Timeout is controlled by REDIS_AUTH_TIMEOUT (default 1s); on timeout/unreachability, fail closed to protect the Go scheduler
 		redisCtx, cancel := context.WithTimeout(c.Request.Context(), redisAuthTimeout)
 		defer cancel()
 

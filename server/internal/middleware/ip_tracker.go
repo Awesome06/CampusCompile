@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,7 +18,15 @@ import (
 	"campuscompile/api/internal/repositories"
 )
 
-// Helper to sanitize IP addresses before they hit the database
+// Helper 1: One-way cryptographic hash for Redis (Data Minimization)
+func hashIP(ip string) string {
+	// In production, load this salt from an environment variable (e.g., os.Getenv("IP_HASH_SALT"))
+	salt := "campuscompile_telemetry_salt"
+	hash := sha256.Sum256([]byte(ip + salt))
+	return hex.EncodeToString(hash[:])
+}
+
+// Helper 2: Visual mask for Postgres metadata (Professor UI)
 func maskIP(ip string) string {
 	if strings.Contains(ip, ".") { // IPv4
 		parts := strings.Split(ip, ".")
@@ -77,12 +87,13 @@ func TrackContestIP() gin.HandlerFunc {
 
 		// Expanded to 48 hours to safely cover multi-day hackathons without needing a DB lookup
 		ttlSeconds := 172800
+		hashedIP := hashIP(clientIP)
 
 		result, err := ipTrackerScript.Run(
 			c.Request.Context(),
 			redisPkg.Client,
 			[]string{ipKey, alertKey},
-			now, clientIP, ttlSeconds,
+			now, hashedIP, ttlSeconds,
 		).Int()
 
 		if err != nil {
