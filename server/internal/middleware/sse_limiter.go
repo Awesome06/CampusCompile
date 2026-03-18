@@ -41,7 +41,19 @@ var decrementScript = redis.NewScript(`
 // RequireSSECap enforces a limit on concurrent streams per user, scoped by stream type.
 func RequireSSECap(streamType string, maxConnections int) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.MustGet("user_id").(string)
+		userIDVal, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Missing user identity."})
+			c.Abort()
+			return
+		}
+
+		userID, ok := userIDVal.(string)
+		if !ok || userID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Invalid user identity format."})
+			c.Abort()
+			return
+		}
 
 		// Namespace the Redis key by stream type
 		key := fmt.Sprintf("sse_count:%s:%s", streamType, userID)

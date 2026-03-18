@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -20,8 +21,15 @@ import (
 
 // Helper 1: One-way cryptographic hash for Redis (Data Minimization)
 func hashIP(ip string) string {
-	// In production, load this salt from an environment variable (e.g., os.Getenv("IP_HASH_SALT"))
-	salt := "campuscompile_telemetry_salt"
+	// Load dynamically from the environment
+	salt := os.Getenv("IP_HASH_SALT")
+
+	if salt == "" {
+		// Warn loudly in your aggregators (Datadog, Cloudwatch, etc.)
+		log.Printf("[WARNING] IP_HASH_SALT environment variable is missing! Falling back to default. This is insecure for production.")
+		salt = "fallback_insecure_campuscompile_salt"
+	}
+
 	hash := sha256.Sum256([]byte(ip + salt))
 	return hex.EncodeToString(hash[:])
 }
