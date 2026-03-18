@@ -118,11 +118,23 @@ func TrackContestIP() gin.HandlerFunc {
 					"total_ips": totalIPs,
 					"latest_ip": maskedIP,
 				}
-				metaBytes, _ := json.Marshal(metadata)
+				metaBytes, err := json.Marshal(metadata)
+				if err != nil {
+					log.Printf("[ERROR] Failed to marshal IP anomaly metadata for User %s in Contest %s: %v\n", uid, cid, err)
+					fallback := map[string]interface{}{
+						"error": "failed to marshal IP anomaly metadata",
+					}
+					if fbBytes, fbErr := json.Marshal(fallback); fbErr == nil {
+						metaBytes = fbBytes
+					} else {
+						log.Printf("[ERROR] Failed to marshal fallback IP anomaly metadata for User %s in Contest %s: %v\n", uid, cid, fbErr)
+						metaBytes = nil
+					}
+				}
 
 				repo := repositories.NewContestRepository(database.Pool)
 
-				err := repo.LogTelemetry(bgCtx, cid, uid, "anomalous_routing", metaBytes)
+				err = repo.LogTelemetry(bgCtx, cid, uid, "anomalous_routing", metaBytes)
 				if err != nil {
 					log.Printf("[ERROR] Failed to log IP anomaly to Postgres for %s: %v\n", uid, err)
 					return

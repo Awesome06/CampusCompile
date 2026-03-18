@@ -38,7 +38,13 @@ func main() {
 
 	// 2. INITIALIZE SERVICES
 	database.InitDB(dbHost)
-	middleware.InitSecurityConfig()
+	// Initialize security config only if IP_HASH_SALT is set, to avoid hard-failing
+	// startup in environments (e.g., local/dev) where IP tracking is not configured.
+	if ipHashSalt := os.Getenv("IP_HASH_SALT"); ipHashSalt == "" {
+		log.Println("warning: IP_HASH_SALT is not set; IP-based security features are disabled")
+	} else {
+		middleware.InitSecurityConfig()
+	}
 	redisPkg.InitRedis(redisHost)
 	handlers.InitOAuthConfig()
 	storage.InitS3()
