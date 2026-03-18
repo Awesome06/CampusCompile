@@ -26,38 +26,24 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ERROR] Payload binding error: %v\n", err)
+		log.Printf("[ERROR] Payload binding error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
 		return
 	}
 
 	userID := c.MustGet("user_id").(string)
 
-	// 🛡️ SECURITY FIX: Enforce a global user submission lock, regardless of the target contest.
-	// This prevents bad actors from bypassing the rate limit by generating fake contest_ids.
-	action := "submit"
-	cooldownDuration := 3 * time.Second
-
-	// We still apply the heavier 10-second penalty if they claim to be in a contest
-	if req.ContestID != nil && *req.ContestID != "" {
-		cooldownDuration = 10 * time.Second
-	}
-
-	// Enforce Redis Rate Limit
-	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, action, cooldownDuration)
+	// 1. Global Base Rate Limit (Protects against pure spam across all endpoints)
+	allowedGlobal, remGlobal, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit:global", 3*time.Second)
 	if err != nil {
-		log.Printf("[ERROR] Redis rate limiter failure: %v\n", err)
+		log.Printf("[ERROR] Redis global rate limiter failure: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
 		return
 	}
 
-	if !allowed {
-		// Round up and cast to integer
-		retrySeconds := int64(math.Max(1, math.Ceil(remaining.Seconds())))
-
-		// Set standard REST HTTP 429 Header
+	if !allowedGlobal {
+		retrySeconds := int64(math.Max(1, math.Ceil(remGlobal.Seconds())))
 		c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
-
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":    "You are submitting too fast.",
 			"retry_in": retrySeconds,
@@ -65,10 +51,31 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 		return
 	}
 
+	// 2. Contest Specific Rate Limit (Stricter penalty for live arenas)
+	if req.ContestID != nil && *req.ContestID != "" {
+		contestAction := "submit:contest:" + *req.ContestID
+		allowedContest, remContest, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, contestAction, 10*time.Second)
+		if err != nil {
+			log.Printf("[ERROR] Redis contest rate limiter failure: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify contest rate limit"})
+			return
+		}
+
+		if !allowedContest {
+			retrySeconds := int64(math.Max(1, math.Ceil(remContest.Seconds())))
+			c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":    "Arena submission cooldown active.",
+				"retry_in": retrySeconds,
+			})
+			return
+		}
+	}
+
 	// Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
-		log.Printf("[ERROR] SUBMISSION CRASH: %v\n", err)
+		log.Printf("[ERROR] SUBMISSION CRASH: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process submission"})
 		return
 	}
@@ -83,14 +90,14 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 func (ctrl *SubmissionController) RunCode(c *gin.Context) {
 	var req models.RunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ERROR] Payload binding error in RunCode: %v\n", err)
+		log.Printf("[ERROR] Payload binding error in RunCode: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
 		return
 	}
 
 	runID, err := ctrl.service.ProcessRun(c.Request.Context(), req)
 	if err != nil {
-		log.Printf("[ERROR] ProcessRun failure: %v\n", err)
+		log.Printf("[ERROR] ProcessRun failure: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue run"})
 		return
 	}
@@ -103,7 +110,7 @@ func (ctrl *SubmissionController) GetRunStatus(c *gin.Context) {
 
 	result, err := ctrl.service.FetchRunStatus(c.Request.Context(), runID)
 	if err != nil {
-		log.Printf("[ERROR] FetchRunStatus failure for ID %s: %v\n", runID, err)
+		log.Printf("[ERROR] FetchRunStatus failure for ID %s: %v", runID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Execution engine disconnected or malformed result"})
 		return
 	}
@@ -116,7 +123,7 @@ func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 
 	result, err := ctrl.service.FetchSubmissionStatus(c.Request.Context(), submissionID)
 	if err != nil {
-		log.Printf("[ERROR] FetchSubmissionStatus failure for ID %s: %v\n", submissionID, err)
+		log.Printf("[ERROR] FetchSubmissionStatus failure for ID %s: %v", submissionID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
 		return
 	}
@@ -149,7 +156,7 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 
 	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID, limit, offset)
 	if err != nil {
-		log.Printf("[ERROR] FetchSubmissionHistory failure for User %s, Problem %s: %v\n", userID, problemID, err)
+		log.Printf("[ERROR] FetchSubmissionHistory failure for User %s, Problem %s: %v", userID, problemID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
 		return
 	}
