@@ -28,9 +28,7 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	userID := c.MustGet("user_id").(string)
 
-	// 1. PRE-PARSE LOCKING: Apply the base 3s lock immediately.
-	// This ensures that even if the user sends malformed JSON, they consume their rate limit,
-	// preventing a JSON-parsing CPU exhaustion attack.
+	// 1. PRE-PARSE LOCKING
 	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", 3*time.Second)
 	if err != nil {
 		log.Printf("[ERROR] Redis rate limiter failure: %v", err)
@@ -40,10 +38,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 
 	if !allowed {
 		retrySeconds := int64(math.Max(1, math.Ceil(remaining.Seconds())))
-
-		// Set HTTP 429 Header (Requires CORS ExposeHeaders config)
 		c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
-
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":    "You are submitting too fast.",
 			"retry_in": retrySeconds,
@@ -51,7 +46,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	// 2. SAFE PARSING: Bounded by PayloadArmor middleware
+	// 2. SAFE PARSING
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[ERROR] Payload binding error from User %s: %v", userID, err)
@@ -59,7 +54,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	// 3. CONTEXTUAL EXTENSION: Validate and escalate the penalty if in a contest
+	// 3. CONTEXTUAL EXTENSION
 	if req.ContestID != nil && *req.ContestID != "" {
 		if err := uuid.Validate(*req.ContestID); err != nil {
 			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %s. Error: %v", userID, *req.ContestID, err)
@@ -69,10 +64,14 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 
 		// Atomically extend the existing base lock to the full 10-second arena penalty
 		lockKey := fmt.Sprintf("cooldown:submit:%s", userID)
-		if err := ctrl.rdb.Expire(c.Request.Context(), lockKey, 10*time.Second).Err(); err != nil {
+
+		// Check if the key actually existed when we tried to extend it
+		extended, err := ctrl.rdb.Expire(c.Request.Context(), lockKey, 10*time.Second).Result()
+		if err != nil {
 			log.Printf("[ERROR] Failed to extend contest rate limit for user %s: %v", userID, err)
-			// We log the error but allow the submission to proceed with the 3s lock,
-			// rather than failing a legitimate contest submission over a Redis TTL update.
+		} else if !extended {
+			// If the base lock expired while we were binding JSON, enforce the 10s penalty directly
+			ctrl.rdb.Set(c.Request.Context(), lockKey, "locked", 10*time.Second)
 		}
 	}
 
@@ -183,7 +182,11 @@ func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
 		select {
 		case <-c.Request.Context().Done():
 			return
-		case msg := <-ch:
+		// comma-ok idiom prevents CPU pegging on closed channels
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
 			c.SSEvent("message", msg)
 			c.Writer.Flush()
 		}
@@ -205,7 +208,11 @@ func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
 		select {
 		case <-c.Request.Context().Done():
 			return
-		case msg := <-ch:
+		// comma-ok idiom prevents CPU pegging on closed channels
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
 			c.SSEvent("message", msg)
 			c.Writer.Flush()
 		}
