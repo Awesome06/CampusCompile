@@ -20,6 +20,7 @@ var incrementScript = redis.NewScript(`
 
 	if current < max_conns then
 		redis.call('INCR', KEYS[1])
+		redis.call('EXPIRE', KEYS[1], 43200) -- 12-hour rolling failsafe for server crashes
 		return 1
 	else
 		return 0
@@ -32,6 +33,8 @@ var decrementScript = redis.NewScript(`
 	local current = tonumber(redis.call('DECR', KEYS[1]) or '0')
 	if current <= 0 then
 		redis.call('DEL', KEYS[1])
+	else
+		redis.call('EXPIRE', KEYS[1], 43200) -- Maintain the failsafe for remaining connections
 	end
 	return 1
 `)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -46,8 +47,6 @@ func TrackContestIP() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.MustGet("user_id").(string)
 		contestID := c.Param("id")
-
-		// Gin automatically resolves X-Forwarded-For headers if trusted proxies are set up
 		clientIP := c.ClientIP()
 
 		if contestID == "" {
@@ -58,9 +57,10 @@ func TrackContestIP() gin.HandlerFunc {
 		ipKey := fmt.Sprintf("contest_ips:%s:%s", contestID, userID)
 		alertKey := fmt.Sprintf("ip_alerted:%s:%s", contestID, userID)
 		now := time.Now().Unix()
-		ttlSeconds := 43200 // 12 hours of memory
 
-		// Execute the Lua script
+		// Expanded to 48 hours to safely cover multi-day hackathons without needing a DB lookup
+		ttlSeconds := 172800
+
 		result, err := ipTrackerScript.Run(
 			c.Request.Context(),
 			redisPkg.Client,
@@ -69,36 +69,34 @@ func TrackContestIP() gin.HandlerFunc {
 		).Int()
 
 		if err != nil {
-			// Log the Redis error internally, but do not block the student's request
-			c.Next()
+			log.Printf("[ERROR] Redis IP tracking script failed for User %s in Contest %s: %v", userID, contestID, err)
+			c.Next() // Still fail-open so the student can submit code
 			return
 		}
 
-		// If result > 0, the threshold was breached for the very first time
 		if result >= 3 {
 			go func(uid, cid, ip string, totalIPs int) {
 				ctx := context.Background()
 
-				// 1. Package the metadata
 				metadata := map[string]interface{}{
 					"total_ips": totalIPs,
 					"latest_ip": ip,
 				}
 				metaBytes, _ := json.Marshal(metadata)
 
-				// 2. Log to Postgres using the existing repository
 				repo := repositories.NewContestRepository(database.Pool)
 				err := repo.LogTelemetry(ctx, cid, uid, "anomalous_routing", metaBytes)
 				if err != nil {
-					fmt.Printf("[ERROR] Failed to log IP anomaly for %s: %v\n", uid, err)
+					log.Printf("[ERROR] Failed to log IP anomaly to Postgres for %s: %v\n", uid, err)
 					return
 				}
 
-				// 3. 🚨 THE SECRET SAUCE: Wake up the Leaderboard Daemon!
-				// This tells the background worker to fetch the updated logs and broadcast to the professors.
-				redisPkg.Client.SAdd(ctx, "dirty_contests", cid)
-
-				fmt.Printf("[SECURITY] Logged anomalous_routing for User %s. IPs: %d\n", uid, totalIPs)
+				err = redisPkg.Client.SAdd(ctx, "dirty_contests", cid).Err()
+				if err != nil {
+					log.Printf("[CRITICAL] Failed to flag contest %s as dirty after IP anomaly: %v\n", cid, err)
+				} else {
+					log.Printf("[SECURITY] Logged anomalous_routing for User %s. IPs: %d\n", uid, totalIPs)
+				}
 			}(userID, contestID, clientIP, result)
 		}
 
