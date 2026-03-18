@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -24,6 +25,7 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 }
 
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
+	// 1. Parse payload safely (protected by PayloadArmor middleware at 128KB max)
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[ERROR] Payload binding error: %v", err)
@@ -32,47 +34,47 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	}
 
 	userID := c.MustGet("user_id").(string)
+	cooldownDuration := 3 * time.Second
 
-	// 1. Global Base Rate Limit (Protects against pure spam across all endpoints)
-	allowedGlobal, remGlobal, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit:global", 3*time.Second)
+	// 2. Validate Contest ID and escalate penalty if required
+	if req.ContestID != nil && *req.ContestID != "" {
+		// 🛡️ SECURITY FIX: Prevent Redis key bloat and SQLi by enforcing UUID format
+		if err := uuid.Validate(*req.ContestID); err != nil {
+			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %v", userID, *req.ContestID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
+			return
+		}
+
+		// Context is valid; escalate the single lock duration to the arena penalty
+		cooldownDuration = 10 * time.Second
+	}
+
+	// 3. Single, Context-Aware Global Lock
+	// Using a single 'submit' action key prevents overlapping lock confusion.
+	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
 	if err != nil {
-		log.Printf("[ERROR] Redis global rate limiter failure: %v", err)
+		log.Printf("[ERROR] Redis rate limiter failure: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
 		return
 	}
 
-	if !allowedGlobal {
-		retrySeconds := int64(math.Max(1, math.Ceil(remGlobal.Seconds())))
+	if !allowed {
+		retrySeconds := int64(math.Max(1, math.Ceil(remaining.Seconds())))
 		c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
+
+		errorMsg := "You are submitting too fast."
+		if cooldownDuration == 10*time.Second {
+			errorMsg = "Arena submission cooldown active."
+		}
+
 		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error":    "You are submitting too fast.",
+			"error":    errorMsg,
 			"retry_in": retrySeconds,
 		})
 		return
 	}
 
-	// 2. Contest Specific Rate Limit (Stricter penalty for live arenas)
-	if req.ContestID != nil && *req.ContestID != "" {
-		contestAction := "submit:contest:" + *req.ContestID
-		allowedContest, remContest, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, contestAction, 10*time.Second)
-		if err != nil {
-			log.Printf("[ERROR] Redis contest rate limiter failure: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify contest rate limit"})
-			return
-		}
-
-		if !allowedContest {
-			retrySeconds := int64(math.Max(1, math.Ceil(remContest.Seconds())))
-			c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":    "Arena submission cooldown active.",
-				"retry_in": retrySeconds,
-			})
-			return
-		}
-	}
-
-	// Hand off to the Service layer
+	// 4. Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
 		log.Printf("[ERROR] SUBMISSION CRASH: %v", err)
