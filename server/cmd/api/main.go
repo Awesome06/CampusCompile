@@ -105,8 +105,8 @@ func main() {
 		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)
 		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory)
 
-		protected.GET("/submissions/stream/:id", submissionController.StreamSubmissionStatus)
-		protected.GET("/run/stream/:id", submissionController.StreamRunStatus)
+		protected.GET("/submissions/stream/:id", middleware.RequireSSECap(3), submissionController.StreamSubmissionStatus)
+		protected.GET("/run/stream/:id", middleware.RequireSSECap(3), submissionController.StreamRunStatus)
 
 		// 👇 --- CONTEST ROUTES (PHASE 3) ---
 		// ANY logged-in user can view the list of upcoming/past contests
@@ -119,7 +119,7 @@ func main() {
 			arena.GET("", contestController.GetContestDetails)
 			arena.POST("/register", contestController.RegisterForContest)
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
-			arena.GET("/leaderboard/stream", contestController.StreamLeaderboard)
+			arena.GET("/leaderboard/stream", middleware.RequireSSECap(2), contestController.StreamLeaderboard)
 			arena.GET("/problems", contestController.GetContestProblems)
 			arena.POST("/telemetry", jsonArmor, contestController.LogTelemetry)
 			arena.POST("/telemetry/batch", jsonArmor, contestController.LogTelemetryBatch)
