@@ -4,7 +4,6 @@ import (
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/utils"
-	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -28,8 +27,31 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	userID := c.MustGet("user_id").(string)
 
-	// 1. PRE-PARSE LOCKING
-	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", 3*time.Second)
+	// 1. SAFE PARSING FIRST
+	// Protected against memory/CPU exhaustion by the 128KB PayloadArmor middleware.
+	var req models.SubmitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[ERROR] Payload binding error from User %s: %v", userID, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
+		return
+	}
+
+	// 2. CONTEXT DETERMINATION & VALIDATION
+	cooldownDuration := 3 * time.Second
+
+	if req.ContestID != nil && *req.ContestID != "" {
+		if err := uuid.Validate(*req.ContestID); err != nil {
+			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %s. Error: %v", userID, *req.ContestID, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
+			return
+		}
+
+		// Payload is valid and context is an Arena. Escalate the penalty duration.
+		cooldownDuration = 10 * time.Second
+	}
+
+	// 3. SINGLE, ACCURATE RATE LIMIT ENFORCEMENT
+	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
 	if err != nil {
 		log.Printf("[ERROR] Redis rate limiter failure: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
@@ -38,41 +60,20 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 
 	if !allowed {
 		retrySeconds := int64(math.Max(1, math.Ceil(remaining.Seconds())))
+
+		// Set HTTP 429 Header (Requires CORS ExposeHeaders config)
 		c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
+
+		errorMsg := "You are submitting too fast."
+		if cooldownDuration == 10*time.Second {
+			errorMsg = "Arena submission cooldown active."
+		}
+
 		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error":    "You are submitting too fast.",
+			"error":    errorMsg,
 			"retry_in": retrySeconds,
 		})
 		return
-	}
-
-	// 2. SAFE PARSING
-	var req models.SubmitRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ERROR] Payload binding error from User %s: %v", userID, err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
-		return
-	}
-
-	// 3. CONTEXTUAL EXTENSION
-	if req.ContestID != nil && *req.ContestID != "" {
-		if err := uuid.Validate(*req.ContestID); err != nil {
-			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %s. Error: %v", userID, *req.ContestID, err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
-			return
-		}
-
-		// Atomically extend the existing base lock to the full 10-second arena penalty
-		lockKey := fmt.Sprintf("cooldown:submit:%s", userID)
-
-		// Check if the key actually existed when we tried to extend it
-		extended, err := ctrl.rdb.Expire(c.Request.Context(), lockKey, 10*time.Second).Result()
-		if err != nil {
-			log.Printf("[ERROR] Failed to extend contest rate limit for user %s: %v", userID, err)
-		} else if !extended {
-			// If the base lock expired while we were binding JSON, enforce the 10s penalty directly
-			ctrl.rdb.Set(c.Request.Context(), lockKey, "locked", 10*time.Second)
-		}
 	}
 
 	// 4. Hand off to the Service layer
@@ -182,7 +183,6 @@ func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
 		select {
 		case <-c.Request.Context().Done():
 			return
-		// comma-ok idiom prevents CPU pegging on closed channels
 		case msg, ok := <-ch:
 			if !ok {
 				return
@@ -208,7 +208,6 @@ func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
 		select {
 		case <-c.Request.Context().Done():
 			return
-		// comma-ok idiom prevents CPU pegging on closed channels
 		case msg, ok := <-ch:
 			if !ok {
 				return
