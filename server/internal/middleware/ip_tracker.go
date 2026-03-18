@@ -20,7 +20,7 @@ import (
 // KEYS[2] = ip_alerted:{contest_id}:{user_id} (The circuit breaker flag)
 // ARGV[1] = Current Unix Timestamp
 // ARGV[2] = The Client IP Address
-// ARGV[3] = TTL in seconds (e.g., 43200 for 12 hours to cover any contest length)
+// ARGV[3] = TTL in seconds (e.g., 172800 for 48 hours to safely cover multi-day hackathons)
 var ipTrackerScript = redis.NewScript(`
 	-- 1. Add the IP to the Sorted Set. If it already exists, just updates the timestamp score.
 	redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])

@@ -13,38 +13,39 @@ import (
 	redisPkg "campuscompile/api/internal/redis"
 )
 
-// 1. The Increment Script (The Bouncer)
+// The Increment Script (Sets a 12-hour rolling failsafe)
 var incrementScript = redis.NewScript(`
 	local current = tonumber(redis.call('GET', KEYS[1]) or '0')
 	local max_conns = tonumber(ARGV[1])
 
 	if current < max_conns then
 		redis.call('INCR', KEYS[1])
-		redis.call('EXPIRE', KEYS[1], 43200) -- 12-hour rolling failsafe for server crashes
+		redis.call('EXPIRE', KEYS[1], 43200) 
 		return 1
 	else
 		return 0
 	end
 `)
 
-// 2. The Decrement Script (The Janitor)
+// The Decrement Script
 var decrementScript = redis.NewScript(`
 	local current = tonumber(redis.call('DECR', KEYS[1]) or '0')
 	if current <= 0 then
 		redis.call('DEL', KEYS[1])
 	else
-		redis.call('EXPIRE', KEYS[1], 43200) -- Maintain the failsafe for remaining connections
+		redis.call('EXPIRE', KEYS[1], 43200)
 	end
 	return 1
 `)
 
-// RequireSSECap enforces a strict limit on concurrent active connections per user.
-func RequireSSECap(maxConnections int) gin.HandlerFunc {
+// RequireSSECap enforces a limit on concurrent streams per user, scoped by stream type.
+func RequireSSECap(streamType string, maxConnections int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.MustGet("user_id").(string)
-		key := fmt.Sprintf("sse_count:%s", userID)
 
-		// Capture the exact context and key outside the goroutine
+		// Namespace the Redis key by stream type
+		key := fmt.Sprintf("sse_count:%s:%s", streamType, userID)
+
 		reqCtx := c.Request.Context()
 
 		allowed, err := incrementScript.Run(reqCtx, redisPkg.Client, []string{key}, maxConnections).Int()
@@ -55,22 +56,35 @@ func RequireSSECap(maxConnections int) gin.HandlerFunc {
 		}
 
 		if allowed == 0 {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Too many active live streams. Please close other Arena tabs."})
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("Too many active %s streams. Please close other tabs.", streamType)})
 			c.Abort()
 			return
 		}
 
-		// Safely pass the captured context and key into the goroutine
-		go func(reqCtx context.Context, connectionKey string) {
-			<-reqCtx.Done() // Wait for this specific request's lifecycle to end
+		// Background Cleanup and Heartbeat
+		go func(ctx context.Context, connectionKey string) {
+			// Ping Redis every 6 hours to keep the 12-hour TTL alive for active streams
+			ticker := time.NewTicker(6 * time.Hour)
+			defer ticker.Stop()
 
-			// Apply a strict 5-second bounded context for the cleanup
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			for {
+				select {
+				case <-ctx.Done():
+					// The client disconnected; safely release the slot with a bounded timeout
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
 
-			err := decrementScript.Run(cleanupCtx, redisPkg.Client, []string{connectionKey}).Err()
-			if err != nil {
-				log.Printf("[ERROR] Failed to decrement SSE connection count for %s: %v", connectionKey, err)
+					err := decrementScript.Run(cleanupCtx, redisPkg.Client, []string{connectionKey}).Err()
+					if err != nil {
+						log.Printf("[ERROR] Failed to decrement SSE connection count for %s: %v", connectionKey, err)
+					}
+					return // Exit the goroutine and free the memory
+
+				case <-ticker.C:
+					// Refresh the TTL to prevent mid-stream expiration
+					// We use context.Background() here because we want this to fire even if the request context is busy
+					redisPkg.Client.Expire(context.Background(), connectionKey, 12*time.Hour)
+				}
 			}
 		}(reqCtx, key)
 
