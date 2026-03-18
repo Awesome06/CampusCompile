@@ -134,7 +134,12 @@ export default function useExecutionEngine(problemId, contestId = null) {
         sseRef.current.close(); 
       };
     } catch (error) {
-      setSubmitStatus('Error: Submission Failed');
+      const errorMessage = error.customMessage || 'Error: Submission Failed';
+      
+      setSubmitStatus('Blocked 🛑');
+      setConsoleOutput(`[SYSTEM REJECTED]\n${errorMessage}`);
+      setActiveTab('output');
+      setIsConsoleOpen(true);
       setIsProcessing(false);
     }
   };
@@ -169,7 +174,11 @@ export default function useExecutionEngine(problemId, contestId = null) {
         sseRef.current.close();
       };
     } catch (error) {
-      setConsoleOutput('Error: Could not connect to execution engine.');
+      const errorMessage = error.customMessage || 'Error: Could not connect to execution engine.';
+      
+      setConsoleOutput(`[SYSTEM REJECTED]\n${errorMessage}`);
+      setActiveTab('output');
+      setIsConsoleOpen(true);
       setIsProcessing(false);
     }
   };
