@@ -3,36 +3,84 @@ package controllers
 import (
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
-	"fmt"
+	"campuscompile/api/internal/utils"
+	"log"
+	"math"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 type SubmissionController struct {
 	service services.SubmissionService
+	rdb     *redis.Client
 }
 
-func NewSubmissionController(service services.SubmissionService) *SubmissionController {
-	return &SubmissionController{service: service}
+func NewSubmissionController(service services.SubmissionService, rdb *redis.Client) *SubmissionController {
+	return &SubmissionController{service: service, rdb: rdb}
 }
 
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
+	// 1. SAFE PARSING FIRST
+	// Protected against memory/CPU exhaustion by the 128KB PayloadArmor middleware.
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		// Safely grab the user ID for the audit log even if the payload is garbage
+		userID := c.GetString("user_id")
+		log.Printf("[ERROR] Payload binding error from User %s: %v", userID, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
 		return
 	}
 
+	// 2. IDENTITY & CONTEXT DETERMINATION
 	userID := c.MustGet("user_id").(string)
+	cooldownDuration := 3 * time.Second
 
-	// Hand off to the Service layer
+	if req.ContestID != nil && *req.ContestID != "" {
+		if err := uuid.Validate(*req.ContestID); err != nil {
+			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %s. Error: %v", userID, *req.ContestID, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
+			return
+		}
+
+		// Payload is valid and context is an Arena. Escalate the penalty duration.
+		cooldownDuration = 10 * time.Second
+	}
+
+	// 3. SINGLE, ACCURATE RATE LIMIT ENFORCEMENT
+	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
+	if err != nil {
+		log.Printf("[ERROR] Redis rate limiter failure: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
+		return
+	}
+
+	if !allowed {
+		retrySeconds := int64(math.Max(1, math.Ceil(remaining.Seconds())))
+
+		// Set HTTP 429 Header (Requires CORS ExposeHeaders config)
+		c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
+
+		errorMsg := "You are submitting too fast."
+		if cooldownDuration == 10*time.Second {
+			errorMsg = "Arena submission cooldown active."
+		}
+
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":    errorMsg,
+			"retry_in": retrySeconds,
+		})
+		return
+	}
+
+	// 4. Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
-		// 👇 ADD THIS LINE TO PRINT THE REAL ERROR TO YOUR TERMINAL
-		fmt.Printf("[!] SUBMISSION CRASH: %v\n", err)
-
+		log.Printf("[ERROR] SUBMISSION CRASH: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process submission"})
 		return
 	}
@@ -47,12 +95,14 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 func (ctrl *SubmissionController) RunCode(c *gin.Context) {
 	var req models.RunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[ERROR] Payload binding error in RunCode: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
 		return
 	}
 
 	runID, err := ctrl.service.ProcessRun(c.Request.Context(), req)
 	if err != nil {
+		log.Printf("[ERROR] ProcessRun failure: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue run"})
 		return
 	}
@@ -65,6 +115,7 @@ func (ctrl *SubmissionController) GetRunStatus(c *gin.Context) {
 
 	result, err := ctrl.service.FetchRunStatus(c.Request.Context(), runID)
 	if err != nil {
+		log.Printf("[ERROR] FetchRunStatus failure for ID %s: %v", runID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Execution engine disconnected or malformed result"})
 		return
 	}
@@ -77,6 +128,7 @@ func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 
 	result, err := ctrl.service.FetchSubmissionStatus(c.Request.Context(), submissionID)
 	if err != nil {
+		log.Printf("[ERROR] FetchSubmissionStatus failure for ID %s: %v", submissionID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
 		return
 	}
@@ -94,13 +146,12 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 		contestID = &contestIDQuery
 	}
 
-	// Safely extract limit and offset with robust defaults
 	limitStr := c.DefaultQuery("limit", "10")
 	offsetStr := c.DefaultQuery("offset", "0")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 || limit > 100 {
-		limit = 10 // Cap at 100 to prevent malicious mega-queries
+		limit = 10
 	}
 
 	offset, err := strconv.Atoi(offsetStr)
@@ -110,6 +161,7 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 
 	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID, limit, offset)
 	if err != nil {
+		log.Printf("[ERROR] FetchSubmissionHistory failure for User %s, Problem %s: %v", userID, problemID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
 		return
 	}
@@ -120,33 +172,31 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
 	submissionID := c.Param("id")
 
-	// 1. Subscribe to the specific Redis channel for this submission
 	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), "submission_updates:"+submissionID)
 	defer cleanup()
 
-	// 2. Set headers required for Server-Sent Events
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Flush()
 
-	// 3. Listen for events and push them to the frontend
 	for {
 		select {
 		case <-c.Request.Context().Done():
-			return // Client disconnected/closed the tab
-		case msg := <-ch:
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
 			c.SSEvent("message", msg)
-			c.Writer.Flush() // Force the data down the wire immediately
-
-			// If we want, we could parse the JSON and break the loop on terminal states,
-			// but it's easier to let the React frontend call EventSource.close()
+			c.Writer.Flush()
 		}
 	}
 }
 
 func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
 	runID := c.Param("id")
+
 	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), "run_updates:"+runID)
 	defer cleanup()
 
@@ -159,7 +209,10 @@ func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
 		select {
 		case <-c.Request.Context().Done():
 			return
-		case msg := <-ch:
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
 			c.SSEvent("message", msg)
 			c.Writer.Flush()
 		}

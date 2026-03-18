@@ -59,7 +59,7 @@ func main() {
 	// --- Initialize Submissions Domain ---
 	submissionRepo := repositories.NewSubmissionRepository(database.Pool)
 	submissionService := services.NewSubmissionService(submissionRepo, redisPkg.Client)
-	submissionController := controllers.NewSubmissionController(submissionService)
+	submissionController := controllers.NewSubmissionController(submissionService, redisPkg.Client)
 
 	// --- Initialize Problems Domain ---
 	problemRepo := repositories.NewProblemRepository(database.Pool)
@@ -76,7 +76,7 @@ func main() {
 		AllowOrigins:     []string{"http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		ExposeHeaders:    []string{"Content-Length", "Retry-After"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
