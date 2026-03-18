@@ -36,21 +36,13 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	userID := c.MustGet("user_id").(string)
 	cooldownDuration := 3 * time.Second
 
-	// 2. Validate Contest ID and escalate penalty if required
+	// Determine intended context duration before validation
 	if req.ContestID != nil && *req.ContestID != "" {
-		// 🛡️ SECURITY FIX: Prevent Redis key bloat and SQLi by enforcing UUID format
-		if err := uuid.Validate(*req.ContestID); err != nil {
-			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %v", userID, *req.ContestID)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
-			return
-		}
-
-		// Context is valid; escalate the single lock duration to the arena penalty
 		cooldownDuration = 10 * time.Second
 	}
 
-	// 3. Single, Context-Aware Global Lock
-	// Using a single 'submit' action key prevents overlapping lock confusion.
+	// 2. Single, Context-Aware Global Lock applied FIRST.
+	// This prevents bad actors from bypassing the throttle by spamming invalid inputs.
 	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
 	if err != nil {
 		log.Printf("[ERROR] Redis rate limiter failure: %v", err)
@@ -72,6 +64,16 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 			"retry_in": retrySeconds,
 		})
 		return
+	}
+
+	// 3. Deep Validation (Protected by the Rate Limiter)
+	if req.ContestID != nil && *req.ContestID != "" {
+		// Input validation to prevent database UUID cast errors and ensure routing integrity.
+		if err := uuid.Validate(*req.ContestID); err != nil {
+			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %s. Error: %v", userID, *req.ContestID, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
+			return
+		}
 	}
 
 	// 4. Hand off to the Service layer
