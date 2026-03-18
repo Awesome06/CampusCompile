@@ -25,18 +25,19 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 }
 
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
-	userID := c.MustGet("user_id").(string)
-
 	// 1. SAFE PARSING FIRST
 	// Protected against memory/CPU exhaustion by the 128KB PayloadArmor middleware.
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		// Safely grab the user ID for the audit log even if the payload is garbage
+		userID := c.GetString("user_id")
 		log.Printf("[ERROR] Payload binding error from User %s: %v", userID, err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
 		return
 	}
 
-	// 2. CONTEXT DETERMINATION & VALIDATION
+	// 2. IDENTITY & CONTEXT DETERMINATION
+	userID := c.MustGet("user_id").(string)
 	cooldownDuration := 3 * time.Second
 
 	if req.ContestID != nil && *req.ContestID != "" {
