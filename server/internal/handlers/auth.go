@@ -160,7 +160,13 @@ func HandleAzureCallback(c *gin.Context) {
 	}
 
 	redisKey := fmt.Sprintf("active_session:%s", userID)
-	redisPkg.Client.Set(reqCtx, redisKey, sessionID, 72*time.Hour)
+	err = redisPkg.Client.Set(reqCtx, redisKey, sessionID, 72*time.Hour).Err()
+	if err != nil {
+		// Log the error internally and fail the login
+		log.Printf("[CRITICAL] Failed to register session for User %s: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize active session. Please try again."})
+		return
+	}
 
 	frontendRedirectURL := fmt.Sprintf("http://localhost:5173/oauth-success?token=%s&role=%s&onboarded=%t", tokenString, finalRole, isOnboarded)
 	c.Redirect(http.StatusTemporaryRedirect, frontendRedirectURL)
@@ -199,7 +205,12 @@ func CompleteOnboarding(c *gin.Context) {
 		return
 	}
 
-	redisPkg.Client.Set(c.Request.Context(), fmt.Sprintf("active_session:%s", userID), sessionID, 72*time.Hour)
+	err = redisPkg.Client.Set(c.Request.Context(), fmt.Sprintf("active_session:%s", userID), sessionID, 72*time.Hour).Err()
+	if err != nil {
+		log.Printf("[CRITICAL] Failed to register elevated session for User %s: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Profile saved, but failed to initialize active session. Please log in again."})
+		return
+	}
 
 	// Send ONE SINGLE JSON response containing everything
 	c.JSON(http.StatusOK, gin.H{

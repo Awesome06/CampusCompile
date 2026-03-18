@@ -347,7 +347,7 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 			COALESCE(t.paste_attempt, 0),
 			COALESCE(t.autotyper, 0),
 			COALESCE(t.spoof, 0),
-			COALESCE(p.plagiarism, 0)
+			COALESCE(p.plagiarism, 0),
 			COALESCE(t.routing_anomaly, 0)
 		FROM unnest($2::uuid[]) AS u(user_id)
 		LEFT JOIN TelemetryCounts t ON u.user_id = t.user_id
@@ -363,9 +363,16 @@ func (r *contestRepo) GetTelemetryAlerts(ctx context.Context, contestID string, 
 	for rows.Next() {
 		var userID string
 		var alerts models.TelemetryAlerts
-		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected, &alerts.Plagiarism, &alerts.AnomalousRouting); err == nil {
-			alertsMap[userID] = alerts
+
+		// Fast-fail on schema mismatch instead of silently ignoring it
+		if err := rows.Scan(&userID, &alerts.Total, &alerts.Blur, &alerts.PasteAttempt, &alerts.AutotyperSuspected, &alerts.VisibilitySpoofSuspected, &alerts.Plagiarism, &alerts.AnomalousRouting); err != nil {
+			return nil, fmt.Errorf("schema mismatch scanning telemetry alerts: %w", err)
 		}
+		alertsMap[userID] = alerts
+	}
+	// Catch network drops that occurred during the loop
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during telemetry iteration: %w", err)
 	}
 
 	return alertsMap, nil

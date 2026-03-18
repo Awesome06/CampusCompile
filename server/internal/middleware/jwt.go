@@ -68,14 +68,18 @@ func RequireAuth(c *gin.Context) {
 		activeSession, err := redisPkg.Client.Get(c.Request.Context(), redisKey).Result()
 
 		// 3. The Guillotine Logic
-		if err == redis.Nil || activeSession != sessionID {
-			// The token is cryptographically valid, but legally dead.
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired or superseded by a login on another device."})
+		if err == redis.Nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired. Please log in again."})
 			c.Abort()
 			return
 		} else if err != nil {
-			// Fail closed if Redis is unreachable
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify session integrity."})
+			// 2. Unexpected failure: Redis is unreachable (Fail closed)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify session integrity. Authentication server unavailable."})
+			c.Abort()
+			return
+		} else if activeSession != sessionID {
+			// 3. Cryptographically valid, but legally dead
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session superseded by a login on another device."})
 			c.Abort()
 			return
 		}

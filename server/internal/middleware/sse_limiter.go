@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,6 @@ var incrementScript = redis.NewScript(`
 
 	if current < max_conns then
 		redis.call('INCR', KEYS[1])
-		redis.call('EXPIRE', KEYS[1], 300) 
 		return 1
 	else
 		return 0
@@ -32,8 +32,6 @@ var decrementScript = redis.NewScript(`
 	local current = tonumber(redis.call('DECR', KEYS[1]) or '0')
 	if current <= 0 then
 		redis.call('DEL', KEYS[1])
-	else
-		redis.call('EXPIRE', KEYS[1], 300)
 	end
 	return 1
 `)
@@ -44,8 +42,10 @@ func RequireSSECap(maxConnections int) gin.HandlerFunc {
 		userID := c.MustGet("user_id").(string)
 		key := fmt.Sprintf("sse_count:%s", userID)
 
-		// Execute the Lua check-and-increment script
-		allowed, err := incrementScript.Run(c.Request.Context(), redisPkg.Client, []string{key}, maxConnections).Int()
+		// Capture the exact context and key outside the goroutine
+		reqCtx := c.Request.Context()
+
+		allowed, err := incrementScript.Run(reqCtx, redisPkg.Client, []string{key}, maxConnections).Int()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify connection limit"})
 			c.Abort()
@@ -58,19 +58,16 @@ func RequireSSECap(maxConnections int) gin.HandlerFunc {
 			return
 		}
 
-		// Background Cleanup Goroutine
-		// This waits silently until the client closes the browser tab or loses internet
-		go func() {
-			<-c.Request.Context().Done()
+		// Safely pass the captured context and key into the goroutine
+		go func(ctx context.Context, connectionKey string) {
+			<-ctx.Done() // Wait for this specific request's lifecycle to end
 
-			// We MUST use context.Background() here because c.Request.Context()
-			// is officially dead/canceled at this point.
-			err := decrementScript.Run(context.Background(), redisPkg.Client, []string{key}).Err()
+			// Always use context.Background() for the cleanup call since the request ctx is now dead
+			err := decrementScript.Run(context.Background(), redisPkg.Client, []string{connectionKey}).Err()
 			if err != nil {
-				// In a production environment, you might want to log this failure,
-				// though the 5-minute rolling TTL acts as an automatic failsafe.
+				log.Printf("[ERROR] Failed to decrement SSE connection count for %s: %v", connectionKey, err)
 			}
-		}()
+		}(reqCtx, key)
 
 		c.Next()
 	}
