@@ -76,7 +76,9 @@ func TrackContestIP() gin.HandlerFunc {
 
 		if result >= 3 {
 			go func(uid, cid, ip string, totalIPs int) {
-				ctx := context.Background()
+				// Enforce a strict 10-second timeout for the entire background operation
+				bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
 
 				metadata := map[string]interface{}{
 					"total_ips": totalIPs,
@@ -85,13 +87,16 @@ func TrackContestIP() gin.HandlerFunc {
 				metaBytes, _ := json.Marshal(metadata)
 
 				repo := repositories.NewContestRepository(database.Pool)
-				err := repo.LogTelemetry(ctx, cid, uid, "anomalous_routing", metaBytes)
+
+				// Pass the bounded context to Postgres
+				err := repo.LogTelemetry(bgCtx, cid, uid, "anomalous_routing", metaBytes)
 				if err != nil {
 					log.Printf("[ERROR] Failed to log IP anomaly to Postgres for %s: %v\n", uid, err)
 					return
 				}
 
-				err = redisPkg.Client.SAdd(ctx, "dirty_contests", cid).Err()
+				// Pass the bounded context to Redis
+				err = redisPkg.Client.SAdd(bgCtx, "dirty_contests", cid).Err()
 				if err != nil {
 					log.Printf("[CRITICAL] Failed to flag contest %s as dirty after IP anomaly: %v\n", cid, err)
 				} else {

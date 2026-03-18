@@ -16,6 +16,8 @@ import (
 
 var JwtSecret = []byte("super_secret_campus_key_change_me")
 
+const redisAuthTimeout = 200 * time.Millisecond
+
 func RequireAuth(c *gin.Context) {
 	var tokenString string
 	authHeader := c.GetHeader("Authorization")
@@ -70,7 +72,7 @@ func RequireAuth(c *gin.Context) {
 
 		// 🚨 CIRCUIT BREAKER: Enforce a strict 200ms timeout
 		// If Redis doesn't answer instantly, assume it's dead and fail closed to protect the Go scheduler
-		redisCtx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		redisCtx, cancel := context.WithTimeout(c.Request.Context(), redisAuthTimeout)
 		defer cancel()
 
 		activeSession, err := redisPkg.Client.Get(redisCtx, redisKey).Result()

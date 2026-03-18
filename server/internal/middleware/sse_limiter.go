@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -60,11 +61,14 @@ func RequireSSECap(maxConnections int) gin.HandlerFunc {
 		}
 
 		// Safely pass the captured context and key into the goroutine
-		go func(ctx context.Context, connectionKey string) {
-			<-ctx.Done() // Wait for this specific request's lifecycle to end
+		go func(reqCtx context.Context, connectionKey string) {
+			<-reqCtx.Done() // Wait for this specific request's lifecycle to end
 
-			// Always use context.Background() for the cleanup call since the request ctx is now dead
-			err := decrementScript.Run(context.Background(), redisPkg.Client, []string{connectionKey}).Err()
+			// Apply a strict 5-second bounded context for the cleanup
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			err := decrementScript.Run(cleanupCtx, redisPkg.Client, []string{connectionKey}).Err()
 			if err != nil {
 				log.Printf("[ERROR] Failed to decrement SSE connection count for %s: %v", connectionKey, err)
 			}
