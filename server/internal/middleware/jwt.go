@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"strings"
 
+	redisPkg "campuscompile/api/internal/redis"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 var JwtSecret = []byte("super_secret_campus_key_change_me")
@@ -46,6 +49,33 @@ func RequireAuth(c *gin.Context) {
 			c.Set("user_id", fmt.Sprintf("%v", userIDRaw))
 		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload: missing user_id"})
+			c.Abort()
+			return
+		}
+
+		// 1. Extract the Session ID from the JWT
+		sessionIDRaw, exists := claims["session_id"]
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload: missing session_id"})
+			c.Abort()
+			return
+		}
+		sessionID := fmt.Sprintf("%v", sessionIDRaw)
+		userID := fmt.Sprintf("%v", claims["user_id"])
+
+		// 2. Query Redis for the single source of truth
+		redisKey := fmt.Sprintf("active_session:%s", userID)
+		activeSession, err := redisPkg.Client.Get(c.Request.Context(), redisKey).Result()
+
+		// 3. The Guillotine Logic
+		if err == redis.Nil || activeSession != sessionID {
+			// The token is cryptographically valid, but legally dead.
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired or superseded by a login on another device."})
+			c.Abort()
+			return
+		} else if err != nil {
+			// Fail closed if Redis is unreachable
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify session integrity."})
 			c.Abort()
 			return
 		}
