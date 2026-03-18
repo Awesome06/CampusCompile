@@ -5,6 +5,7 @@ import (
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/utils"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -26,8 +27,8 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// Log internally to avoid leaking struct fields/types to the client
-		fmt.Printf("[!] Payload binding error: %v\n", err)
+		// Standardized log routing
+		log.Printf("[ERROR] Payload binding error: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
 		return
 	}
@@ -51,7 +52,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	}
 
 	if !allowed {
-		// Clamp to >= 0 and round up to avoid telling the client to retry in "0.012" seconds
+		// Clamp to >= 0 and round up
 		retrySeconds := math.Max(0, math.Ceil(remaining.Seconds()))
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":    "You are submitting too fast.",
@@ -63,7 +64,8 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	// Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
-		fmt.Printf("[!] SUBMISSION CRASH: %v\n", err)
+		// Standardized log routing
+		log.Printf("[ERROR] SUBMISSION CRASH: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process submission"})
 		return
 	}
