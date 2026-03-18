@@ -4,6 +4,7 @@ import (
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/utils"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -25,25 +26,12 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 }
 
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
-	// 1. Parse payload safely (protected by PayloadArmor middleware at 128KB max)
-	var req models.SubmitRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ERROR] Payload binding error: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
-		return
-	}
-
 	userID := c.MustGet("user_id").(string)
-	cooldownDuration := 3 * time.Second
 
-	// Determine intended context duration before validation
-	if req.ContestID != nil && *req.ContestID != "" {
-		cooldownDuration = 10 * time.Second
-	}
-
-	// 2. Single, Context-Aware Global Lock applied FIRST.
-	// This prevents bad actors from bypassing the throttle by spamming invalid inputs.
-	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
+	// 1. PRE-PARSE LOCKING: Apply the base 3s lock immediately.
+	// This ensures that even if the user sends malformed JSON, they consume their rate limit,
+	// preventing a JSON-parsing CPU exhaustion attack.
+	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", 3*time.Second)
 	if err != nil {
 		log.Printf("[ERROR] Redis rate limiter failure: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
@@ -52,27 +40,39 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 
 	if !allowed {
 		retrySeconds := int64(math.Max(1, math.Ceil(remaining.Seconds())))
+
+		// Set HTTP 429 Header (Requires CORS ExposeHeaders config)
 		c.Header("Retry-After", strconv.FormatInt(retrySeconds, 10))
 
-		errorMsg := "You are submitting too fast."
-		if cooldownDuration == 10*time.Second {
-			errorMsg = "Arena submission cooldown active."
-		}
-
 		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error":    errorMsg,
+			"error":    "You are submitting too fast.",
 			"retry_in": retrySeconds,
 		})
 		return
 	}
 
-	// 3. Deep Validation (Protected by the Rate Limiter)
+	// 2. SAFE PARSING: Bounded by PayloadArmor middleware
+	var req models.SubmitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[ERROR] Payload binding error from User %s: %v", userID, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
+		return
+	}
+
+	// 3. CONTEXTUAL EXTENSION: Validate and escalate the penalty if in a contest
 	if req.ContestID != nil && *req.ContestID != "" {
-		// Input validation to prevent database UUID cast errors and ensure routing integrity.
 		if err := uuid.Validate(*req.ContestID); err != nil {
 			log.Printf("[WARN] Invalid Contest ID format attempted by user %s: %s. Error: %v", userID, *req.ContestID, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contest identifier format."})
 			return
+		}
+
+		// Atomically extend the existing base lock to the full 10-second arena penalty
+		lockKey := fmt.Sprintf("cooldown:submit:%s", userID)
+		if err := ctrl.rdb.Expire(c.Request.Context(), lockKey, 10*time.Second).Err(); err != nil {
+			log.Printf("[ERROR] Failed to extend contest rate limit for user %s: %v", userID, err)
+			// We log the error but allow the submission to proceed with the 3s lock,
+			// rather than failing a legitimate contest submission over a Redis TTL update.
 		}
 	}
 
