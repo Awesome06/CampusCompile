@@ -115,6 +115,7 @@ func main() {
 		// The Bouncer: You must pass demographic clearance to enter the arena or view the leaderboard
 		arena := protected.Group("/contests/:id")
 		arena.Use(middleware.RequireContestClearance())
+		arena.Use(middleware.TrackContestIP())
 		{
 			arena.GET("", contestController.GetContestDetails)
 			arena.POST("/register", contestController.RegisterForContest)
