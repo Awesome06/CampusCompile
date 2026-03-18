@@ -87,7 +87,15 @@ func RequireSSECap(streamType string, maxConnections int) gin.HandlerFunc {
 
 				case <-ticker.C:
 					// Refresh the TTL to prevent mid-stream expiration
-					redisPkg.Client.Expire(context.Background(), connectionKey, 12*time.Hour)
+					// Apply a bounded context so a hanging Redis connection doesn't leak the goroutine
+					refreshCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+					err := redisPkg.Client.Expire(refreshCtx, connectionKey, 12*time.Hour).Err()
+					if err != nil {
+						log.Printf("[WARNING] Failed to refresh SSE heartbeat TTL for %s: %v", connectionKey, err)
+					}
+
+					cancel() // Clean up the context immediately after the call
 				}
 			}
 		}(reqCtx, key)

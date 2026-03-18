@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,22 @@ import (
 	redisPkg "campuscompile/api/internal/redis"
 	"campuscompile/api/internal/repositories"
 )
+
+// Helper to sanitize IP addresses before they hit the database
+func maskIP(ip string) string {
+	if strings.Contains(ip, ".") { // IPv4
+		parts := strings.Split(ip, ".")
+		if len(parts) == 4 {
+			return fmt.Sprintf("%s.%s.%s.***", parts[0], parts[1], parts[2])
+		}
+	} else if strings.Contains(ip, ":") { // IPv6
+		parts := strings.Split(ip, ":")
+		if len(parts) >= 3 {
+			return fmt.Sprintf("%s:%s:%s::***", parts[0], parts[1], parts[2])
+		}
+	}
+	return "***.***.***.***" // Fallback
+}
 
 // The IP Tracking Lua Script
 // KEYS[1] = contest_ips:{contest_id}:{user_id} (The ZSET holding unique IPs)
@@ -80,9 +97,12 @@ func TrackContestIP() gin.HandlerFunc {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 
+				// Mask the IP to prevent PII leakage in the database
+				maskedIP := maskIP(ip)
+
 				metadata := map[string]interface{}{
 					"total_ips": totalIPs,
-					"latest_ip": ip,
+					"latest_ip": maskedIP,
 				}
 				metaBytes, _ := json.Marshal(metadata)
 

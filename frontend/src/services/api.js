@@ -29,7 +29,7 @@ api.interceptors.response.use(
     }
 
     const status = error.response.status;
-    const data = error.response.data;
+    const data = error.response.data || {};
 
     // 2. The Guillotine (401 Unauthorized)
     if (status === 401) {

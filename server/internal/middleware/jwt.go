@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -16,7 +17,22 @@ import (
 
 var JwtSecret = []byte("super_secret_campus_key_change_me")
 
-const redisAuthTimeout = 200 * time.Millisecond
+const defaultRedisAuthTimeout = 1 * time.Second
+
+var redisAuthTimeout = loadRedisAuthTimeout()
+
+func loadRedisAuthTimeout() time.Duration {
+	envVal, ok := os.LookupEnv("REDIS_AUTH_TIMEOUT")
+	if !ok || strings.TrimSpace(envVal) == "" {
+		return defaultRedisAuthTimeout
+	}
+	d, err := time.ParseDuration(envVal)
+	if err != nil || d <= 0 {
+		fmt.Printf("invalid REDIS_AUTH_TIMEOUT %q, using default %s\n", envVal, defaultRedisAuthTimeout)
+		return defaultRedisAuthTimeout
+	}
+	return d
+}
 
 func RequireAuth(c *gin.Context) {
 	var tokenString string
