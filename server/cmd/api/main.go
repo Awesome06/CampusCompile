@@ -38,6 +38,7 @@ func main() {
 
 	// 2. INITIALIZE SERVICES
 	database.InitDB(dbHost)
+	middleware.InitSecurityConfig()
 	redisPkg.InitRedis(redisHost)
 	handlers.InitOAuthConfig()
 	storage.InitS3()

@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,65 +19,63 @@ import (
 	"campuscompile/api/internal/repositories"
 )
 
-// Helper 1: One-way cryptographic hash for Redis (Data Minimization)
-func hashIP(ip string) string {
-	// Load dynamically from the environment
-	salt := os.Getenv("IP_HASH_SALT")
+var ipHashSalt string
 
-	if salt == "" {
-		// Warn loudly in your aggregators (Datadog, Cloudwatch, etc.)
-		log.Printf("[WARNING] IP_HASH_SALT environment variable is missing! Falling back to default. This is insecure for production.")
-		salt = "fallback_insecure_campuscompile_salt"
+// InitSecurityConfig enforces fail-fast at boot if the environment is insecure.
+// Call this from main.go alongside your database initialization.
+func InitSecurityConfig() {
+	ipHashSalt = os.Getenv("IP_HASH_SALT")
+	if ipHashSalt == "" {
+		log.Fatal("FATAL STARTUP ERROR: IP_HASH_SALT environment variable is missing. Refusing to start with insecure telemetry tracking.")
 	}
+}
 
-	hash := sha256.Sum256([]byte(ip + salt))
+// Helper 1: One-way cryptographic hash for Redis
+func hashIP(ip string) string {
+	hash := sha256.Sum256([]byte(ip + ipHashSalt))
 	return hex.EncodeToString(hash[:])
 }
 
-// Helper 2: Visual mask for Postgres metadata (Professor UI)
-func maskIP(ip string) string {
-	if strings.Contains(ip, ".") { // IPv4
-		parts := strings.Split(ip, ".")
-		if len(parts) == 4 {
-			return fmt.Sprintf("%s.%s.%s.***", parts[0], parts[1], parts[2])
-		}
-	} else if strings.Contains(ip, ":") { // IPv6
-		parts := strings.Split(ip, ":")
-		if len(parts) >= 3 {
-			return fmt.Sprintf("%s:%s:%s::***", parts[0], parts[1], parts[2])
-		}
+// Helper 2: Robust network masking using Go's native IP parser
+func maskIP(ipStr string) string {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return "***.***.***.***" // Fallback for completely malformed headers
 	}
-	return "***.***.***.***" // Fallback
+
+	// Safely extract and mask IPv4
+	if ip4 := ip.To4(); ip4 != nil {
+		return fmt.Sprintf("%d.%d.%d.***", ip4[0], ip4[1], ip4[2])
+	}
+
+	// Safely extract and mask IPv6
+	// Standard privacy masking keeps the /48 routing prefix (the first 6 bytes)
+	return fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x::***", ip[0], ip[1], ip[2], ip[3], ip[4], ip[5])
 }
 
 // The IP Tracking Lua Script
-// KEYS[1] = contest_ips:{contest_id}:{user_id} (The ZSET holding unique IPs)
-// KEYS[2] = ip_alerted:{contest_id}:{user_id} (The circuit breaker flag)
+// KEYS[1] = contest_ips:{contest_id}:{user_id}
+// KEYS[2] = ip_alerted:{contest_id}:{user_id}
 // ARGV[1] = Current Unix Timestamp
 // ARGV[2] = The Client IP Address
-// ARGV[3] = TTL in seconds (e.g., 172800 for 48 hours to safely cover multi-day hackathons)
+// ARGV[3] = TTL in seconds (172800)
 var ipTrackerScript = redis.NewScript(`
-	-- 1. Add the IP to the Sorted Set. If it already exists, just updates the timestamp score.
 	redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
 	redis.call('EXPIRE', KEYS[1], ARGV[3])
 	
-	-- 2. Check the total number of unique IPs recorded
 	local unique_ips = redis.call('ZCARD', KEYS[1])
 	
-	-- 3. If the threshold is breached, check the circuit breaker
 	if unique_ips >= 3 then
 		local already_alerted = redis.call('GET', KEYS[2])
 		if not already_alerted then
-			-- Flip the circuit breaker so we only alert the DB once per contest
 			redis.call('SET', KEYS[2], '1', 'EX', ARGV[3])
-			return unique_ips -- Return the count to trigger the Go DB alert
+			return unique_ips 
 		end
 	end
 	
-	return 0 -- No alert needed
+	return 0
 `)
 
-// TrackContestIP monitors for rapid geographical/network shifting during a live contest.
 func TrackContestIP() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.MustGet("user_id").(string)
@@ -93,7 +91,6 @@ func TrackContestIP() gin.HandlerFunc {
 		alertKey := fmt.Sprintf("ip_alerted:%s:%s", contestID, userID)
 		now := time.Now().Unix()
 
-		// Expanded to 48 hours to safely cover multi-day hackathons without needing a DB lookup
 		ttlSeconds := 172800
 		hashedIP := hashIP(clientIP)
 
@@ -106,17 +103,15 @@ func TrackContestIP() gin.HandlerFunc {
 
 		if err != nil {
 			log.Printf("[ERROR] Redis IP tracking script failed for User %s in Contest %s: %v", userID, contestID, err)
-			c.Next() // Still fail-open so the student can submit code
+			c.Next()
 			return
 		}
 
 		if result >= 3 {
 			go func(uid, cid, ip string, totalIPs int) {
-				// Enforce a strict 10-second timeout for the entire background operation
 				bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 
-				// Mask the IP to prevent PII leakage in the database
 				maskedIP := maskIP(ip)
 
 				metadata := map[string]interface{}{
@@ -127,14 +122,12 @@ func TrackContestIP() gin.HandlerFunc {
 
 				repo := repositories.NewContestRepository(database.Pool)
 
-				// Pass the bounded context to Postgres
 				err := repo.LogTelemetry(bgCtx, cid, uid, "anomalous_routing", metaBytes)
 				if err != nil {
 					log.Printf("[ERROR] Failed to log IP anomaly to Postgres for %s: %v\n", uid, err)
 					return
 				}
 
-				// Pass the bounded context to Redis
 				err = redisPkg.Client.SAdd(bgCtx, "dirty_contests", cid).Err()
 				if err != nil {
 					log.Printf("[CRITICAL] Failed to flag contest %s as dirty after IP anomaly: %v\n", cid, err)

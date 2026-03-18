@@ -69,10 +69,8 @@ func RequireSSECap(streamType string, maxConnections int) gin.HandlerFunc {
 
 		// Unified 429 Response Contract
 		if allowed == 0 {
-			c.Header("Retry-After", "5") // Tell the browser/client to back off for 5 seconds
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":    fmt.Sprintf("Too many active %s streams. Please close other tabs.", streamType),
-				"retry_in": 5, // Match the exact JSON contract used by the submission controller
+				"error": fmt.Sprintf("Too many active %s streams. Please close other tabs to continue.", streamType),
 			})
 			c.Abort()
 			return
