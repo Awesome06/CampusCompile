@@ -5,6 +5,7 @@ import (
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/utils"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,29 +26,36 @@ func NewSubmissionController(service services.SubmissionService, rdb *redis.Clie
 func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		// Log internally to avoid leaking struct fields/types to the client
+		fmt.Printf("[!] Payload binding error: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Please verify your submission format."})
 		return
 	}
 
 	userID := c.MustGet("user_id").(string)
 
-	// 3. Determine Context-Aware Cooldown
+	// Determine Context-Aware Cooldown and isolated action namespace
 	cooldownDuration := 3 * time.Second
+	action := "submit:practice"
+
 	if req.ContestID != nil && *req.ContestID != "" {
 		cooldownDuration = 10 * time.Second
+		action = fmt.Sprintf("submit:contest:%s", *req.ContestID)
 	}
 
-	// 4. Enforce Redis Rate Limit
-	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
+	// Enforce Redis Rate Limit
+	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, action, cooldownDuration)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify submission rate limit"})
 		return
 	}
 
 	if !allowed {
+		// Clamp to >= 0 and round up to avoid telling the client to retry in "0.012" seconds
+		retrySeconds := math.Max(0, math.Ceil(remaining.Seconds()))
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":    "You are submitting too fast.",
-			"retry_in": remaining.Seconds(), // Provide float seconds to frontend
+			"retry_in": retrySeconds,
 		})
 		return
 	}
@@ -55,9 +63,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	// Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
-		// 👇 ADD THIS LINE TO PRINT THE REAL ERROR TO YOUR TERMINAL
 		fmt.Printf("[!] SUBMISSION CRASH: %v\n", err)
-
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process submission"})
 		return
 	}
