@@ -3,10 +3,17 @@ import traceback
 import sys
 import threading
 import time # NEW: For Redis backoff
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from runner import grade_submission
 from moss_auditor import run_moss_audit
 import redis
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('queue_listener')
 
 # Import our robust, thread-safe configuration elements
 from config import (
@@ -59,7 +66,7 @@ def process_submission(submission_id):
         submission = cursor.fetchone()
 
         if not submission:
-            print(f"[!] Submission {submission_id} not found in database.")
+            logger.error(f"[!] Submission {submission_id} not found in database.")
             return
 
         cursor.execute("""
@@ -73,10 +80,10 @@ def process_submission(submission_id):
         if len(test_cases) == 0:
             cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'No Test Cases' WHERE submission_id = %s", (submission_id,))
             conn.commit()
-            print(f"[!] System Error: No test cases found for Problem {submission.get('problem_id')}")
+            logger.error(f"[!] System Error: No test cases found for Problem {submission.get('problem_id')}")
             return
 
-        print(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
+        logger.info(f"[*] Grading Submission {submission_id} across {len(test_cases)} test cases...")
 
         lang = submission.get('language')
         base_time_ms = submission.get('time_limit_ms', 2000)
@@ -138,16 +145,16 @@ def process_submission(submission_id):
 
                 redis_client.zincrby(f"contest:leaderboard:{contest_id}", score_increment, user_id)
                 redis_client.sadd("dirty_contests", contest_id)
-                print(f"[+] ICPC Score Updated for {user_id}. (+1 Solve, {penalty_minutes:.2f} Penalty Mins)")
+                logger.info(f"[+] ICPC Score Updated for {user_id}. (+1 Solve, {penalty_minutes:.2f} Penalty Mins)")
 
         redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
             "status": final_verdict, "message": final_message
         }))
         
-        print(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")
+        logger.info(f"[+] Submission {submission_id} completed. Final Verdict: {final_verdict}\n")
 
     except ConfigurationError as ce:
-        print(f"\n[!] INFRASTRUCTURE ERROR: {ce}")
+        logger.error(f"\n[!] INFRASTRUCTURE ERROR: {ce}")
         if conn and cursor:
             try:
                 conn.rollback()
@@ -164,8 +171,8 @@ def process_submission(submission_id):
             print(f"[!] Failed to publish SE to Redis: {r_err}")
         
     except Exception as e:
-        print(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.process_submission:")
-        traceback.print_exc() 
+        logger.error(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.process_submission:")
+        logger.error(traceback.format_exc()) 
         
         if conn and cursor:
             try:
@@ -173,14 +180,14 @@ def process_submission(submission_id):
                 cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'System Error: An unexpected issue occurred during grading.' WHERE submission_id = %s", (submission_id,))
                 conn.commit()
             except Exception as db_err:
-                print(f"[!] Failed to log SE crash to DB: {db_err}")
+                logger.error(f"[!] Failed to log SE crash to DB: {db_err}")
         
         try:
             redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
                 "status": "SE", "message": "System Error: An unexpected issue occurred during grading."
             }))
         except Exception as r_err:
-            print(f"[!] Failed to publish crash SE to Redis: {r_err}")
+            logger.error(f"[!] Failed to publish crash SE to Redis: {r_err}")
             
     finally:
         if cursor:
