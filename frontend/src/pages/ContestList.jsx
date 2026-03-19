@@ -18,7 +18,7 @@ export default function ContestList() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [offset, setOffset] = useState(0);
-  const limit = 20;
+  const limit = 10;
   const [hasMore, setHasMore] = useState(true);
 
   const handleRegister = async (contestId) => {

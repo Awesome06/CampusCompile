@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import api from '../services/api'; 
+import api from '../services/api';
 import Button from '../components/ui/Button';
 
 export default function ProblemList() {
@@ -9,7 +9,7 @@ export default function ProblemList() {
   const [viewMode, setViewMode] = useState('public'); // 'public' or 'faculty'
   const [searchQuery, setSearchQuery] = useState('');
   const [offset, setOffset] = useState(0);
-  const limit = 20;
+  const limit = 25;
   const [hasMore, setHasMore] = useState(true);
   const navigate = useNavigate();
 
@@ -19,7 +19,7 @@ export default function ProblemList() {
   const fetchProblems = (currentOffset, query) => {
     if (currentOffset === 0) setLoading(true);
     const endpoint = viewMode === 'faculty' ? '/faculty/problems' : '/problems';
-    
+
     api.get(endpoint, { params: { limit, offset: currentOffset, search: query } })
       .then((response) => {
         const data = response.data || [];
@@ -51,14 +51,14 @@ export default function ProblemList() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      
+
       {/* Header & Tabs */}
       <div className="relative flex justify-center items-center mb-8 h-10 w-full">
-        
+
         <div className="absolute left-0 w-1/3 min-w-[200px]">
-          <input 
+          <input
             type="text"
-            placeholder="Search problems..." 
+            placeholder="Search problems..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#1e1e1e] border border-dark-border rounded-md px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition shadow-sm text-sm"
@@ -68,13 +68,13 @@ export default function ProblemList() {
         {/* If the user is a professor/admin, show tabs to toggle views */}
         {canAddProblem ? (
           <div className="flex bg-[#1e1e1e] rounded-lg p-1 border border-dark-border shadow-lg">
-            <button 
+            <button
               onClick={() => setViewMode('public')}
               className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'public' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
             >
               Published Problems
             </button>
-            <button 
+            <button
               onClick={() => setViewMode('faculty')}
               className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'faculty' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
             >
@@ -84,11 +84,11 @@ export default function ProblemList() {
         ) : (
           <h2 className="text-3xl font-bold text-white whitespace-nowrap">Problem Repository</h2>
         )}
-        
+
         {/* Right-Pinned Button */}
         {canAddProblem && (
           <div className="absolute right-0">
-            <Button 
+            <Button
               onClick={() => navigate('/add-problem')}
               variant="success"
               size="sm"
@@ -101,7 +101,7 @@ export default function ProblemList() {
       </div>
 
       <div className="bg-[#1e1e1e] border border-dark-border rounded-lg p-4 shadow-lg">
-        
+
         <div className="flex justify-between items-center py-3 border-b border-dark-border text-gray-400 font-semibold px-2">
           <span className="w-12 text-left">#</span>
           <span className="w-1/2">Title</span>
@@ -110,21 +110,21 @@ export default function ProblemList() {
         </div>
 
         {loading && <div className="text-center py-8 text-gray-400 animate-pulse">Loading arena data...</div>}
-        
+
         {!loading && problems.length === 0 && (
           <div className="text-center py-10 text-gray-500 italic border-b border-dark-border last:border-0">
             {viewMode === 'faculty' ? "You haven't forged any problems yet." : "No problems have been forged yet."}
           </div>
         )}
-        
+
         {!loading && problems.map((prob, index) => (
           <div key={prob.problem_id} className="flex justify-between items-center py-4 text-white border-b border-dark-border last:border-0 hover:bg-[#2a2a2a] px-2 rounded transition relative">
             <span className="w-12 text-left font-bold text-gray-500">{index + 1}</span>
-            
+
             {/* Title & Status Badges */}
             <div className="w-1/2 font-medium flex items-center gap-3">
               <span className="truncate">{prob.title}</span>
-              
+
               {/* Faculty Workspace Status Indicators */}
               {viewMode === 'faculty' && (
                 prob.is_public ? (
@@ -140,17 +140,16 @@ export default function ProblemList() {
             </div>
 
             {/* Difficulty */}
-            <span className={`w-1/4 font-semibold ${
-                prob.difficulty === 'Easy' ? 'text-green-400' : 
-                prob.difficulty === 'Medium' ? 'text-yellow-400' : 
-                'text-red-400'
+            <span className={`w-1/4 font-semibold ${prob.difficulty === 'Easy' ? 'text-green-400' :
+                prob.difficulty === 'Medium' ? 'text-yellow-400' :
+                  'text-red-400'
               }`}>
               {prob.difficulty}
             </span>
 
             {/* Actions */}
             <span className="w-1/4 text-right flex justify-end gap-2">
-               {viewMode === 'faculty' && (
+              {viewMode === 'faculty' && (
                 <Link to={`/edit-problem/${prob.problem_id}`} className="bg-[#2a2a2a] px-4 py-1.5 rounded border border-dark-border hover:bg-gray-700 transition text-sm font-bold text-gray-300 shadow-sm">
                   Edit
                 </Link>
@@ -161,7 +160,7 @@ export default function ProblemList() {
             </span>
           </div>
         ))}
-        
+
         {!loading && hasMore && problems.length > 0 && (
           <div className="text-center py-6 mt-4">
             <Button onClick={handleLoadMore} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a]">

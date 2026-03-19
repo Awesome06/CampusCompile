@@ -18,7 +18,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
   const [submitStatus, setSubmitStatus] = useState(''); 
   const [history, setHistory] = useState([]);
   const [historyOffset, setHistoryOffset] = useState(0);
-  const historyLimit = 20;
+  const historyLimit = 10;
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   
   // Console State
