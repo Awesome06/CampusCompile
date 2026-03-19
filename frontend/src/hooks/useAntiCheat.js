@@ -135,5 +135,5 @@ export default function useAntiCheat(contestId, isContest) {
     }
   }, [isContest, dispatchTelemetry]);
 
-  return { logPasteAttempt, logKeystroke };
+  return { logPasteAttempt, logKeystroke, dispatchTelemetry };
 }
