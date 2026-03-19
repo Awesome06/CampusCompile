@@ -161,14 +161,14 @@ def process_submission(submission_id):
                 cursor.execute("UPDATE submissions SET status = 'SE', error_logs = 'System Error: Infrastructure temporarily unavailable.' WHERE submission_id = %s", (submission_id,))
                 conn.commit()
             except Exception as db_err:
-                print(f"[!] Failed to log SE to DB: {db_err}")
+                logger.error(f"[!] Failed to log SE to DB: {db_err}")
                 
         try:
             redis_client.publish(f"submission_updates:{submission_id}", json.dumps({
                 "status": "SE", "message": "System Error: Infrastructure temporarily unavailable."
             }))
         except Exception as r_err:
-            print(f"[!] Failed to publish SE to Redis: {r_err}")
+            logger.error(f"[!] Failed to publish SE to Redis: {r_err}")
         
     except Exception as e:
         logger.error(f"\n[!] CRITICAL PYTHON CRASH in queue_listener.process_submission:")
@@ -201,12 +201,12 @@ def route_job(submission_data):
         if submission_data.get('job_type') == 'moss_audit':
             contest_id = submission_data.get('contest_id')
             problem_id = submission_data.get('problem_id')
-            print(f"\n[+] Picked up MOSS Audit Job for Problem: {problem_id}")
+            logger.info(f"[+] Picked up MOSS Audit Job for Problem: {problem_id}")
             run_moss_audit(contest_id)
             
         elif submission_data.get('is_custom'):
             run_id = submission_data.get('run_id')
-            print(f"\n[+] Processing Custom Run: {run_id}")
+            logger.info(f"[+] Processing Custom Run: {run_id}")
 
             redis_client.publish(f"run_updates:{run_id}", json.dumps({"status": "Running"}))
             
@@ -245,12 +245,12 @@ def route_job(submission_data):
         else:
             sub_id = submission_data.get('submission_id')
             if sub_id:
-                print(f"\n[+] Picked up submission ID: {sub_id}")
+                logger.info(f"[+] Picked up submission ID: {sub_id}")
                 process_submission(sub_id)
                 
     except Exception as e:
-        print(f"\n[!] CRITICAL THREAD CRASH handling job:")
-        traceback.print_exc()
+        logger.error(f"[!] CRITICAL THREAD CRASH handling job:")
+        logger.error(traceback.format_exc())
         
         try:
             if submission_data and submission_data.get('is_custom'):
@@ -264,7 +264,7 @@ def route_job(submission_data):
                     redis_client.set(f"run_result:{run_id}", error_payload, ex=600)
                     redis_client.publish(f"run_updates:{run_id}", error_payload)
         except Exception as recovery_err:
-            print(f"[!] Failed to push terminal error state for custom run: {recovery_err}")
+            logger.error(f"[!] Failed to push terminal error state for custom run: {recovery_err}")
             
     finally:
         job_semaphore.release()
@@ -272,7 +272,7 @@ def route_job(submission_data):
 def start_worker():
     """Main daemon loop that initializes infrastructure and pulls from Redis."""
     try:
-        print("[*] Performing startup infrastructure checks...")
+        logger.info("[*] Performing startup infrastructure checks...")
         
         if not redis_client.ping():
             raise ConfigurationError("Redis ping failed.")
@@ -289,7 +289,7 @@ def start_worker():
         sys.stderr.write(f"FATAL STARTUP ERROR: Infrastructure connection failed: {e}\n")
         sys.exit(1)
     
-    print(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
+    logger.info(f"[*] Worker started. Listening to Redis queue: '{QUEUE_NAME}'...")
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         while True:
@@ -305,22 +305,22 @@ def start_worker():
                     job_semaphore.release()
                     
             except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as net_err:
-                print(f"[!] Redis network error: {net_err}. Retrying in 5 seconds...")
+                logger.error(f"[!] Redis network error: {net_err}. Retrying in 5 seconds...")
                 time.sleep(5) 
                 job_semaphore.release()
                 
             except redis.exceptions.RedisError as cmd_err:
-                print(f"[!] Redis command/data error: {cmd_err}. Rate-limiting logs. Retrying in 2 seconds...")
+                logger.error(f"[!] Redis command/data error: {cmd_err}. Rate-limiting logs. Retrying in 2 seconds...")
                 time.sleep(2) 
                 job_semaphore.release()
                 
             except json.JSONDecodeError as je:
-                print(f"[!] Dropping malformed JSON payload from queue: {je}")
+                logger.error(f"[!] Dropping malformed JSON payload from queue: {je}")
                 job_semaphore.release()
                 
             except Exception as e:
-                print(f"[!] Unexpected error in main worker loop: {e}")
-                traceback.print_exc()
+                logger.error(f"[!] Unexpected error in main worker loop: {e}")
+                logger.error(traceback.format_exc())
                 time.sleep(1)
                 job_semaphore.release()
 

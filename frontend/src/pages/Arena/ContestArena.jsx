@@ -6,7 +6,7 @@ import SubmissionHistory from './SubmissionHistory';
 import CodeEditor from './CodeEditor';
 import ExecutionConsole from './ExecutionConsole';
 import useExecutionEngine, { boilerplates } from '../../hooks/useExecutionEngine';
-import { ArrowLeft, LogOut, ShieldAlert, AlertTriangle, Maximize, Minimize } from 'lucide-react'; 
+import { ArrowLeft, LogOut, ShieldAlert, AlertTriangle, Maximize } from 'lucide-react';
 import useAntiCheat from '../../hooks/useAntiCheat';
 
 export default function ContestArena() {

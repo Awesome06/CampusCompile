@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Maximize, Minimize, AlertTriangle, CheckCircle } from 'lucide-react'; 
+import { LogOut, Maximize, AlertTriangle, CheckCircle } from 'lucide-react';
 import useAntiCheat from '../../hooks/useAntiCheat'; 
 
 export default function ContestArenaLayout() {
