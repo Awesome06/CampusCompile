@@ -60,25 +60,11 @@ func (s *contestService) FetchContests(ctx context.Context, user models.UserDemo
 	case "professor":
 		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID, limit, offset, searchQuery)
 	default:
-		rawContests, err = s.repo.GetPublicContests(ctx, limit, offset, searchQuery)
+		rawContests, err = s.repo.GetPublicContests(ctx, &user, limit, offset, searchQuery)
 	}
 
 	if err != nil {
 		return nil, err
-	}
-
-	if user.Role == "student" {
-		var filtered []models.Contest
-		for _, c := range rawContests {
-			if c.AccessRules == nil {
-				filtered = append(filtered, c)
-				continue
-			}
-			if isEligible(c.AccessRules, user) {
-				filtered = append(filtered, c)
-			}
-		}
-		return filtered, nil
 	}
 
 	return rawContests, nil
@@ -251,27 +237,6 @@ func (s *contestService) FetchContestProblems(ctx context.Context, contestID, us
 	return s.repo.GetContestProblems(ctx, contestID, userID)
 }
 
-func isEligible(rules *models.ContestAccessRules, user models.UserDemographics) bool {
-	if !containsStr(rules.AllowedCourses, user.Course) {
-		return false
-	}
-	if !containsStr(rules.AllowedDepartments, user.Department) {
-		return false
-	}
-	if !containsStr(rules.AllowedBatches, user.Batch) {
-		return false
-	}
-	if !containsStr(rules.AllowedSections, user.Section) {
-		return false
-	}
-	if !containsStr(rules.AllowedStudentGroups, user.StudentGroup) {
-		return false
-	}
-	if !containsInt(rules.AllowedGraduationYears, user.GraduationYear) {
-		return false
-	}
-	return true
-}
 
 func (s *contestService) DeleteContest(ctx context.Context, contestID string) error {
 	err := s.repo.DeleteContest(ctx, contestID)
@@ -348,26 +313,3 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 	}
 }
 
-func containsStr(slice []string, val string) bool {
-	if len(slice) == 0 {
-		return true
-	}
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}
-
-func containsInt(slice []int, val int) bool {
-	if len(slice) == 0 {
-		return true
-	}
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}

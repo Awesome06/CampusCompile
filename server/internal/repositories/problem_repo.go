@@ -4,8 +4,6 @@ import (
 	"campuscompile/api/internal/models"
 	"context"
 	"fmt"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,23 +20,6 @@ type ProblemRepository interface {
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	DeleteTestCases(ctx context.Context, problemID string) error
 	InsertTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
-}
-
-var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
-
-func formatPrefixTSQuery(query string) string {
-	words := strings.Fields(query)
-	var validWords []string
-	for _, w := range words {
-		cleanW := nonAlphanumericRegex.ReplaceAllString(w, "")
-		if cleanW != "" {
-			validWords = append(validWords, cleanW+":*")
-		}
-	}
-	if len(validWords) > 0 {
-		return strings.Join(validWords, " & ")
-	}
-	return ""
 }
 
 type problemRepo struct {
@@ -68,8 +49,8 @@ func (r *problemRepo) GetProblems(ctx context.Context, limit, offset int, search
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
-		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
-		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, created_at DESC`
+		query += ` AND fts @@ to_tsquery('simple', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('simple', ` + paramStr + `)) DESC, created_at DESC`
 		args = append(args, tsQuery)
 		argIdx++
 	} else {
