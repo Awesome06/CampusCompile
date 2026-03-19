@@ -179,7 +179,7 @@ func (r *contestRepo) GetUserProfiles(ctx context.Context, userIDs []string) (ma
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT user_id, username, role FROM users WHERE user_id = ANY($1::uuid[])
+		SELECT user_id, COALESCE(username, 'Anonymous'), COALESCE(role, 'student') FROM users WHERE user_id = ANY($1::uuid[])
 	`, userIDs)
 
 	if err != nil {
