@@ -39,8 +39,8 @@ func Setup(
 		protected.GET("/submissions/:id", submissionController.GetSubmissionStatus)
 		protected.GET("/submissions/history/:id", submissionController.GetSubmissionHistory)
 
-		protected.GET("/submissions/stream/:id", middleware.RequireSSECap("submission", 3), submissionController.StreamSubmissionStatus)
-		protected.GET("/run/stream/:id", middleware.RequireSSECap("run", 3), submissionController.StreamRunStatus)
+		protected.GET("/submissions/stream/:id", middleware.RequireSSECap("submission", 5), submissionController.StreamSubmissionStatus)
+		protected.GET("/run/stream/:id", middleware.RequireSSECap("run", 5), submissionController.StreamRunStatus)
 
 		// --- CONTEST ROUTES (PHASE 3) ---
 		// ANY logged-in user can view the list of upcoming/past contests
@@ -60,7 +60,7 @@ func Setup(
 
 			// 3. High-Frequency Endpoints (Untracked)
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
-			arena.GET("/leaderboard/stream", middleware.RequireSSECap("leaderboard", 2), contestController.StreamLeaderboard)
+			arena.GET("/leaderboard/stream", middleware.RequireSSECap("leaderboard", 5), contestController.StreamLeaderboard)
 			arena.POST("/telemetry", jsonArmor, contestController.LogTelemetry)
 			arena.POST("/telemetry/batch", jsonArmor, contestController.LogTelemetryBatch)
 		}

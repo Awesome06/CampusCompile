@@ -33,6 +33,7 @@ export default function Leaderboard() {
         
         setLeaderboard(res.data.leaderboard || []);
         setAuditStatus(currentAuditStatus);
+        setConnectionError(false); // Drop the error immediately on successful GET
         setLoading(false); // Drop the loading screen immediately
 
         // 2. Only open the SSE stream if the contest is NOT finalized
@@ -54,6 +55,10 @@ export default function Leaderboard() {
             } catch (err) {
               console.error("Failed to parse leaderboard data:", err);
             }
+          };
+
+          source.onopen = () => {
+            setConnectionError(false);
           };
 
           source.onerror = (err) => {

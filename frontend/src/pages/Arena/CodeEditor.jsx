@@ -60,6 +60,7 @@ export default function CodeEditor({
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyX, () => {});
 
       const domNode = editor.getDomNode();
+      if (!domNode) return; // Prevent null pointer exception if component unmounts early
       const textarea = domNode.querySelector('textarea');
 
       // Helper function to attach and track DOM events

@@ -9,10 +9,6 @@ from runner import grade_submission
 from moss_auditor import run_moss_audit
 import redis
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger('queue_listener')
 
 # Import our robust, thread-safe configuration elements
@@ -325,4 +321,8 @@ def start_worker():
                 job_semaphore.release()
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     start_worker()
