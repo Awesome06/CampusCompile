@@ -29,6 +29,9 @@ export default function Leaderboard() {
       try {
         // 1. Fetch the static leaderboard state first
         const res = await api.get(`/contests/${contestId}/leaderboard`);
+        
+        if (!isMounted) return; // Prevent state update on unmounted component
+        
         const currentAuditStatus = res.data.audit_status || 'pending';
         
         setLeaderboard(res.data.leaderboard || []);
@@ -67,6 +70,7 @@ export default function Leaderboard() {
           };
         }
       } catch (err) {
+        if (!isMounted) return; // Prevent state update on unmounted component
         console.error("Failed to initialize leaderboard:", err);
         setConnectionError(true);
         setLoading(false);
