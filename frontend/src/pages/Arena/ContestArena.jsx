@@ -80,33 +80,28 @@ export default function ContestArena() {
     }
 
     // PROCTORING LOGIC
-    if (!isElevated && hasEnteredArena) {
-      const handleVisibilityChange = () => {
-        if (document.hidden) {
-          setTabViolations(prev => {
-            const newCount = prev + 1;
-            dispatchTelemetry("visibility_spoof_suspected", {
-              action: "focus_lost",
-              warning_count: newCount
-            });
-            return newCount;
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabViolations(prev => {
+          const newCount = prev + 1;
+          dispatchTelemetry("visibility_spoof_suspected", {
+            action: "focus_lost",
+            warning_count: newCount
           });
-        }
-      };
+          return newCount;
+        });
+      }
+    };
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "You are actively in a contest. Leaving will discard unsaved code.";
+      return e.returnValue;
+    };
+
+    if (!isElevated && hasEnteredArena) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
-
-      const handleBeforeUnload = (e) => {
-        e.preventDefault();
-        e.returnValue = "You are actively in a contest. Leaving will discard unsaved code.";
-        return e.returnValue;
-      };
       window.addEventListener('beforeunload', handleBeforeUnload);
-
-      return () => {
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-        clearInterval(interval);
-      };
     }
 
     return () => {
@@ -115,6 +110,8 @@ export default function ContestArena() {
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [isElevated, hasEnteredArena, isFullscreen, dispatchTelemetry]);
 
@@ -282,7 +279,7 @@ export default function ContestArena() {
           <CodeEditor 
             code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
             boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
-            isContest={!isElevated && hasEnteredArena} contestId={contestId} isProcessing={isProcessing}
+            isContest={!isElevated} contestId={contestId} isProcessing={isProcessing}
           />
           <ExecutionConsole 
             isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}

@@ -80,33 +80,28 @@ export default function ContestArenaLayout() {
     }
 
     // PROCTORING LOGIC (Only applies to students AFTER they start)
-    if (!isElevated && hasEnteredArena) {
-      const handleVisibilityChange = () => {
-        if (document.hidden) {
-          setTabViolations(prev => {
-            const newCount = prev + 1;
-            dispatchTelemetry("visibility_spoof_suspected", {
-              action: "focus_lost",
-              warning_count: newCount
-            });
-            return newCount;
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabViolations(prev => {
+          const newCount = prev + 1;
+          dispatchTelemetry("visibility_spoof_suspected", {
+            action: "focus_lost",
+            warning_count: newCount
           });
-        }
-      };
+          return newCount;
+        });
+      }
+    };
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "You are actively in a contest. Leaving will discard unsaved code.";
+      return e.returnValue;
+    };
+
+    if (!isElevated && hasEnteredArena) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
-
-      const handleBeforeUnload = (e) => {
-        e.preventDefault();
-        e.returnValue = "You are actively in a contest. Leaving will discard unsaved code.";
-        return e.returnValue;
-      };
       window.addEventListener('beforeunload', handleBeforeUnload);
-
-      return () => {
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-        clearInterval(interval);
-      };
     }
 
     return () => {
@@ -115,6 +110,8 @@ export default function ContestArenaLayout() {
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [isElevated, hasEnteredArena, isFullscreen, dispatchTelemetry]);
 

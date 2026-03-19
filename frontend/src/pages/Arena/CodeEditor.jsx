@@ -13,18 +13,32 @@ export default function CodeEditor({
   const editorRef = useRef(null);
   const isInternalChange = useRef(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  
+  // Anti-Cheat memory leak prevention refs
+  const disposablesRef = useRef([]);
+  const domListenersRef = useRef([]);
+
+  // Generic cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disposablesRef.current.forEach(d => { if (d && d.dispose) d.dispose(); });
+      domListenersRef.current.forEach(({ element, type, handler, capture }) => {
+        if (element) element.removeEventListener(type, handler, capture);
+      });
+      disposablesRef.current = [];
+      domListenersRef.current = [];
+    };
+  }, []);
 
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
 
     if (isContest) {
-      editor.onKeyDown((e) => {
+      disposablesRef.current.push(editor.onKeyDown((e) => {
         logKeystroke(); 
-      });
+      }));
 
       editor.updateOptions({ contextmenu: false });
-
-      const domNode = editor.getDomNode();
 
       const preventPaste = (e) => {
         e.preventDefault();
@@ -45,25 +59,34 @@ export default function CodeEditor({
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyC, () => {});
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyX, () => {});
 
+      const domNode = editor.getDomNode();
+      const textarea = domNode.querySelector('textarea');
+
+      // Helper function to attach and track DOM events
+      const attachEvent = (element, type, handler) => {
+        if (!element) return;
+        element.addEventListener(type, handler, true);
+        domListenersRef.current.push({ element, type, handler, capture: true });
+      };
+
       // 2. Intercept native DOM events on the wrapper
-      domNode.addEventListener('paste', preventPaste, true);
-      domNode.addEventListener('drop', preventPaste, true);
-      domNode.addEventListener('copy', preventCopy, true);
-      domNode.addEventListener('cut', preventCopy, true);
+      attachEvent(domNode, 'paste', preventPaste);
+      attachEvent(domNode, 'drop', preventPaste);
+      attachEvent(domNode, 'copy', preventCopy);
+      attachEvent(domNode, 'cut', preventCopy);
 
       // 3. Intercept Monaco's hidden textarea (where edits actually occur)
-      const textarea = domNode.querySelector('textarea');
       if (textarea) {
-        textarea.addEventListener('paste', preventPaste, true);
-        textarea.addEventListener('drop', preventPaste, true);
-        textarea.addEventListener('copy', preventCopy, true);
-        textarea.addEventListener('cut', preventCopy, true);
+        attachEvent(textarea, 'paste', preventPaste);
+        attachEvent(textarea, 'drop', preventPaste);
+        attachEvent(textarea, 'copy', preventCopy);
+        attachEvent(textarea, 'cut', preventCopy);
       }
 
       // 4. Final safety net: Monaco's internal onDidPaste event
-      editor.onDidPaste(() => {
+      disposablesRef.current.push(editor.onDidPaste(() => {
         logPasteAttempt();
-      });
+      }));
     }
   };
 
