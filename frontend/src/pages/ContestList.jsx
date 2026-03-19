@@ -262,7 +262,7 @@ export default function ContestList() {
           </div>
         ))}
 
-        {!loading && hasMore && filteredContests.length > 0 && (
+        {!loading && hasMore && contests.length > 0 && (
           <div className="text-center py-6 mt-4">
             <Button onClick={handleLoadMore} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a]">
               Load More

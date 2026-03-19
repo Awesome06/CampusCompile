@@ -101,8 +101,17 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 		GraduationYear: getInt(c, "graduation_year"),
 	}
 
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
 	searchQuery := c.Query("search")
 
 	// 3. Fetch cleanly filtered contests

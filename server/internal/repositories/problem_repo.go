@@ -3,6 +3,7 @@ package repositories
 import (
 	"campuscompile/api/internal/models"
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -66,12 +67,16 @@ func (r *problemRepo) GetProblems(ctx context.Context, limit, offset int, search
 
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
-		query += ` AND fts @@ to_tsquery('english', $` + string(rune('0'+argIdx)) + `)`
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, created_at DESC`
 		args = append(args, tsQuery)
 		argIdx++
+	} else {
+		query += ` ORDER BY created_at DESC`
 	}
 
-	query += ` ORDER BY created_at DESC LIMIT $` + string(rune('0'+argIdx)) + ` OFFSET $` + string(rune('0'+argIdx+1))
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -172,12 +177,16 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
-		query += ` AND fts @@ to_tsquery('english', $` + string(rune('0'+argIdx)) + `)`
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, created_at DESC`
 		args = append(args, tsQuery)
 		argIdx++
+	} else {
+		query += ` ORDER BY created_at DESC`
 	}
 
-	query += ` ORDER BY created_at DESC LIMIT $` + string(rune('0'+argIdx)) + ` OFFSET $` + string(rune('0'+argIdx+1))
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.Query(ctx, query, args...)

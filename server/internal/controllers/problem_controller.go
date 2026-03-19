@@ -53,8 +53,17 @@ func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) GetProblems(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
 	searchQuery := c.Query("search")
 
 	problems, err := ctrl.service.FetchProblems(c.Request.Context(), limit, offset, searchQuery)
@@ -129,8 +138,17 @@ func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
 	searchQuery := c.Query("search")
 
 	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), c.MustGet("user_id").(string), limit, offset, searchQuery)
