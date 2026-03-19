@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import Button from '../../components/ui/Button';
 import useAntiCheat from '../../hooks/useAntiCheat'; 
@@ -12,6 +12,7 @@ export default function CodeEditor({
   const { logPasteAttempt, logKeystroke } = useAntiCheat(contestId, isContest);
   const editorRef = useRef(null);
   const isInternalChange = useRef(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -36,10 +37,33 @@ export default function CodeEditor({
         e.stopPropagation();
       };
 
+      // 1. Block native keyboard shortcuts (Ctrl+V / Cmd+V)
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV, () => {
+        logPasteAttempt();
+      });
+      // Optionally block copy/cut shortcuts
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyC, () => {});
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyX, () => {});
+
+      // 2. Intercept native DOM events on the wrapper
       domNode.addEventListener('paste', preventPaste, true);
       domNode.addEventListener('drop', preventPaste, true);
       domNode.addEventListener('copy', preventCopy, true);
       domNode.addEventListener('cut', preventCopy, true);
+
+      // 3. Intercept Monaco's hidden textarea (where edits actually occur)
+      const textarea = domNode.querySelector('textarea');
+      if (textarea) {
+        textarea.addEventListener('paste', preventPaste, true);
+        textarea.addEventListener('drop', preventPaste, true);
+        textarea.addEventListener('copy', preventCopy, true);
+        textarea.addEventListener('cut', preventCopy, true);
+      }
+
+      // 4. Final safety net: Monaco's internal onDidPaste event
+      editor.onDidPaste(() => {
+        logPasteAttempt();
+      });
     }
   };
 
@@ -49,9 +73,7 @@ export default function CodeEditor({
   };
 
   const handleReset = () => {
-    if (window.confirm("Are you sure you want to reset the editor? Your current code will be permanently lost.")) {
-      setCode(boilerplates[language]);
-    }
+    setShowResetModal(true);
   };
 
   // Only inject external code (like restoring history or resetting)
@@ -70,6 +92,36 @@ export default function CodeEditor({
 
   return (
     <>
+      {showResetModal && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center backdrop-blur-sm">
+          <div className="bg-dark-surface border border-dark-border p-6 rounded-lg max-w-sm w-full shadow-2xl">
+            <h3 className="text-xl font-bold mb-4 text-white flex items-center gap-2">
+              <RefreshCw className="text-red-500" size={24} /> Reset Editor?
+            </h3>
+            <p className="text-gray-300 mb-6 text-sm">
+              Are you sure you want to reset the editor to the default template? Your current code will be permanently lost.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setShowResetModal(false)}
+                className="px-4 py-2 rounded text-sm font-bold text-gray-300 hover:bg-gray-700 transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  setCode(boilerplates[language]);
+                  setShowResetModal(false);
+                }}
+                className="px-4 py-2 rounded text-sm font-bold bg-red-600 hover:bg-red-500 text-white transition"
+              >
+                Reset Code
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center p-2 bg-[#1e1e1e] border-b border-dark-border z-10">
         <div className="flex items-center gap-3">
           <select 

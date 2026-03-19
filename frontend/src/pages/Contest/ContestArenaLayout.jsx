@@ -8,32 +8,76 @@ export default function ContestArenaLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   
-  const hubRef = useRef(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  
-  // Tracks if the student has actively started the contest
-  const [hasEnteredArena, setHasEnteredArena] = useState(false); 
-  const [showFinishModal, setShowFinishModal] = useState(false);
-  const [tabViolations, setTabViolations] = useState(0); 
+  const getIsFullscreen = () => !!(
+    document.fullscreenElement ||
+    document.mozFullScreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement
+  );
+
+  const [isFullscreen, setIsFullscreen] = useState(getIsFullscreen);
   
   const userRole = localStorage.getItem('role');
   const isElevated = userRole === 'admin' || userRole === 'professor';
+
+  // Tracks if the student has actively started the contest
+  const [hasEnteredArena, setHasEnteredArena] = useState(!isElevated && getIsFullscreen()); 
+  const [showFinishModal, setShowFinishModal] = useState(false);
+  const [tabViolations, setTabViolations] = useState(0); 
+  
   const isLeaderboard = location.pathname.includes('leaderboard');
 
   // Anti-cheat only boots up for students AFTER they enter the arena
   const { dispatchTelemetry } = useAntiCheat(contestId, !isElevated && hasEnteredArena);
 
+  // Track time spent outside fullscreen
+  const leaveTimeRef = useRef(null);
+  const [timeAway, setTimeAway] = useState(0);
+
   useEffect(() => {
     const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = !!document.fullscreenElement;
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        document.mozFullScreenElement ||
+        document.webkitFullscreenElement ||
+        document.msFullscreenElement
+      );
+
       setIsFullscreen(isCurrentlyFullscreen);
       
-      // If a student successfully enters fullscreen, lock them into the arena phase
-      if (isCurrentlyFullscreen && !isElevated) {
-        setHasEnteredArena(true);
+      if (!isElevated) {
+        if (isCurrentlyFullscreen && !hasEnteredArena) {
+          // First time entering the arena
+          setHasEnteredArena(true);
+        } else if (isCurrentlyFullscreen && hasEnteredArena && leaveTimeRef.current) {
+          // Returning to the arena after dropping fullscreen
+          const durationSecs = Math.floor((Date.now() - leaveTimeRef.current) / 1000);
+          dispatchTelemetry("fullscreen_dropped", { duration_seconds: durationSecs });
+          leaveTimeRef.current = null;
+          setTimeAway(0);
+        } else if (!isCurrentlyFullscreen && hasEnteredArena) {
+          // Dropping out of the arena
+          leaveTimeRef.current = Date.now();
+          setTimeAway(0);
+        }
       }
     };
+    
+    // Listen for standard and vendor-prefixed fullscreen events
     document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    // Live timer for the UI Lockout screen
+    let interval;
+    if (!isElevated && hasEnteredArena && !isFullscreen) {
+      interval = setInterval(() => {
+        if (leaveTimeRef.current) {
+          setTimeAway(Math.floor((Date.now() - leaveTimeRef.current) / 1000));
+        }
+      }, 1000);
+    }
 
     // PROCTORING LOGIC (Only applies to students AFTER they start)
     if (!isElevated && hasEnteredArena) {
@@ -61,21 +105,49 @@ export default function ContestArenaLayout() {
       return () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('beforeunload', handleBeforeUnload);
+        clearInterval(interval);
       };
     }
 
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [isElevated, hasEnteredArena, dispatchTelemetry]);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      clearInterval(interval);
+    };
+  }, [isElevated, hasEnteredArena, isFullscreen, dispatchTelemetry]);
 
   const toggleFullscreen = async () => {
     try {
-      if (!document.fullscreenElement) {
-        if (hubRef.current?.requestFullscreen) {
-          await hubRef.current.requestFullscreen();
+      const element = document.documentElement;
+      
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        document.mozFullScreenElement ||
+        document.webkitFullscreenElement ||
+        document.msFullscreenElement
+      );
+
+      if (!isCurrentlyFullscreen) {
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+        } else if (element.msRequestFullscreen) {
+          await element.msRequestFullscreen();
+        } else if (element.mozRequestFullScreen) {
+          await element.mozRequestFullScreen();
+        } else if (element.webkitRequestFullscreen) {
+          await element.webkitRequestFullscreen();
         }
       } else {
         if (document.exitFullscreen) {
           await document.exitFullscreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+          await document.mozCancelFullScreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
         }
       }
     } catch (err) {
@@ -91,31 +163,34 @@ export default function ContestArenaLayout() {
     navigate('/contests'); // Return to workspace
   };
 
-  // THE LOCKOUT SCREEN: Only triggers if they DROPPED OUT of fullscreen AFTER starting
-  if (!isElevated && hasEnteredArena && !isFullscreen) {
-    return (
-      <div className="fixed inset-0 h-screen w-screen bg-red-950 text-white flex flex-col items-center justify-center p-8 z-[9999]">
-        <AlertTriangle size={80} className="text-yellow-500 mb-6 animate-pulse" />
-        <h1 className="text-4xl font-bold mb-4 text-center">Environment Lockout</h1>
-        <p className="text-xl mb-8 text-center text-red-200 max-w-2xl">
-          You have exited the secure Arena. To maintain academic integrity, you must remain in Fullscreen mode. Continuing to leave the environment will flag your submission.
-        </p>
-        <button 
-          onClick={toggleFullscreen} 
-          className="bg-white text-red-900 px-8 py-4 rounded font-bold text-xl hover:bg-gray-200 transition shadow-lg"
-        >
-          Acknowledge & Return to Arena
-        </button>
-      </div>
-    );
-  }
-
   // Normal Layout Render
   return (
     <div 
-      ref={hubRef} 
-      className={`bg-dark-bg text-white relative flex flex-col ${isFullscreen ? 'h-screen w-screen overflow-hidden' : 'min-h-screen'}`}
+      className={`bg-dark-bg text-white relative flex flex-col ${isFullscreen || (!isElevated && hasEnteredArena && !isFullscreen) ? 'h-screen w-screen overflow-hidden' : 'min-h-screen'}`}
     >
+      {/* THE LOCKOUT SCREEN */}
+      {!isElevated && hasEnteredArena && !isFullscreen && (
+        <div className="fixed inset-0 h-screen w-screen bg-red-950 text-white flex flex-col items-center justify-center p-8 z-[9999]">
+          <AlertTriangle size={80} className="text-yellow-500 mb-6 animate-pulse" />
+          <h1 className="text-4xl font-bold mb-4 text-center">Environment Lockout</h1>
+          <p className="text-xl mb-4 text-center text-red-200 max-w-2xl">
+            You have exited the secure Arena. To maintain academic integrity, you must remain in Fullscreen mode. Continuing to leave the environment will flag your submission.
+          </p>
+          
+          <div className="bg-red-900 border border-red-500 rounded-lg p-4 mb-8 text-center shadow-xl">
+            <span className="block text-red-300 font-mono text-sm tracking-widest uppercase mb-1">Time Outside Arena</span>
+            <span className="text-5xl font-mono font-bold text-white tracking-widest">{timeAway}s</span>
+            <span className="block text-red-400 text-xs mt-2 italic">This incident is being recorded</span>
+          </div>
+
+          <button 
+            onClick={toggleFullscreen} 
+            className="bg-white text-red-900 px-8 py-4 rounded font-bold text-xl hover:bg-gray-200 transition shadow-lg"
+          >
+            Acknowledge & Return to Arena
+          </button>
+        </div>
+      )}
       {/* Finish Contest Confirmation Modal */}
       {showFinishModal && (
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center backdrop-blur-sm">
@@ -187,13 +262,6 @@ export default function ContestArenaLayout() {
           {/* Escape Hatch (Admins/Professors Only) */}
           {isElevated && (
             <>
-              <button 
-                onClick={toggleFullscreen}
-                className="flex items-center gap-2 bg-blue-900/50 hover:bg-blue-600 text-blue-200 hover:text-white px-4 py-2 rounded border border-blue-700 transition-colors text-sm font-bold"
-              >
-                {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
-                {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Demo'}
-              </button>
               <Link 
                 to="/contests" 
                 className="flex items-center gap-2 bg-red-900/50 hover:bg-red-600 text-red-200 hover:text-white px-4 py-2 rounded border border-red-700 transition-colors shadow-lg text-sm font-bold tracking-wider"

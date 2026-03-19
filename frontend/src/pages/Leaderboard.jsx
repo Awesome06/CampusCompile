@@ -16,6 +16,7 @@ export default function Leaderboard() {
 
   useEffect(() => {
     let source = null;
+    let isMounted = true;
 
     const initializeLeaderboard = async () => {
       const token = localStorage.getItem('token');
@@ -35,7 +36,7 @@ export default function Leaderboard() {
         setLoading(false); // Drop the loading screen immediately
 
         // 2. Only open the SSE stream if the contest is NOT finalized
-        if (currentAuditStatus !== 'completed' && currentAuditStatus !== 'failed') {
+        if (isMounted && currentAuditStatus !== 'completed' && currentAuditStatus !== 'failed') {
           const sseUrl = `${api.defaults.baseURL}/contests/${contestId}/leaderboard/stream?token=${token}`;
           source = new EventSource(sseUrl);
 
@@ -71,6 +72,7 @@ export default function Leaderboard() {
 
     // Cleanup function strictly closes the memory leak on unmount
     return () => {
+      isMounted = false;
       if (source) {
         source.close();
       }
