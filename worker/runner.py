@@ -239,15 +239,17 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 return {"verdict": "SE", "message": f"Empty status code for Test Case {idx+1}", "actual_output": ""}
                 
             status_code = int(status_code_str)
+
+            tc_type = "Hidden Test Case" if is_hidden and str(problem_id) != "custom" else "Test Case"
             
             if status_code in [124, 137, 143]: 
-                return {"verdict": "TLE", "message": f"Time Limit Exceeded on Test Case {idx+1}", "actual_output": ""}
+                return {"verdict": "TLE", "message": f"Time Limit Exceeded on {tc_type} {idx+1}", "actual_output": ""}
             elif status_code != 0:
                 if str(problem_id) == "custom":
                     err_log = read_file_safely(err_file)
-                    return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
+                    return {"verdict": "RE", "message": f"Runtime Error on {tc_type} {idx+1}.\n{err_log}", "actual_output": ""}
                 else:
-                    return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}. (Stack trace hidden)", "actual_output": ""}
+                    return {"verdict": "RE", "message": f"Runtime Error on {tc_type} {idx+1}. (Stack trace hidden)", "actual_output": ""}
                 
             verdict = evaluate_output(out_file, expected_path)
             if verdict != "AC":

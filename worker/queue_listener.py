@@ -62,12 +62,11 @@ def process_submission(submission_id):
             print(f"[!] Submission {submission_id} not found in database.")
             return
 
-        # 👇 SECURITY FIX: Added is_hidden and ordered by test_case_id
         cursor.execute("""
             SELECT test_case_id, input_s3_key, expected_s3_key, is_hidden
             FROM test_cases 
             WHERE problem_id = %s
-            ORDER BY test_case_id
+            ORDER BY input_s3_key ASC 
         """, (submission.get('problem_id'),))
         test_cases = cursor.fetchall()
 

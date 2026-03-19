@@ -89,6 +89,7 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	rows, err := r.db.Query(ctx, `
 		SELECT input_s3_key, expected_s3_key 
 		FROM test_cases WHERE problem_id = $1 AND is_hidden = false
+		ORDER BY input_s3_key ASC
 	`, problemID)
 
 	var samples []map[string]interface{}
@@ -154,7 +155,7 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string) (
 }
 
 func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {
-	rows, err := r.db.Query(ctx, "SELECT is_hidden, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1", problemID)
+	rows, err := r.db.Query(ctx, "SELECT is_hidden, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1 ORDER BY input_s3_key ASC", problemID)
 	if err != nil {
 		return nil, err
 	}
