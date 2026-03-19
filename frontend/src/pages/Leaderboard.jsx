@@ -15,35 +15,65 @@ export default function Leaderboard() {
   const isElevated = userRole === 'admin' || userRole === 'professor';
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setConnectionError(true);
-      setLoading(false);
-      return;
-    }
+    let source = null;
 
-    const sseUrl = `${api.defaults.baseURL}/contests/${contestId}/leaderboard/stream?token=${token}`;
-    const source = new EventSource(sseUrl);
-
-    source.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        setLeaderboard(data.leaderboard || []);
-        setAuditStatus(data.audit_status || 'pending');
+    const initializeLeaderboard = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setConnectionError(true);
         setLoading(false);
-        setConnectionError(false);
+        return;
+      }
+
+      try {
+        // 1. Fetch the static leaderboard state first
+        const res = await api.get(`/contests/${contestId}/leaderboard`);
+        const currentAuditStatus = res.data.audit_status || 'pending';
+        
+        setLeaderboard(res.data.leaderboard || []);
+        setAuditStatus(currentAuditStatus);
+        setLoading(false); // Drop the loading screen immediately
+
+        // 2. Only open the SSE stream if the contest is NOT finalized
+        if (currentAuditStatus !== 'completed' && currentAuditStatus !== 'failed') {
+          const sseUrl = `${api.defaults.baseURL}/contests/${contestId}/leaderboard/stream?token=${token}`;
+          source = new EventSource(sseUrl);
+
+          source.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              setLeaderboard(data.leaderboard || []);
+              setAuditStatus(data.audit_status || 'pending');
+              setConnectionError(false);
+
+              // 3. Auto-close the connection if the stream broadcasts a completion status
+              if (data.audit_status === 'completed' || data.audit_status === 'failed') {
+                source.close();
+              }
+            } catch (err) {
+              console.error("Failed to parse leaderboard data:", err);
+            }
+          };
+
+          source.onerror = (err) => {
+            console.error("SSE Connection Error. Retrying...", err);
+            setConnectionError(true);
+          };
+        }
       } catch (err) {
-        console.error("Failed to parse leaderboard data:", err);
+        console.error("Failed to initialize leaderboard:", err);
+        setConnectionError(true);
+        setLoading(false);
       }
     };
 
-    source.onerror = (err) => {
-      console.error("SSE Connection Error. Retrying...", err);
-      setConnectionError(true);
-    };
+    initializeLeaderboard();
 
+    // Cleanup function strictly closes the memory leak on unmount
     return () => {
-      source.close();
+      if (source) {
+        source.close();
+      }
     };
   }, [contestId]);
 
