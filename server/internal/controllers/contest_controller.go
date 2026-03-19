@@ -160,6 +160,7 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 
 	auditStatus, leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err != nil {
+		log.Printf("[CRITICAL ERROR] Failed to FetchEnrichedLeaderboard for contest %s: %v", contestID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load leaderboard"})
 		return
 	}

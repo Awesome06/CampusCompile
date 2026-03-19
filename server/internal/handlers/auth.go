@@ -118,8 +118,15 @@ func HandleAzureCallback(c *gin.Context) {
 	}
 
 	initialOnboarded := false
+	var autoUsername *string
+
 	if assignedRole == "professor" || assignedRole == "admin" {
 		initialOnboarded = true // Auto-skip onboarding for faculty
+		
+		// Automatically Assign the first part of their email address before @ with . replaced by whitespace
+		emailPrefix := strings.Split(emailLower, "@")[0]
+		spacedPrefix := strings.ReplaceAll(emailPrefix, ".", " ")
+		autoUsername = &spacedPrefix
 	}
 
 	// Define pointers to handle PostgreSQL NULL values safely
@@ -130,14 +137,15 @@ func HandleAzureCallback(c *gin.Context) {
 
 	// Expanded RETURNING clause to fetch demographic data on login
 	err = database.Pool.QueryRow(reqCtx, `
-		INSERT INTO users (provider_id, email, real_name, role, is_onboarded)
-		VALUES ($1, $2, $3, CAST($4 AS user_role), $5)
+		INSERT INTO users (provider_id, email, real_name, username, role, is_onboarded)
+		VALUES ($1, $2, $3, $4, CAST($5 AS user_role), $6)
 		ON CONFLICT (email) 
 		DO UPDATE 
 			SET provider_id = EXCLUDED.provider_id, 
-			real_name = EXCLUDED.real_name
+			real_name = EXCLUDED.real_name,
+			username = COALESCE(users.username, EXCLUDED.username)
 		RETURNING user_id, role::text, is_onboarded, course, department, graduation_year, batch, section, student_group;
-	`, msUser.ID, emailLower, msUser.DisplayName, assignedRole, initialOnboarded).Scan(
+	`, msUser.ID, emailLower, msUser.DisplayName, autoUsername, assignedRole, initialOnboarded).Scan(
 		&userID, &finalRole, &isOnboarded,
 		&course, &department, &graduationYear, &batch, &section, &studentGroup,
 	)
