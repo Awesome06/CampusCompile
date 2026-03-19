@@ -14,7 +14,7 @@ export default function ContestArena() {
   const { currentUser } = useAuth();
   const [leftTab, setLeftTab] = useState('description');
   
-  // 👇 Connect the Brain and pass the contestId
+  // Connect the Brain and pass the contestId
   const {
     problem, code, setCode, language, setLanguage, submitStatus, history,
     isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
@@ -25,10 +25,9 @@ export default function ContestArena() {
   if (!problem) return <div className="flex justify-center items-center h-screen bg-dark-bg text-white text-xl font-mono">Loading Contest Arena...</div>;
 
   return (
-    // 👇 2. Changed h-[calc(100vh-61px)] to h-screen
-    <div className="flex flex-col h-screen w-full font-sans relative overflow-hidden bg-dark-bg">
+    <div className="flex flex-col h-full w-full font-sans relative overflow-hidden bg-dark-bg">
       
-      {/* 👇 3. UPGRADED TOP BANNER */}
+      {/* 3. UPGRADED TOP BANNER */}
       <div className="bg-[#1a1a1a] border-b border-dark-border px-6 py-3 flex justify-between items-center shadow-md z-20">
         
         <div className="flex items-center gap-6">
@@ -82,7 +81,7 @@ export default function ContestArena() {
           <CodeEditor 
             code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
             boilerplates={boilerplates} onRun={handleRunCode} onSubmit={handleSubmit}
-            isContest={true} contestId={contestId} isProcessing={isProcessing} // 👈 Passed down
+            isContest={true} contestId={contestId} isProcessing={isProcessing}
           />
           <ExecutionConsole 
             isConsoleOpen={isConsoleOpen} setIsConsoleOpen={setIsConsoleOpen}

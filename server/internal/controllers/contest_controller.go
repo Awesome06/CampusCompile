@@ -355,6 +355,7 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 	contestID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string) // 1. Extract the role
 
 	var payload models.BatchTelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -362,8 +363,13 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 		return
 	}
 
-	// Fire and forget: Loop through the events in a background goroutine
-	// Added error logging to ensure silent failures are caught
+	// 2. ISOLATE TELEMETRY: Drop the batch silently for faculty
+	if userRole == "admin" || userRole == "professor" {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored_for_faculty", "count": 0})
+		return
+	}
+
+	// 3. Fire and forget for students
 	go func() {
 		for _, event := range payload.Events {
 			err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
