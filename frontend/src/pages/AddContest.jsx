@@ -8,6 +8,12 @@ export default function AddContest() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [availableProblems, setAvailableProblems] = useState([]);
+  
+  const [fetchingProblems, setFetchingProblems] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 20;
+  const [hasMore, setHasMore] = useState(true);
 
   // The master payload
   const [formData, setFormData] = useState({
@@ -27,14 +33,34 @@ export default function AddContest() {
     problems: [] // Array of { problem_id, points_value }
   });
 
-  // Fetch the professor's problems when they reach Step 3
+  const loadProblems = (currentOffset, query) => {
+    setFetchingProblems(true);
+    api.get('/faculty/problems', { params: { limit, offset: currentOffset, search: query } })
+      .then(res => {
+        const data = res.data || [];
+        setAvailableProblems(prev => currentOffset === 0 ? data : [...prev, ...data]);
+        setHasMore(data.length === limit);
+      })
+      .catch(err => console.error("Failed to fetch problems", err))
+      .finally(() => setFetchingProblems(false));
+  };
+
   useEffect(() => {
-    if (step === 3 && availableProblems.length === 0) {
-      api.get('/faculty/problems')
-        .then(res => setAvailableProblems(res.data || []))
-        .catch(err => console.error("Failed to fetch problems", err));
+    if (step === 3) {
+      const timer = setTimeout(() => {
+        setOffset(0);
+        setHasMore(true);
+        loadProblems(0, searchQuery);
+      }, 400);
+      return () => clearTimeout(timer);
     }
-  }, [step]);
+  }, [step, searchQuery]);
+
+  const handleLoadMore = () => {
+    const nextOffset = offset + limit;
+    setOffset(nextOffset);
+    loadProblems(nextOffset, searchQuery);
+  };
 
   // Handle standard inputs
   const handleChange = (e) => {
@@ -200,11 +226,24 @@ export default function AddContest() {
             <h3 className="text-xl font-bold text-white border-b border-dark-border pb-2">Step 3: Arena Setup</h3>
             <p className="text-sm text-gray-400 mb-4">Select the problems you want to feature in this contest and assign point values.</p>
 
+            <div className="mb-4">
+              <input 
+                type="text" 
+                placeholder="Search your workspace..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full p-3 rounded bg-dark-surface border border-dark-border text-white focus:outline-none focus:border-blue-500 transition shadow-sm text-sm" 
+              />
+            </div>
+
             <div className="max-h-96 overflow-y-auto pr-2 space-y-3">
-              {availableProblems.length === 0 ? (
-                <p className="text-center text-gray-500 italic py-10">No problems found in your workspace. You need to forge problems first!</p>
+              {fetchingProblems && offset === 0 ? (
+                 <p className="text-center text-gray-400 py-10 animate-pulse">Loading workspace...</p>
+              ) : availableProblems.length === 0 ? (
+                <p className="text-center text-gray-500 italic py-10">No problems found matching this search in your workspace. You need to forge problems first!</p>
               ) : (
-                availableProblems.map(prob => {
+                <>
+                  {availableProblems.map(prob => {
                   const isSelected = formData.problems.some(p => p.problem_id === prob.problem_id);
                   const selectedData = formData.problems.find(p => p.problem_id === prob.problem_id);
                   
@@ -231,7 +270,16 @@ export default function AddContest() {
                       )}
                     </div>
                   )
-                })
+                })}
+                  
+                {!fetchingProblems && hasMore && availableProblems.length > 0 && (
+                  <div className="text-center py-2 mt-4">
+                    <Button onClick={handleLoadMore} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a] text-sm py-1.5 px-6">
+                      Load More
+                    </Button>
+                  </div>
+                )}
+                </>
               )}
             </div>
           </div>

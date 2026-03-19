@@ -3,7 +3,7 @@ import Editor from '@monaco-editor/react';
 import api from '../../services/api';
 import Button from '../../components/ui/Button';
 
-export default function SubmissionHistory({ history, setCode, setLanguage }) {
+export default function SubmissionHistory({ history, setCode, setLanguage, hasMoreHistory, loadMoreHistory }) {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -42,6 +42,13 @@ export default function SubmissionHistory({ history, setCode, setLanguage }) {
             ))}
           </tbody>
         </table>
+        {hasMoreHistory && history.length > 0 && (
+          <div className="text-center py-4 border-t border-dark-border bg-[#1e1e1e]">
+            <Button onClick={loadMoreHistory} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a] text-sm py-1.5 px-6">
+              Load More
+            </Button>
+          </div>
+        )}
       </div>
 
       {isModalOpen && selectedSubmission && (

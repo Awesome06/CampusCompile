@@ -7,33 +7,64 @@ export default function ProblemList() {
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('public'); // 'public' or 'faculty'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 20;
+  const [hasMore, setHasMore] = useState(true);
   const navigate = useNavigate();
 
   const userRole = localStorage.getItem('role');
   const canAddProblem = userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'professor';
 
-  useEffect(() => {
-    setLoading(true);
-    // Dynamically switch the API endpoint based on the selected tab
+  const fetchProblems = (currentOffset, query) => {
+    if (currentOffset === 0) setLoading(true);
     const endpoint = viewMode === 'faculty' ? '/faculty/problems' : '/problems';
     
-    api.get(endpoint)
+    api.get(endpoint, { params: { limit, offset: currentOffset, search: query } })
       .then((response) => {
-        setProblems(response.data);
+        const data = response.data || [];
+        setProblems(prev => currentOffset === 0 ? data : [...prev, ...data]);
+        setHasMore(data.length === limit);
         setLoading(false);
       })
       .catch((error) => {
         console.error("Error fetching problems:", error);
         setLoading(false);
       });
-  }, [viewMode]);
+  };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setOffset(0);
+      setHasMore(true);
+      fetchProblems(0, searchQuery);
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, viewMode]);
+
+  const handleLoadMore = () => {
+    const nextOffset = offset + limit;
+    setOffset(nextOffset);
+    fetchProblems(nextOffset, searchQuery);
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
       
       {/* Header & Tabs */}
-      <div className="relative flex justify-center items-center mb-8 h-10">
+      <div className="relative flex justify-center items-center mb-8 h-10 w-full">
         
+        <div className="absolute left-0 w-1/3 min-w-[200px]">
+          <input 
+            type="text"
+            placeholder="Search problems..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#1e1e1e] border border-dark-border rounded-md px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition shadow-sm text-sm"
+          />
+        </div>
+
         {/* If the user is a professor/admin, show tabs to toggle views */}
         {canAddProblem ? (
           <div className="flex bg-[#1e1e1e] rounded-lg p-1 border border-dark-border shadow-lg">
@@ -130,6 +161,14 @@ export default function ProblemList() {
             </span>
           </div>
         ))}
+        
+        {!loading && hasMore && problems.length > 0 && (
+          <div className="text-center py-6 mt-4">
+            <Button onClick={handleLoadMore} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a]">
+              Load More
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

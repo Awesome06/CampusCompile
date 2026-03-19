@@ -10,12 +10,12 @@ import (
 
 type ProblemRepository interface {
 	CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error
-	GetProblems(ctx context.Context) ([]map[string]interface{}, error)
+	GetProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
 	GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error)
 	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
 	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool) error
 	DeleteProblem(ctx context.Context, problemID string) error
-	GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
+	GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	DeleteTestCases(ctx context.Context, problemID string) error
 	InsertTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
@@ -37,11 +37,24 @@ func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug,
 	return err
 }
 
-func (r *problemRepo) GetProblems(ctx context.Context) ([]map[string]interface{}, error) {
-	rows, err := r.db.Query(ctx, `
+func (r *problemRepo) GetProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
+	query := `
 		SELECT problem_id, title, slug, difficulty, time_limit_ms, memory_limit_kb 
-		FROM problems WHERE is_public = true ORDER BY created_at ASC
-	`)
+		FROM problems WHERE is_public = true
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	if searchQuery != "" {
+		query += ` AND fts @@ plainto_tsquery('english', $` + string(rune('0'+argIdx)) + `)`
+		args = append(args, searchQuery)
+		argIdx++
+	}
+
+	query += ` ORDER BY created_at DESC LIMIT $` + string(rune('0'+argIdx)) + ` OFFSET $` + string(rune('0'+argIdx+1))
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +142,24 @@ func (r *problemRepo) DeleteProblem(ctx context.Context, problemID string) error
 	return err
 }
 
-func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error) {
-	rows, err := r.db.Query(ctx, `
+func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
+	query := `
 		SELECT problem_id, title, difficulty, is_public, created_at 
-		FROM problems WHERE is_public = true OR author_id = $1 ORDER BY created_at DESC
-	`, authorID)
+		FROM problems WHERE (is_public = true OR author_id = $1)
+	`
+	args := []interface{}{authorID}
+	argIdx := 2
+
+	if searchQuery != "" {
+		query += ` AND fts @@ plainto_tsquery('english', $` + string(rune('0'+argIdx)) + `)`
+		args = append(args, searchQuery)
+		argIdx++
+	}
+
+	query += ` ORDER BY created_at DESC LIMIT $` + string(rune('0'+argIdx)) + ` OFFSET $` + string(rune('0'+argIdx+1))
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

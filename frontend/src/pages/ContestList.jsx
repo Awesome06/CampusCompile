@@ -16,6 +16,11 @@ export default function ContestList() {
   const [viewMode, setViewMode] = useState(isElevated ? 'public' : 'upcoming'); 
   const [registeredContests, setRegisteredContests] = useState({});
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 20;
+  const [hasMore, setHasMore] = useState(true);
+
   const handleRegister = async (contestId) => {
     try {
       await api.post(`/contests/${contestId}/register`);
@@ -25,18 +30,36 @@ export default function ContestList() {
     }
   };
   
-  useEffect(() => {
-    setLoading(true);
-    api.get('/contests')
+  const fetchContests = (currentOffset, query) => {
+    if (currentOffset === 0) setLoading(true);
+    api.get('/contests', { params: { limit, offset: currentOffset, search: query } })
       .then((response) => {
-        setContests(response.data || []);
+        const data = response.data || [];
+        setContests(prev => currentOffset === 0 ? data : [...prev, ...data]);
+        setHasMore(data.length === limit);
         setLoading(false);
       })
       .catch((error) => {
         console.error("Error fetching contests:", error);
         setLoading(false);
       });
-  }, []);
+  };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setOffset(0);
+      setHasMore(true);
+      fetchContests(0, searchQuery);
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  const handleLoadMore = () => {
+    const nextOffset = offset + limit;
+    setOffset(nextOffset);
+    fetchContests(nextOffset, searchQuery);
+  };
 
   // Time & Status Evaluation
   const now = new Date();
@@ -99,7 +122,18 @@ export default function ContestList() {
     <div className="p-8 max-w-6xl mx-auto">
       
       {/* Header & Dynamic Tabs */}
-      <div className="relative flex justify-center items-center mb-8 h-10">
+      <div className="relative flex justify-center items-center mb-8 h-10 w-full">
+        
+        <div className="absolute left-0 w-1/3 min-w-[200px]">
+          <input 
+            type="text"
+            placeholder="Search contests..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#1e1e1e] border border-dark-border rounded-md px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition shadow-sm text-sm"
+          />
+        </div>
+
         <div className="flex bg-[#1e1e1e] rounded-lg p-1 border border-dark-border shadow-lg">
           
           {/* Faculty Tabs */}
@@ -227,6 +261,14 @@ export default function ContestList() {
 
           </div>
         ))}
+
+        {!loading && hasMore && filteredContests.length > 0 && (
+          <div className="text-center py-6 mt-4">
+            <Button onClick={handleLoadMore} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a]">
+              Load More
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

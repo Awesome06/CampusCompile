@@ -53,7 +53,11 @@ func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) GetProblems(c *gin.Context) {
-	problems, err := ctrl.service.FetchProblems(c.Request.Context())
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	searchQuery := c.Query("search")
+
+	problems, err := ctrl.service.FetchProblems(c.Request.Context(), limit, offset, searchQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
 		return
@@ -125,7 +129,11 @@ func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
-	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), c.MustGet("user_id").(string))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	searchQuery := c.Query("search")
+
+	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), c.MustGet("user_id").(string), limit, offset, searchQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch your problems"})
 		return

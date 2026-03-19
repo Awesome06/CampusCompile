@@ -18,9 +18,9 @@ type ContestRepository interface {
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
 	GetUserProfiles(ctx context.Context, userIDs []string) (map[string]models.ContestProfile, error)
 	GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
-	GetPublicContests(ctx context.Context) ([]models.Contest, error)
-	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
-	GetAllContests(ctx context.Context) ([]models.Contest, error)
+	GetPublicContests(ctx context.Context, limit, offset int, searchQuery string) ([]models.Contest, error)
+	GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]models.Contest, error)
+	GetAllContests(ctx context.Context, limit, offset int, searchQuery string) ([]models.Contest, error)
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error
 	GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error)
@@ -84,25 +84,58 @@ func (r *contestRepo) CreateContest(ctx context.Context, contest models.Contest,
 	return contestID, nil
 }
 
-func (r *contestRepo) GetPublicContests(ctx context.Context) ([]models.Contest, error) {
-	return r.fetchContestsWithQuery(ctx, `
+func (r *contestRepo) GetPublicContests(ctx context.Context, limit, offset int, searchQuery string) ([]models.Contest, error) {
+	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests WHERE is_public = true ORDER BY start_time DESC
-	`)
+		FROM contests WHERE is_public = true
+	`
+	args := []interface{}{}
+	argIdx := 1
+	if searchQuery != "" {
+		query += ` AND fts @@ plainto_tsquery('english', $` + fmt.Sprint(argIdx) + `)`
+		args = append(args, searchQuery)
+		argIdx++
+	}
+	query += ` ORDER BY start_time DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	args = append(args, limit, offset)
+
+	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
-func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error) {
-	return r.fetchContestsWithQuery(ctx, `
+func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]models.Contest, error) {
+	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests WHERE is_public = true OR author_id = $1 ORDER BY start_time DESC
-	`, authorID)
+		FROM contests WHERE (is_public = true OR author_id = $1)
+	`
+	args := []interface{}{authorID}
+	argIdx := 2
+	if searchQuery != "" {
+		query += ` AND fts @@ plainto_tsquery('english', $` + fmt.Sprint(argIdx) + `)`
+		args = append(args, searchQuery)
+		argIdx++
+	}
+	query += ` ORDER BY start_time DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	args = append(args, limit, offset)
+
+	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
-func (r *contestRepo) GetAllContests(ctx context.Context) ([]models.Contest, error) {
-	return r.fetchContestsWithQuery(ctx, `
+func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, searchQuery string) ([]models.Contest, error) {
+	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests ORDER BY start_time DESC
-	`)
+		FROM contests WHERE 1=1
+	`
+	args := []interface{}{}
+	argIdx := 1
+	if searchQuery != "" {
+		query += ` AND fts @@ plainto_tsquery('english', $` + fmt.Sprint(argIdx) + `)`
+		args = append(args, searchQuery)
+		argIdx++
+	}
+	query += ` ORDER BY start_time DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	args = append(args, limit, offset)
+
+	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
 func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, args ...interface{}) ([]models.Contest, error) {

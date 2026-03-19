@@ -43,7 +43,11 @@ CREATE TABLE problems (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     has_checker BOOLEAN DEFAULT false,
     checker_s3_key TEXT,
-    is_public BOOLEAN DEFAULT false
+    is_public BOOLEAN DEFAULT false,
+    fts tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(description, '')), 'B')
+    ) STORED
 );
 
 -- Contests table: Manages competition windows and rules
@@ -58,7 +62,11 @@ CREATE TABLE contests (
     access_rules JSONB,
     author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
     is_public BOOLEAN NOT NULL DEFAULT false,
-    moss_audit_status audit_status DEFAULT 'pending'
+    moss_audit_status audit_status DEFAULT 'pending',
+    fts tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(host_organization, '')), 'B')
+    ) STORED
 );
 
 -- ==========================================
@@ -139,6 +147,11 @@ CREATE TABLE plagiarism_reports (
 CREATE INDEX idx_contests_author_id ON contests(author_id);
 CREATE INDEX idx_contests_times ON contests(start_time, end_time);
 CREATE INDEX idx_contests_moss_audit ON contests(moss_audit_status, end_time, updated_at);
+CREATE INDEX idx_contests_fts ON contests USING GIN (fts);
+
+-- Problems
+CREATE INDEX idx_problems_fts ON problems USING GIN (fts);
+CREATE INDEX idx_problems_created_at ON problems(created_at DESC);
 
 -- Contest Registrations
 CREATE INDEX idx_contest_registrations_user_id ON contest_registrations(user_id);
@@ -148,6 +161,7 @@ CREATE INDEX idx_submissions_contest_id ON submissions(contest_id);
 CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);
 CREATE INDEX idx_submissions_user_id ON submissions(user_id);
 CREATE INDEX idx_submissions_status ON submissions(status);
+CREATE INDEX idx_submissions_submitted_at ON submissions(submitted_at DESC);
 
 -- Telemetry & Plagiarism
 CREATE INDEX idx_telemetry_contest_user ON contest_telemetry(contest_id, user_id);

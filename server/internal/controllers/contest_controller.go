@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -100,8 +101,12 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 		GraduationYear: getInt(c, "graduation_year"),
 	}
 
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	searchQuery := c.Query("search")
+
 	// 3. Fetch cleanly filtered contests
-	contests, err := ctrl.service.FetchContests(c.Request.Context(), demo)
+	contests, err := ctrl.service.FetchContests(c.Request.Context(), demo, limit, offset, searchQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contests"})
 		return
