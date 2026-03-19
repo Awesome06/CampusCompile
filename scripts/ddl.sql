@@ -45,8 +45,7 @@ CREATE TABLE problems (
     checker_s3_key TEXT,
     is_public BOOLEAN DEFAULT false,
     fts tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(description, '')), 'B')
+        to_tsvector('english', title)
     ) STORED
 );
 
@@ -64,8 +63,7 @@ CREATE TABLE contests (
     is_public BOOLEAN NOT NULL DEFAULT false,
     moss_audit_status audit_status DEFAULT 'pending',
     fts tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(host_organization, '')), 'B')
+        to_tsvector('english', title)
     ) STORED
 );
 

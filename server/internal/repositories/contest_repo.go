@@ -91,12 +91,18 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, limit, offset int, 
 	`
 	args := []interface{}{}
 	argIdx := 1
-	if searchQuery != "" {
-		query += ` AND fts @@ plainto_tsquery('english', $` + fmt.Sprint(argIdx) + `)`
-		args = append(args, searchQuery)
+	
+	tsQuery := formatPrefixTSQuery(searchQuery)
+	if tsQuery != "" {
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
+		args = append(args, tsQuery)
 		argIdx++
+	} else {
+		query += ` ORDER BY start_time DESC`
 	}
-	query += ` ORDER BY start_time DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
 	return r.fetchContestsWithQuery(ctx, query, args...)
@@ -109,12 +115,18 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 	`
 	args := []interface{}{authorID}
 	argIdx := 2
-	if searchQuery != "" {
-		query += ` AND fts @@ plainto_tsquery('english', $` + fmt.Sprint(argIdx) + `)`
-		args = append(args, searchQuery)
+	
+	tsQuery := formatPrefixTSQuery(searchQuery)
+	if tsQuery != "" {
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
+		args = append(args, tsQuery)
 		argIdx++
+	} else {
+		query += ` ORDER BY start_time DESC`
 	}
-	query += ` ORDER BY start_time DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
 	return r.fetchContestsWithQuery(ctx, query, args...)
@@ -127,12 +139,18 @@ func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, sea
 	`
 	args := []interface{}{}
 	argIdx := 1
-	if searchQuery != "" {
-		query += ` AND fts @@ plainto_tsquery('english', $` + fmt.Sprint(argIdx) + `)`
-		args = append(args, searchQuery)
+	
+	tsQuery := formatPrefixTSQuery(searchQuery)
+	if tsQuery != "" {
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
+		args = append(args, tsQuery)
 		argIdx++
+	} else {
+		query += ` ORDER BY start_time DESC`
 	}
-	query += ` ORDER BY start_time DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
 	return r.fetchContestsWithQuery(ctx, query, args...)
