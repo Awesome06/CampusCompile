@@ -4,6 +4,9 @@ import shutil
 import itertools
 import math
 from typing import Optional
+import logging
+
+logger = logging.getLogger('runner')
 
 # Import the shared S3 fetcher from our centralized config
 from config import fetch_from_s3
@@ -80,7 +83,7 @@ def compile_code(language: str, work_dir: str, source_code: str):
         if container:
             try: container.kill()
             except: pass
-        print(f"[!] Compilation Container Error: {e}")
+        logger.error(f"[!] Compilation Container Error: {e}")
         return {"verdict": "CE", "message": "Compilation Timed Out or Failed"}
 
 def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_seconds: float, memory_limit_kb: int):
@@ -136,7 +139,7 @@ def run_all_cases(language: str, work_dir: str, tc_meta: list, time_limit_second
         if "Timeout" in str(e) or "Read timed out" in str(e): 
             return {"status": "Container Timeout Exceeded"}
         
-        print(f"[!] Container Execution Error: {e}")
+        logger.error(f"[!] Container Execution Error: {e}")
         return {"status": "System Error", "message": "Internal execution environment failed."}
 
 def evaluate_output(actual_output_file_path: str, cached_expected_path: str) -> str:
@@ -177,7 +180,7 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
     try:
         os.chown(work_dir, 1001, 1001) 
     except PermissionError:
-        print(f"[!] Warning: Could not chown {work_dir}. Running as non-root host?")
+        logger.warning(f"Could not chown {work_dir}. Running as non-root host?")
         pass
     
     try:
@@ -190,7 +193,7 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 with open(download_path, 'r', encoding='utf-8') as f:
                     source_code = f.read()
             except Exception as e:
-                print(f"[!] Failed to fetch source from S3: {e}")
+                logger.error(f"[!] Failed to fetch source from S3: {e}")
                 return {"verdict": "SE", "message": "Failed to retrieve source code for execution.", "actual_output": ""}
 
         if not source_code:
@@ -239,15 +242,17 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
                 return {"verdict": "SE", "message": f"Empty status code for Test Case {idx+1}", "actual_output": ""}
                 
             status_code = int(status_code_str)
+
+            tc_type = "Hidden Test Case" if is_hidden and str(problem_id) != "custom" else "Test Case"
             
             if status_code in [124, 137, 143]: 
-                return {"verdict": "TLE", "message": f"Time Limit Exceeded on Test Case {idx+1}", "actual_output": ""}
+                return {"verdict": "TLE", "message": f"Time Limit Exceeded on {tc_type} {idx+1}", "actual_output": ""}
             elif status_code != 0:
                 if str(problem_id) == "custom":
                     err_log = read_file_safely(err_file)
-                    return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}.\n{err_log}", "actual_output": ""}
+                    return {"verdict": "RE", "message": f"Runtime Error on {tc_type} {idx+1}.\n{err_log}", "actual_output": ""}
                 else:
-                    return {"verdict": "RE", "message": f"Runtime Error on Test Case {idx+1}. (Stack trace hidden)", "actual_output": ""}
+                    return {"verdict": "RE", "message": f"Runtime Error on {tc_type} {idx+1}. (Stack trace hidden)", "actual_output": ""}
                 
             verdict = evaluate_output(out_file, expected_path)
             if verdict != "AC":
@@ -263,7 +268,7 @@ def grade_submission(submission_id: str, problem_id: str, language: str, source_
         return {"verdict": "AC", "actual_output": read_file_safely(os.path.join(work_dir, f'out_{last_idx}.txt'))}
         
     except Exception as e:
-        print(f"[!] Master Grader Exception (Problem {problem_id}): {e}")
+        logger.error(f"[!] Master Grader Exception (Problem {problem_id}): {e}")
         return {"verdict": "SE", "message": "System Error: The execution engine encountered an unexpected failure.", "actual_output": ""}
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

@@ -27,7 +27,18 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
 	userRole := c.MustGet("role").(string)
 
-	// 1. Subscribe to the contest's specific Redis broadcast channel
+	// 1. The Bouncer - Fetch the ENRICHED leaderboard immediately BEFORE allocating resources
+	auditStatus, initialLeaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
+
+	// If the contest is fully graded/audited, reject the persistent stream to save server resources.
+	if err == nil && (auditStatus == "completed" || auditStatus == "failed") {
+		c.JSON(http.StatusGone, gin.H{
+			"error": "Contest is finalized. Persistent streaming is disabled to conserve resources.",
+		})
+		return // Terminates the request immediately!
+	}
+
+	// 2. Subscribe to the contest's specific Redis broadcast channel
 	channelSuffix := "student"
 	if userRole == "admin" || userRole == "professor" {
 		channelSuffix = "faculty"
@@ -37,18 +48,18 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), channelName)
 	defer cleanup()
 
-	// 2. Set the necessary headers to keep the HTTP connection alive for SSE
+	// 3. Set the necessary headers to keep the HTTP connection alive for SSE
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Cache-Control", "no-cache, no-transform")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	// 3. 👇 FIX: Fetch the ENRICHED leaderboard immediately on connect
-	auditStatus, initialLeaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
+	// 4. Send Initial Payload
 	if err == nil {
 		if userRole == "student" {
 			for _, entry := range initialLeaderboard {
-				delete(entry, "alerts")
+				delete(entry, "alerts") // Hide MOSS plagiarism alerts from students
 			}
 		}
 		initialData, _ := json.Marshal(map[string]interface{}{
@@ -59,7 +70,7 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 		c.Writer.Flush()
 	}
 
-	// 4. Listen for live updates from the Python Worker / Go Engine
+	// 5. Listen for live updates from the Python Worker / Go Engine
 	for {
 		select {
 		case <-c.Request.Context().Done():
@@ -145,6 +156,7 @@ func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
 // GetLeaderboard provides the initial static snapshot of the leaderboard before the SSE stream takes over
 func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
+	userRole := c.MustGet("role").(string)
 
 	auditStatus, leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err != nil {
@@ -152,7 +164,7 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 		return
 	}
 
-	userRole := c.MustGet("role").(string)
+	// Security: Strip out MOSS plagiarism alerts if the user is a student
 	if userRole == "student" {
 		for _, entry := range leaderboard {
 			delete(entry, "alerts")
@@ -344,6 +356,7 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 	contestID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string) // 1. Extract the role
 
 	var payload models.BatchTelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -351,8 +364,13 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 		return
 	}
 
-	// Fire and forget: Loop through the events in a background goroutine
-	// Added error logging to ensure silent failures are caught
+	// 2. ISOLATE TELEMETRY: Drop the batch silently for faculty
+	if userRole == "admin" || userRole == "professor" {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored_for_faculty", "count": 0})
+		return
+	}
+
+	// 3. Fire and forget for students
 	go func() {
 		for _, event := range payload.Events {
 			err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)

@@ -8,6 +8,7 @@ Dockerfile*
 
 # Frontend (React)
 frontend/node_modules
+frontend/dist
 
 # Worker (Python)
 worker/venv
