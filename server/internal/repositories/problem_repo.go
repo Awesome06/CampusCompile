@@ -132,7 +132,7 @@ func (r *problemRepo) DeleteProblem(ctx context.Context, problemID string) error
 func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT problem_id, title, difficulty, is_public, created_at 
-		FROM problems WHERE author_id = $1 ORDER BY created_at DESC
+		FROM problems WHERE is_public = true OR author_id = $1 ORDER BY created_at DESC
 	`, authorID)
 	if err != nil {
 		return nil, err
