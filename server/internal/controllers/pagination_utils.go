@@ -13,11 +13,10 @@ func parsePaginationArgs(c *gin.Context) (int, int) {
 		limit = 10
 	}
 
-	switch limit {
-	case 10, 15, 25:
-		// Valid user-selectable limits
-	default:
+	if limit < 1 {
 		limit = 10
+	} else if limit > 100 {
+		limit = 100
 	}
 
 	offsetStr := c.DefaultQuery("offset", "0")

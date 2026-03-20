@@ -49,8 +49,8 @@ func (r *problemRepo) GetProblems(ctx context.Context, limit, offset int, search
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
-		query += ` AND fts @@ to_tsquery('simple', ` + paramStr + `)`
-		query += ` ORDER BY ts_rank(fts, to_tsquery('simple', ` + paramStr + `)) DESC, created_at DESC`
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, created_at DESC`
 		args = append(args, tsQuery)
 		argIdx++
 	} else {

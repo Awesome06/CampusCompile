@@ -97,39 +97,51 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Course)
 			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_array_length(access_rules->'allowed_courses') = 0)`
 		}
 		if demo.Department != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_array_length(access_rules->'allowed_departments') = 0 OR access_rules->'allowed_departments' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Department)
 			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_array_length(access_rules->'allowed_departments') = 0)`
 		}
 		if demo.Batch != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_array_length(access_rules->'allowed_batches') = 0 OR access_rules->'allowed_batches' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Batch)
 			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_array_length(access_rules->'allowed_batches') = 0)`
 		}
 		if demo.Section != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_array_length(access_rules->'allowed_sections') = 0 OR access_rules->'allowed_sections' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Section)
 			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_array_length(access_rules->'allowed_sections') = 0)`
 		}
 		if demo.StudentGroup != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_array_length(access_rules->'allowed_student_groups') = 0 OR access_rules->'allowed_student_groups' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.StudentGroup)
 			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_array_length(access_rules->'allowed_student_groups') = 0)`
 		}
 		if demo.GraduationYear != 0 {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0 OR access_rules->'allowed_graduation_years' @> $` + fmt.Sprint(argIdx) + `::jsonb)`
 			args = append(args, fmt.Sprintf("[%d]", demo.GraduationYear))
 			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0)`
 		}
 	}
 
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
-		query += ` AND fts @@ to_tsquery('simple', ` + paramStr + `)`
-		query += ` ORDER BY ts_rank(fts, to_tsquery('simple', ` + paramStr + `)) DESC, start_time DESC`
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
 		args = append(args, tsQuery)
 		argIdx++
 	} else {
@@ -152,8 +164,8 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
-		query += ` AND fts @@ to_tsquery('simple', ` + paramStr + `)`
-		query += ` ORDER BY ts_rank(fts, to_tsquery('simple', ` + paramStr + `)) DESC, start_time DESC`
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
 		args = append(args, tsQuery)
 		argIdx++
 	} else {
@@ -176,8 +188,8 @@ func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, sea
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
-		query += ` AND fts @@ to_tsquery('simple', ` + paramStr + `)`
-		query += ` ORDER BY ts_rank(fts, to_tsquery('simple', ` + paramStr + `)) DESC, start_time DESC`
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
 		args = append(args, tsQuery)
 		argIdx++
 	} else {

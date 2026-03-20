@@ -85,9 +85,6 @@ export default function ContestList() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [offset, hasMore, searchQuery, viewMode]);
 
-  const displayStart = filteredContests.length > 0 ? offset + 1 : 0;
-  const displayEnd = offset + filteredContests.length;
-
   // Time & Status Evaluation
   const now = new Date();
   
@@ -105,6 +102,9 @@ export default function ContestList() {
     }
     return true;
   });
+
+  const displayStart = filteredContests.length > 0 ? offset + 1 : 0;
+  const displayEnd = offset + filteredContests.length;
 
   // Helper to determine the visual status badge
   const getStatusBadge = (contest) => {

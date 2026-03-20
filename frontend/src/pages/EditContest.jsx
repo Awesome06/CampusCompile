@@ -11,6 +11,8 @@ export default function EditContest() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fetchingProblems, setFetchingProblems] = useState(false);
+  const [availableProblems, setAvailableProblems] = useState([]);
+  const [assignedCache, setAssignedCache] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [offset, setOffset] = useState(0);
   const limit = 25;
@@ -41,7 +43,11 @@ export default function EditContest() {
     api.get('/faculty/problems', { params: { limit, offset: currentOffset, search: query } })
       .then(res => {
         const data = res.data || [];
-        setAvailableProblems(data);
+        setAvailableProblems(prev => {
+          const newPageIds = new Set(data.map(p => p.problem_id));
+          const toKeep = assignedCache.filter(p => !newPageIds.has(p.problem_id));
+          return [...toKeep, ...data];
+        });
         setHasMore(data.length === limit);
       })
       .catch(err => console.error("Failed to fetch problems", err))
@@ -73,6 +79,7 @@ export default function EditContest() {
         });
 
         // Seed available problems with assigned ones so they show up even if not in the first page
+        setAssignedCache(assignedProblems);
         setAvailableProblems(assignedProblems);
       } catch (err) {
         console.error("Failed to fetch contest data", err);

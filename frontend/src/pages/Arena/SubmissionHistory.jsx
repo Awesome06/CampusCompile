@@ -3,7 +3,7 @@ import Editor from '@monaco-editor/react';
 import api from '../../services/api';
 import Button from '../../components/ui/Button';
 
-export default function SubmissionHistory({ history, setCode, setLanguage, hasMoreHistory, historyOffset, historyLimit, fetchPrevHistory, fetchNextHistory }) {
+export default function SubmissionHistory({ history, setCode, setLanguage, hasMoreHistory, historyOffset, fetchPrevHistory, fetchNextHistory }) {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 

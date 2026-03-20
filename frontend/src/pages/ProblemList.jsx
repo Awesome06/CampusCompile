@@ -146,7 +146,7 @@ export default function ProblemList() {
 
         {!loading && problems.map((prob, index) => (
           <div key={prob.problem_id} className="flex justify-between items-center py-4 text-white border-b border-dark-border last:border-0 hover:bg-[#2a2a2a] px-2 rounded transition relative">
-            <span className="w-12 text-left font-bold text-gray-500">{index + 1}</span>
+            <span className="w-12 text-left font-bold text-gray-500">{offset + index + 1}</span>
 
             {/* Title & Status Badges */}
             <div className="w-1/2 font-medium flex items-center gap-3">
