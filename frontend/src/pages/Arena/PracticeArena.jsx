@@ -35,7 +35,7 @@ export default function PracticeArena() {
         </div>
         <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
           {leftTab === 'history' ? (
-            <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} hasMoreHistory={hasMoreHistory} historyOffset={historyOffset} historyLimit={historyLimit} fetchPrevHistory={fetchPrevHistory} fetchNextHistory={fetchNextHistory} />
+            <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} hasMoreHistory={hasMoreHistory} historyOffset={historyOffset} fetchPrevHistory={fetchPrevHistory} fetchNextHistory={fetchNextHistory} />
           ) : (
             <ProblemDescription problem={problem} canEdit={canEdit} navigate={navigate} submitStatus={submitStatus} selectedLanguage={language}/>
           )}
