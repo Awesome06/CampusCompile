@@ -49,7 +49,7 @@ export default function ContestArena() {
 
   const {
     problem, code, setCode, language, setLanguage, submitStatus, history,
-    hasMoreHistory, historyOffset, historyLimit, fetchPrevHistory, fetchNextHistory,
+    hasMoreHistory, historyOffset, fetchPrevHistory, fetchNextHistory,
     isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
     customInput, setCustomInput, consoleOutput, isProcessing,
     handleSubmit, handleRunCode
