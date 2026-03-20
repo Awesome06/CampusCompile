@@ -53,7 +53,7 @@ export default function ContestList() {
     }, 400);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery]);
+  }, [searchQuery, viewMode]);
 
   const handlePrev = () => {
     if (offset >= limit) {
