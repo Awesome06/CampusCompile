@@ -94,46 +94,46 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 
 	if demo != nil {
 		if demo.Course != "" {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_typeof(access_rules->'allowed_courses') != 'array' OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Course)
 			argIdx++
 		} else {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_array_length(access_rules->'allowed_courses') = 0)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_typeof(access_rules->'allowed_courses') != 'array' OR jsonb_array_length(access_rules->'allowed_courses') = 0)`
 		}
 		if demo.Department != "" {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_array_length(access_rules->'allowed_departments') = 0 OR access_rules->'allowed_departments' ? $` + fmt.Sprint(argIdx) + `)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_typeof(access_rules->'allowed_departments') != 'array' OR jsonb_array_length(access_rules->'allowed_departments') = 0 OR access_rules->'allowed_departments' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Department)
 			argIdx++
 		} else {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_array_length(access_rules->'allowed_departments') = 0)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_typeof(access_rules->'allowed_departments') != 'array' OR jsonb_array_length(access_rules->'allowed_departments') = 0)`
 		}
 		if demo.Batch != "" {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_array_length(access_rules->'allowed_batches') = 0 OR access_rules->'allowed_batches' ? $` + fmt.Sprint(argIdx) + `)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_typeof(access_rules->'allowed_batches') != 'array' OR jsonb_array_length(access_rules->'allowed_batches') = 0 OR access_rules->'allowed_batches' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Batch)
 			argIdx++
 		} else {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_array_length(access_rules->'allowed_batches') = 0)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_typeof(access_rules->'allowed_batches') != 'array' OR jsonb_array_length(access_rules->'allowed_batches') = 0)`
 		}
 		if demo.Section != "" {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_array_length(access_rules->'allowed_sections') = 0 OR access_rules->'allowed_sections' ? $` + fmt.Sprint(argIdx) + `)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_typeof(access_rules->'allowed_sections') != 'array' OR jsonb_array_length(access_rules->'allowed_sections') = 0 OR access_rules->'allowed_sections' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Section)
 			argIdx++
 		} else {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_array_length(access_rules->'allowed_sections') = 0)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_typeof(access_rules->'allowed_sections') != 'array' OR jsonb_array_length(access_rules->'allowed_sections') = 0)`
 		}
 		if demo.StudentGroup != "" {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_array_length(access_rules->'allowed_student_groups') = 0 OR access_rules->'allowed_student_groups' ? $` + fmt.Sprint(argIdx) + `)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_typeof(access_rules->'allowed_student_groups') != 'array' OR jsonb_array_length(access_rules->'allowed_student_groups') = 0 OR access_rules->'allowed_student_groups' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.StudentGroup)
 			argIdx++
 		} else {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_array_length(access_rules->'allowed_student_groups') = 0)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_typeof(access_rules->'allowed_student_groups') != 'array' OR jsonb_array_length(access_rules->'allowed_student_groups') = 0)`
 		}
 		if demo.GraduationYear != 0 {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0 OR access_rules->'allowed_graduation_years' @> $` + fmt.Sprint(argIdx) + `::jsonb)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_typeof(access_rules->'allowed_graduation_years') != 'array' OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0 OR access_rules->'allowed_graduation_years' @> $` + fmt.Sprint(argIdx) + `::jsonb)`
 			args = append(args, fmt.Sprintf("[%d]", demo.GraduationYear))
 			argIdx++
 		} else {
-			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0)`
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_typeof(access_rules->'allowed_graduation_years') != 'array' OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0)`
 		}
 	}
 
@@ -164,15 +164,19 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
 		FROM contests WHERE 1=1
 	`
-	args := []interface{}{authorID}
-	argIdx := 2
+	var args []interface{}
+	argIdx := 1
 
 	if viewMode == "public" {
 		query += ` AND is_public = true`
 	} else if viewMode == "faculty" {
-		query += ` AND author_id = $1`
+		query += ` AND author_id = $` + fmt.Sprint(argIdx)
+		args = append(args, authorID)
+		argIdx++
 	} else {
-		query += ` AND (is_public = true OR author_id = $1)`
+		query += ` AND (is_public = true OR author_id = $` + fmt.Sprint(argIdx) + `)`
+		args = append(args, authorID)
+		argIdx++
 	}
 
 	tsQuery := formatPrefixTSQuery(searchQuery)
