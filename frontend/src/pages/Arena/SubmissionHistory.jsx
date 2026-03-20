@@ -1,11 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import api from '../../services/api';
 import Button from '../../components/ui/Button';
 
-export default function SubmissionHistory({ history, setCode, setLanguage, hasMoreHistory, loadMoreHistory }) {
+export default function SubmissionHistory({ history, setCode, setLanguage, hasMoreHistory, historyOffset, historyLimit, fetchPrevHistory, fetchNextHistory }) {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const displayStart = history.length > 0 ? historyOffset + 1 : 0;
+  const displayEnd = historyOffset + history.length;
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing
+      if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') {
+        if (fetchPrevHistory) fetchPrevHistory();
+      } else if (e.key === 'ArrowRight') {
+        if (fetchNextHistory) fetchNextHistory();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyOffset, hasMoreHistory, fetchPrevHistory, fetchNextHistory]);
 
   const handleViewSubmission = async (submissionId) => {
     try {
@@ -42,10 +59,16 @@ export default function SubmissionHistory({ history, setCode, setLanguage, hasMo
             ))}
           </tbody>
         </table>
-        {hasMoreHistory && history.length > 0 && (
-          <div className="text-center py-4 border-t border-dark-border bg-[#1e1e1e]">
-            <Button onClick={loadMoreHistory} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a] text-sm py-1.5 px-6">
-              Load More
+        {(hasMoreHistory || historyOffset > 0) && (
+          <div className="flex justify-between items-center py-3 px-4 border-t border-dark-border bg-[#1e1e1e]">
+            <Button onClick={fetchPrevHistory} variant="outline" disabled={historyOffset === 0} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed text-xs py-1 px-4">
+              &larr; Prev
+            </Button>
+            <span className="w-3/5 text-center text-gray-400 text-xs font-mono">
+              Showing {displayStart} - {displayEnd}
+            </span>
+            <Button onClick={fetchNextHistory} variant="outline" disabled={!hasMoreHistory} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed text-xs py-1 px-4">
+              Next &rarr;
             </Button>
           </div>
         )}

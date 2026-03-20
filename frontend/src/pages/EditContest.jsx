@@ -41,7 +41,7 @@ export default function EditContest() {
     api.get('/faculty/problems', { params: { limit, offset: currentOffset, search: query } })
       .then(res => {
         const data = res.data || [];
-        setAvailableProblems(prev => currentOffset === 0 ? data : [...prev, ...data]);
+        setAvailableProblems(data);
         setHasMore(data.length === limit);
       })
       .catch(err => console.error("Failed to fetch problems", err))
@@ -95,11 +95,38 @@ export default function EditContest() {
     }
   }, [step, searchQuery]);
 
-  const handleLoadMoreProblems = () => {
-    const nextOffset = offset + limit;
-    setOffset(nextOffset);
-    loadProblems(nextOffset, searchQuery);
+  const handlePrevProblems = () => {
+    if (offset >= limit) {
+      const nextOffset = offset - limit;
+      setOffset(nextOffset);
+      loadProblems(nextOffset, searchQuery);
+    }
   };
+
+  const handleNextProblems = () => {
+    if (hasMore) {
+      const nextOffset = offset + limit;
+      setOffset(nextOffset);
+      loadProblems(nextOffset, searchQuery);
+    }
+  };
+
+  useEffect(() => {
+    if (step !== 3) return;
+    const handleKeyDown = (e) => {
+      if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') {
+        handlePrevProblems();
+      } else if (e.key === 'ArrowRight') {
+        handleNextProblems();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, offset, hasMore, searchQuery]);
+
+  const displayStart = availableProblems.length > 0 ? offset + 1 : 0;
+  const displayEnd = offset + availableProblems.length;
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -301,10 +328,16 @@ export default function EditContest() {
                     )
                   })}
 
-                  {!fetchingProblems && hasMore && availableProblems.length > 0 && (
-                    <div className="text-center py-2 mt-4">
-                      <Button onClick={handleLoadMoreProblems} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a] text-sm py-1.5 px-6">
-                        Load More
+                  {!fetchingProblems && (hasMore || offset > 0) && (
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-dark-border px-2">
+                      <Button onClick={handlePrevProblems} variant="outline" disabled={offset === 0} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed text-xs py-1 px-3">
+                        &larr; Prev
+                      </Button>
+                      <span className="w-3/5 text-center text-gray-400 text-xs font-mono">
+                        Showing {displayStart} - {displayEnd}
+                      </span>
+                      <Button onClick={handleNextProblems} variant="outline" disabled={!hasMore} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed text-xs py-1 px-3">
+                        Next &rarr;
                       </Button>
                     </div>
                   )}

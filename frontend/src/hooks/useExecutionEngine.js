@@ -89,8 +89,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
         : `/submissions/history/${problemId}?limit=${historyLimit}&offset=${offset}`;
       const res = await api.get(endpoint);
       const data = res.data || [];
-      if (offset === 0) setHistory(data);
-      else setHistory(prev => [...prev, ...data]);
+      setHistory(data);
       setHasMoreHistory(data.length === historyLimit);
       setHistoryOffset(offset);
     } catch (err) {
@@ -98,7 +97,13 @@ export default function useExecutionEngine(problemId, contestId = null) {
     }
   };
 
-  const loadMoreHistory = () => fetchHistory(historyOffset + historyLimit);
+  const fetchPrevHistory = () => {
+    if (historyOffset >= historyLimit) fetchHistory(historyOffset - historyLimit);
+  };
+
+  const fetchNextHistory = () => {
+    if (hasMoreHistory) fetchHistory(historyOffset + historyLimit);
+  };
 
   const handleSubmit = async () => {
     setIsProcessing(true);
@@ -201,7 +206,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
 
   return {
     problem, code, setCode, language, setLanguage, submitStatus, history,
-    hasMoreHistory, loadMoreHistory,
+    hasMoreHistory, historyOffset, historyLimit, fetchPrevHistory, fetchNextHistory,
     isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
     customInput, setCustomInput, consoleOutput, isProcessing,
     handleSubmit, handleRunCode

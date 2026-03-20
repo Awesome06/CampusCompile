@@ -49,7 +49,7 @@ export default function ContestArena() {
 
   const {
     problem, code, setCode, language, setLanguage, submitStatus, history,
-    hasMoreHistory, loadMoreHistory,
+    hasMoreHistory, historyOffset, historyLimit, fetchPrevHistory, fetchNextHistory,
     isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
     customInput, setCustomInput, consoleOutput, isProcessing,
     handleSubmit, handleRunCode
@@ -127,7 +127,7 @@ export default function ContestArena() {
           </div>
           <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
             {leftTab === 'history' ? (
-              <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} hasMoreHistory={hasMoreHistory} loadMoreHistory={loadMoreHistory} />
+              <SubmissionHistory history={history} setCode={setCode} setLanguage={setLanguage} hasMoreHistory={hasMoreHistory} historyOffset={historyOffset} historyLimit={historyLimit} fetchPrevHistory={fetchPrevHistory} fetchNextHistory={fetchNextHistory} />
             ) : (
               <ProblemDescription problem={problem} canEdit={false} navigate={navigate} submitStatus={submitStatus} selectedLanguage={language}/>
             )}

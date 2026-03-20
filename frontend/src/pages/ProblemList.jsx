@@ -23,7 +23,7 @@ export default function ProblemList() {
     api.get(endpoint, { params: { limit, offset: currentOffset, search: query } })
       .then((response) => {
         const data = response.data || [];
-        setProblems(prev => currentOffset === 0 ? data : [...prev, ...data]);
+        setProblems(data);
         setHasMore(data.length === limit);
         setLoading(false);
       })
@@ -43,11 +43,38 @@ export default function ProblemList() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, viewMode]);
 
-  const handleLoadMore = () => {
-    const nextOffset = offset + limit;
-    setOffset(nextOffset);
-    fetchProblems(nextOffset, searchQuery);
+  const handlePrev = () => {
+    if (offset >= limit) {
+      const nextOffset = offset - limit;
+      setOffset(nextOffset);
+      fetchProblems(nextOffset, searchQuery);
+    }
   };
+
+  const handleNext = () => {
+    if (hasMore) {
+      const nextOffset = offset + limit;
+      setOffset(nextOffset);
+      fetchProblems(nextOffset, searchQuery);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in the search bar
+      if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') {
+        handlePrev();
+      } else if (e.key === 'ArrowRight') {
+        handleNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [offset, hasMore, searchQuery, viewMode]);
+
+  const displayStart = problems.length > 0 ? offset + 1 : 0;
+  const displayEnd = offset + problems.length;
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -161,10 +188,16 @@ export default function ProblemList() {
           </div>
         ))}
 
-        {!loading && hasMore && problems.length > 0 && (
-          <div className="text-center py-6 mt-4">
-            <Button onClick={handleLoadMore} variant="outline" className="text-gray-300 border-dark-border hover:bg-[#2a2a2a]">
-              Load More
+        {!loading && (hasMore || offset > 0) && (
+          <div className="flex justify-between items-center mt-6 pt-4 border-t border-dark-border">
+            <Button onClick={handlePrev} variant="outline" disabled={offset === 0} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed">
+              &larr; Prev
+            </Button>
+            <span className="w-3/5 text-center text-gray-400 text-sm font-mono">
+              Showing {displayStart} - {displayEnd}
+            </span>
+            <Button onClick={handleNext} variant="outline" disabled={!hasMore} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed">
+              Next &rarr;
             </Button>
           </div>
         )}
