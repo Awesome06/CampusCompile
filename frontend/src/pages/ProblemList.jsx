@@ -135,7 +135,7 @@ export default function ProblemList() {
           <span className="w-1/4 text-right">Action</span>
         </div>
 
-        {loading && <div className="text-center py-8 text-gray-400 animate-pulse">Loading arena data...</div>}
+        {loading && <div className="text-center py-8 text-gray-400 animate-pulse">Loading problems...</div>}
 
         {!loading && problems.length === 0 && (
           <div className="text-center py-10 text-gray-500 italic border-b border-dark-border last:border-0">
