@@ -19,11 +19,11 @@ import (
 
 type ProblemService interface {
 	ForgeProblem(ctx context.Context, req models.CreateProblemRequest, authorID string) (string, error)
-	FetchProblems(ctx context.Context) ([]map[string]interface{}, error)
+	FetchProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
 	FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error)
 	ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error
 	RemoveProblem(ctx context.Context, problemID, userID, userRole string) error
-	FetchFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error)
+	FetchFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
 	FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	ClearTestCases(ctx context.Context, problemID, userID, userRole string) error
 	SaveTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
@@ -63,8 +63,8 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 	return problemID, nil
 }
 
-func (s *problemService) FetchProblems(ctx context.Context) ([]map[string]interface{}, error) {
-	return s.repo.GetProblems(ctx)
+func (s *problemService) FetchProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
+	return s.repo.GetProblems(ctx, limit, offset, searchQuery)
 }
 
 func (s *problemService) FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error) {
@@ -111,8 +111,8 @@ func (s *problemService) RemoveProblem(ctx context.Context, problemID, userID, u
 	return s.repo.DeleteProblem(ctx, problemID)
 }
 
-func (s *problemService) FetchFacultyProblems(ctx context.Context, authorID string) ([]map[string]interface{}, error) {
-	return s.repo.GetFacultyProblems(ctx, authorID)
+func (s *problemService) FetchFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
+	return s.repo.GetFacultyProblems(ctx, authorID, limit, offset, searchQuery)
 }
 
 func (s *problemService) FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {

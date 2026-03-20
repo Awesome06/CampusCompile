@@ -146,18 +146,7 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 		contestID = &contestIDQuery
 	}
 
-	limitStr := c.DefaultQuery("limit", "10")
-	offsetStr := c.DefaultQuery("offset", "0")
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 || limit > 100 {
-		limit = 10
-	}
-
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil || offset < 0 {
-		offset = 0
-	}
+	limit, offset := parsePaginationArgs(c, 10)
 
 	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID, limit, offset)
 	if err != nil {

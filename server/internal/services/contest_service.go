@@ -18,7 +18,7 @@ import (
 
 type ContestService interface {
 	CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error)
-	FetchContests(ctx context.Context, user models.UserDemographics) ([]models.Contest, error)
+	FetchContests(ctx context.Context, user models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
@@ -50,35 +50,21 @@ func (s *contestService) CreateContest(ctx context.Context, contest models.Conte
 	return s.repo.CreateContest(ctx, contest, problems)
 }
 
-func (s *contestService) FetchContests(ctx context.Context, user models.UserDemographics) ([]models.Contest, error) {
+func (s *contestService) FetchContests(ctx context.Context, user models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
 	var rawContests []models.Contest
 	var err error
 
 	switch user.Role {
 	case "admin":
-		rawContests, err = s.repo.GetAllContests(ctx)
+		rawContests, err = s.repo.GetAllContests(ctx, limit, offset, searchQuery, viewMode)
 	case "professor":
-		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID)
+		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID, limit, offset, searchQuery, viewMode)
 	default:
-		rawContests, err = s.repo.GetPublicContests(ctx)
+		rawContests, err = s.repo.GetPublicContests(ctx, &user, limit, offset, searchQuery, viewMode)
 	}
 
 	if err != nil {
 		return nil, err
-	}
-
-	if user.Role == "student" {
-		var filtered []models.Contest
-		for _, c := range rawContests {
-			if c.AccessRules == nil {
-				filtered = append(filtered, c)
-				continue
-			}
-			if isEligible(c.AccessRules, user) {
-				filtered = append(filtered, c)
-			}
-		}
-		return filtered, nil
 	}
 
 	return rawContests, nil
@@ -251,27 +237,6 @@ func (s *contestService) FetchContestProblems(ctx context.Context, contestID, us
 	return s.repo.GetContestProblems(ctx, contestID, userID)
 }
 
-func isEligible(rules *models.ContestAccessRules, user models.UserDemographics) bool {
-	if !containsStr(rules.AllowedCourses, user.Course) {
-		return false
-	}
-	if !containsStr(rules.AllowedDepartments, user.Department) {
-		return false
-	}
-	if !containsStr(rules.AllowedBatches, user.Batch) {
-		return false
-	}
-	if !containsStr(rules.AllowedSections, user.Section) {
-		return false
-	}
-	if !containsStr(rules.AllowedStudentGroups, user.StudentGroup) {
-		return false
-	}
-	if !containsInt(rules.AllowedGraduationYears, user.GraduationYear) {
-		return false
-	}
-	return true
-}
 
 func (s *contestService) DeleteContest(ctx context.Context, contestID string) error {
 	err := s.repo.DeleteContest(ctx, contestID)
@@ -348,26 +313,3 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 	}
 }
 
-func containsStr(slice []string, val string) bool {
-	if len(slice) == 0 {
-		return true
-	}
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}
-
-func containsInt(slice []int, val int) bool {
-	if len(slice) == 0 {
-		return true
-	}
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}

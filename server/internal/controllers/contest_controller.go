@@ -100,8 +100,12 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 		GraduationYear: getInt(c, "graduation_year"),
 	}
 
+	limit, offset := parsePaginationArgs(c, 10)
+	searchQuery := c.Query("search")
+	viewMode := c.Query("view_mode")
+
 	// 3. Fetch cleanly filtered contests
-	contests, err := ctrl.service.FetchContests(c.Request.Context(), demo)
+	contests, err := ctrl.service.FetchContests(c.Request.Context(), demo, limit, offset, searchQuery, viewMode)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contests"})
 		return

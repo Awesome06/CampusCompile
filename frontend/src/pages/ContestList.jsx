@@ -16,6 +16,11 @@ export default function ContestList() {
   const [viewMode, setViewMode] = useState(isElevated ? 'public' : 'upcoming'); 
   const [registeredContests, setRegisteredContests] = useState({});
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 10;
+  const [hasMore, setHasMore] = useState(true);
+
   const handleRegister = async (contestId) => {
     try {
       await api.post(`/contests/${contestId}/register`);
@@ -25,36 +30,65 @@ export default function ContestList() {
     }
   };
   
-  useEffect(() => {
-    setLoading(true);
-    api.get('/contests')
+  const fetchContests = (currentOffset, query) => {
+    if (currentOffset === 0) setLoading(true);
+    api.get('/contests', { params: { limit, offset: currentOffset, search: query, view_mode: viewMode } })
       .then((response) => {
-        setContests(response.data || []);
+        const data = response.data || [];
+        setContests(data);
+        setHasMore(data.length === limit);
+        setOffset(currentOffset);
         setLoading(false);
       })
       .catch((error) => {
         console.error("Error fetching contests:", error);
         setLoading(false);
       });
-  }, []);
+  };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setOffset(0);
+      setHasMore(true);
+      fetchContests(0, searchQuery);
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, viewMode]);
+
+  const handlePrev = () => {
+    if (offset >= limit) {
+      const nextOffset = offset - limit;
+      fetchContests(nextOffset, searchQuery);
+    }
+  };
+
+  const handleNext = () => {
+    if (hasMore) {
+      const nextOffset = offset + limit;
+      fetchContests(nextOffset, searchQuery);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in the search bar
+      if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') {
+        handlePrev();
+      } else if (e.key === 'ArrowRight') {
+        handleNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [offset, hasMore, searchQuery, viewMode]);
 
   // Time & Status Evaluation
   const now = new Date();
   
-  // Filter logic based on the active tab
-  const filteredContests = contests.filter(contest => {
-    const startTime = new Date(contest.start_time);
-    const endTime = new Date(contest.end_time);
-
-    if (isElevated) {
-      if (viewMode === 'public') return contest.is_public === true;
-      if (viewMode === 'faculty') return contest.author_id === currentUser?.id || !contest.is_public || currentUser?.role === 'admin';
-    } else {
-      if (viewMode === 'upcoming') return endTime > now;
-      if (viewMode === 'past') return endTime <= now;
-    }
-    return true;
-  });
+  const displayStart = contests.length > 0 ? offset + 1 : 0;
+  const displayEnd = offset + contests.length;
 
   // Helper to determine the visual status badge
   const getStatusBadge = (contest) => {
@@ -99,7 +133,18 @@ export default function ContestList() {
     <div className="p-8 max-w-6xl mx-auto">
       
       {/* Header & Dynamic Tabs */}
-      <div className="relative flex justify-center items-center mb-8 h-10">
+      <div className="relative flex justify-center items-center mb-8 h-10 w-full">
+        
+        <div className="absolute left-0 w-1/3 min-w-[200px]">
+          <input 
+            type="text"
+            placeholder="Search contests..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#1e1e1e] border border-dark-border rounded-md px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition shadow-sm text-sm"
+          />
+        </div>
+
         <div className="flex bg-[#1e1e1e] rounded-lg p-1 border border-dark-border shadow-lg">
           
           {/* Faculty Tabs */}
@@ -147,13 +192,13 @@ export default function ContestList() {
 
         {loading && <div className="text-center py-8 text-gray-400 animate-pulse font-mono">Scanning arena servers...</div>}
         
-        {!loading && filteredContests.length === 0 && (
+        {!loading && contests.length === 0 && (
           <div className="text-center py-10 text-gray-500 italic border-b border-dark-border last:border-0">
             No contests found in this category.
           </div>
         )}
         
-        {!loading && filteredContests.map((contest) => (
+        {!loading && contests.map((contest) => (
           <div key={contest.contest_id} className="flex justify-between items-center py-5 text-white border-b border-dark-border last:border-0 hover:bg-[#252525] px-4 rounded transition group">
             
             {/* Title, Organization & Status */}
@@ -227,6 +272,20 @@ export default function ContestList() {
 
           </div>
         ))}
+
+        {!loading && (hasMore || offset > 0) && (
+          <div className="flex justify-between items-center mt-6 pt-4 border-t border-dark-border px-4">
+            <Button onClick={handlePrev} variant="outline" disabled={offset === 0} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed">
+              &larr; Prev
+            </Button>
+            <span className="w-3/5 text-center text-gray-400 text-sm font-mono">
+              Showing {displayStart} - {displayEnd}
+            </span>
+            <Button onClick={handleNext} variant="outline" disabled={!hasMore} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed">
+              Next &rarr;
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

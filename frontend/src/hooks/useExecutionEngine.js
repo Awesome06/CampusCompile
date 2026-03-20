@@ -17,6 +17,9 @@ export default function useExecutionEngine(problemId, contestId = null) {
   const [language, setLanguage] = useState('cpp');
   const [submitStatus, setSubmitStatus] = useState(''); 
   const [history, setHistory] = useState([]);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const historyLimit = 10;
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
   
   // Console State
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
@@ -47,7 +50,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
       .then(res => setProblem(res.data))
       .catch(err => console.error("Could not fetch problem details", err));
       
-    fetchHistory();
+    fetchHistory(0);
   }, [problemId, contestId]);
 
   // Load Draft
@@ -79,16 +82,27 @@ export default function useExecutionEngine(problemId, contestId = null) {
     return () => clearTimeout(timer);
   }, [code, language, draftKey]);
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (offset = 0) => {
     try {
       const endpoint = contestId 
-        ? `/submissions/history/${problemId}?contest_id=${contestId}` 
-        : `/submissions/history/${problemId}`;
+        ? `/submissions/history/${problemId}?contest_id=${contestId}&limit=${historyLimit}&offset=${offset}` 
+        : `/submissions/history/${problemId}?limit=${historyLimit}&offset=${offset}`;
       const res = await api.get(endpoint);
-      setHistory(res.data || []);
+      const data = res.data || [];
+      setHistory(data);
+      setHasMoreHistory(data.length === historyLimit);
+      setHistoryOffset(offset);
     } catch (err) {
       console.error("Could not fetch history:", err);
     }
+  };
+
+  const fetchPrevHistory = () => {
+    if (historyOffset >= historyLimit) fetchHistory(historyOffset - historyLimit);
+  };
+
+  const fetchNextHistory = () => {
+    if (hasMoreHistory) fetchHistory(historyOffset + historyLimit);
   };
 
   const handleSubmit = async () => {
@@ -112,7 +126,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
           setSubmitStatus('Running... ⚙️');
         } else {
           setSubmitStatus(data.status);
-          fetchHistory();
+          fetchHistory(0);
           
           if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(data.status)) {
             setConsoleOutput(data.message || `Verdict: ${data.status}`);
@@ -192,6 +206,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
 
   return {
     problem, code, setCode, language, setLanguage, submitStatus, history,
+    hasMoreHistory, historyOffset, historyLimit, fetchPrevHistory, fetchNextHistory,
     isConsoleOpen, setIsConsoleOpen, activeTab, setActiveTab,
     customInput, setCustomInput, consoleOutput, isProcessing,
     handleSubmit, handleRunCode

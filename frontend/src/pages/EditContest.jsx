@@ -3,6 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../services/api';
 import Button from '../components/ui/Button';
 
+const defaultAccessRules = {
+  allowed_courses: [],
+  allowed_departments: [],
+  allowed_batches: [],
+  allowed_sections: [],
+  allowed_student_groups: [],
+  allowed_graduation_years: []
+};
+
 export default function EditContest() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -10,12 +19,13 @@ export default function EditContest() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fetchingProblems, setFetchingProblems] = useState(false);
   const [availableProblems, setAvailableProblems] = useState([]);
-
-  const defaultAccessRules = {
-    allowed_courses: [], allowed_departments: [], allowed_batches: [],
-    allowed_sections: [], allowed_student_groups: [], allowed_graduation_years: []
-  };
+  const [assignedCache, setAssignedCache] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 25;
+  const [hasMore, setHasMore] = useState(true);
 
   const [formData, setFormData] = useState({
     title: '', host_organization: '', start_time: '', end_time: '',
@@ -33,33 +43,34 @@ export default function EditContest() {
       return d.toISOString().slice(0, 16);
     } catch (e) {
       console.warn("Date parsing error:", e);
-      return ''; 
+      return '';
     }
+  };
+
+  const loadProblems = (currentOffset, query) => {
+    setFetchingProblems(true);
+    api.get('/faculty/problems', { params: { limit, offset: currentOffset, search: query } })
+      .then(res => {
+        const data = res.data || [];
+        setAvailableProblems(data);
+        setHasMore(data.length === limit);
+        setOffset(currentOffset);
+      })
+      .catch(err => console.error("Failed to fetch problems", err))
+      .finally(() => setFetchingProblems(false));
   };
 
   useEffect(() => {
     const loadContestData = async () => {
       try {
-        const [contestRes, assignedProbsRes, availableProbsRes] = await Promise.all([
+        const [contestRes, assignedProbsRes] = await Promise.all([
           api.get(`/contests/${id}`),
-          api.get(`/contests/${id}/problems`),
-          api.get('/faculty/problems')
+          api.get(`/contests/${id}/problems`)
         ]);
-        
-        const contest = contestRes.data?.contest || {};
-        
-        // 👇 CRASH FIX 2: Force arrays so .map() and .forEach() never fail
-        const assignedProblems = Array.isArray(assignedProbsRes.data) ? assignedProbsRes.data : [];
-        let available = Array.isArray(availableProbsRes.data) ? [...availableProbsRes.data] : [];
-        
-        assignedProblems.forEach(ap => {
-          if (!available.find(av => av?.problem_id === ap?.problem_id)) {
-            available.push(ap);
-          }
-        });
 
-        setAvailableProblems(available);
-        
+        const contest = contestRes.data?.contest || {};
+        const assignedProblems = Array.isArray(assignedProbsRes.data) ? assignedProbsRes.data : [];
+
         setFormData({
           title: contest.title || '',
           host_organization: contest.host_organization || 'CampusCompile Official',
@@ -72,9 +83,12 @@ export default function EditContest() {
             points_value: p.points_value || 100
           }))
         });
+
+        // Seed available problems with assigned ones so they show up even if not in the first page
+        setAssignedCache(assignedProblems);
+        setAvailableProblems(assignedProblems);
       } catch (err) {
         console.error("Failed to fetch contest data", err);
-        // Fail silently and let the UI render the empty state gracefully
       } finally {
         setLoading(false);
       }
@@ -83,6 +97,48 @@ export default function EditContest() {
     loadContestData();
   }, [id]);
 
+  useEffect(() => {
+    if (step === 3) {
+      const timer = setTimeout(() => {
+        setOffset(0);
+        setHasMore(true);
+        loadProblems(0, searchQuery);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [step, searchQuery]);
+
+  const handlePrevProblems = () => {
+    if (offset >= limit) {
+      const nextOffset = offset - limit;
+      loadProblems(nextOffset, searchQuery);
+    }
+  };
+
+  const handleNextProblems = () => {
+    if (hasMore) {
+      const nextOffset = offset + limit;
+      loadProblems(nextOffset, searchQuery);
+    }
+  };
+
+  useEffect(() => {
+    if (step !== 3) return;
+    const handleKeyDown = (e) => {
+      if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') {
+        handlePrevProblems();
+      } else if (e.key === 'ArrowRight') {
+        handleNextProblems();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, offset, hasMore, searchQuery]);
+
+  const displayStart = availableProblems.length > 0 ? offset + 1 : 0;
+  const displayEnd = offset + availableProblems.length;
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
@@ -90,16 +146,16 @@ export default function EditContest() {
 
   const handleArrayChange = (field, value) => {
     const arrayValue = value.split(',').map(item => item.trim()).filter(item => item !== '');
-    const finalArray = field === 'allowed_graduation_years' 
+    const finalArray = field === 'allowed_graduation_years'
       ? arrayValue.map(v => parseInt(v, 10)).filter(v => !isNaN(v))
       : arrayValue;
 
-    setFormData(prev => ({ 
-      ...prev, 
-      access_rules: { 
-        ...(prev.access_rules || {}), 
-        [field]: finalArray 
-      } 
+    setFormData(prev => ({
+      ...prev,
+      access_rules: {
+        ...(prev.access_rules || {}),
+        [field]: finalArray
+      }
     }));
   };
 
@@ -110,15 +166,22 @@ export default function EditContest() {
     return Array.isArray(val) ? val.join(', ') : '';
   };
 
-  const toggleProblem = (problemId) => {
+  const toggleProblem = (prob) => {
     setFormData(prev => {
       const problems = Array.isArray(prev.problems) ? prev.problems : [];
-      const exists = problems.find(p => p.problem_id === problemId);
+      const exists = problems.find(p => p.problem_id === prob.problem_id);
       if (exists) {
-        return { ...prev, problems: problems.filter(p => p.problem_id !== problemId) };
+        return { ...prev, problems: problems.filter(p => p.problem_id !== prob.problem_id) };
       } else {
-        return { ...prev, problems: [...problems, { problem_id: problemId, points_value: 100 }] };
+        return { ...prev, problems: [...problems, { problem_id: prob.problem_id, points_value: 100 }] };
       }
+    });
+
+    setAssignedCache(prev => {
+      if (!prev.find(p => p.problem_id === prob.problem_id)) {
+        return [...prev, prob];
+      }
+      return prev;
     });
   };
 
@@ -227,11 +290,11 @@ export default function EditContest() {
               ].map(item => (
                 <div key={item.field}>
                   <label className="block text-gray-400 text-sm font-bold mb-2">{item.label}</label>
-                  <input 
-                    type="text" 
-                    value={getRuleValue(item.field)} 
-                    onChange={(e) => handleArrayChange(item.field, e.target.value)} 
-                    className="w-full p-3 rounded bg-dark-surface border border-dark-border text-white focus:border-blue-500 outline-none font-mono text-sm" 
+                  <input
+                    type="text"
+                    value={getRuleValue(item.field)}
+                    onChange={(e) => handleArrayChange(item.field, e.target.value)}
+                    className="w-full p-3 rounded bg-dark-surface border border-dark-border text-white focus:border-blue-500 outline-none font-mono text-sm"
                   />
                 </div>
               ))}
@@ -243,31 +306,82 @@ export default function EditContest() {
           <div className="space-y-6 animate-fadeIn">
             <h3 className="text-xl font-bold text-white border-b border-dark-border pb-2">Step 3: Arena Setup</h3>
             <p className="text-sm text-gray-400 mb-4">Select the problems you want to feature in this contest and assign point values.</p>
-            <div className="max-h-96 overflow-y-auto pr-2 space-y-3">
-              {availableProblems.length === 0 ? (
-                <p className="text-center text-gray-500 italic py-10">No problems found in your workspace.</p>
-              ) : (
-                availableProblems.map(prob => {
-                  const isSelected = formData.problems.some(p => p.problem_id === prob.problem_id);
-                  const selectedData = formData.problems.find(p => p.problem_id === prob.problem_id);
-                  return (
-                    <div key={prob.problem_id} className={`flex items-center justify-between p-4 rounded border transition ${isSelected ? 'border-blue-500 bg-blue-900/10' : 'border-dark-border bg-dark-surface hover:bg-[#252525]'}`}>
-                      <div className="flex items-center gap-4">
-                        <input type="checkbox" checked={isSelected} onChange={() => toggleProblem(prob.problem_id)} className="w-5 h-5 accent-blue-500" />
-                        <div>
-                          <p className="text-white font-bold">{prob.title}</p>
-                          <p className={`text-xs ${prob.difficulty === 'Easy' ? 'text-green-400' : prob.difficulty === 'Medium' ? 'text-yellow-400' : 'text-red-400'}`}>{prob.difficulty}</p>
+
+            {/* Pinned Selected Problems */}
+            {formData.problems.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-bold text-gray-400 mb-2">Selected Problems</h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                  {formData.problems.map(selectedData => {
+                    const prob = assignedCache.find(p => p.problem_id === selectedData.problem_id) || 
+                                 availableProblems.find(p => p.problem_id === selectedData.problem_id) || 
+                                 { problem_id: selectedData.problem_id, title: 'Pinned Problem', difficulty: 'Unknown' };
+                    return (
+                      <div key={prob.problem_id} className="flex items-center justify-between p-3 rounded border border-blue-500 bg-blue-900/10 transition">
+                        <div className="flex items-center gap-4">
+                          <input type="checkbox" checked={true} onChange={() => toggleProblem(prob)} className="w-5 h-5 accent-blue-500" />
+                          <div>
+                            <p className="text-white font-bold text-sm">{prob.title}</p>
+                            <p className={`text-xs ${prob.difficulty === 'Easy' ? 'text-green-400' : prob.difficulty === 'Medium' ? 'text-yellow-400' : 'text-red-400'}`}>{prob.difficulty}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-gray-400 font-bold">Points:</label>
+                          <input type="number" value={selectedData.points_value || 100} onChange={(e) => updatePoints(prob.problem_id, e.target.value)} className="w-16 p-1 rounded bg-[#1e1e1e] border border-dark-border text-white text-center font-mono text-sm" />
                         </div>
                       </div>
-                      {isSelected && (
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm text-gray-400 font-bold">Points:</label>
-                          <input type="number" value={selectedData?.points_value || 100} onChange={(e) => updatePoints(prob.problem_id, e.target.value)} className="w-20 p-1.5 rounded bg-[#1e1e1e] border border-dark-border text-white text-center font-mono" />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <h4 className="text-sm font-bold text-gray-400 mb-2">Problem Repository</h4>
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Search your workspace..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full p-3 rounded bg-dark-surface border border-dark-border text-white focus:outline-none focus:border-blue-500 transition shadow-sm text-sm"
+              />
+            </div>
+
+            <div className="max-h-96 overflow-y-auto pr-2 space-y-3">
+              {fetchingProblems && offset === 0 ? (
+                <p className="text-center text-gray-400 py-10 animate-pulse">Loading workspace...</p>
+              ) : availableProblems.length === 0 ? (
+                <p className="text-center text-gray-500 italic py-10">No problems found in your workspace.</p>
+              ) : (
+                <>
+                  {availableProblems.filter(prob => !formData.problems.some(p => p.problem_id === prob.problem_id)).map(prob => {
+                    return (
+                      <div key={prob.problem_id} className="flex items-center justify-between p-4 rounded border transition border-dark-border bg-dark-surface hover:bg-[#252525]">
+                        <div className="flex items-center gap-4">
+                          <input type="checkbox" checked={false} onChange={() => toggleProblem(prob)} className="w-5 h-5 accent-blue-500" />
+                          <div>
+                            <p className="text-white font-bold">{prob.title}</p>
+                            <p className={`text-xs ${prob.difficulty === 'Easy' ? 'text-green-400' : prob.difficulty === 'Medium' ? 'text-yellow-400' : 'text-red-400'}`}>{prob.difficulty}</p>
+                          </div>
                         </div>
-                      )}
+                      </div>
+                    )
+                  })}
+
+                  {!fetchingProblems && (hasMore || offset > 0) && (
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-dark-border px-2">
+                      <Button onClick={handlePrevProblems} variant="outline" disabled={offset === 0} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed text-xs py-1 px-3">
+                        &larr; Prev
+                      </Button>
+                      <span className="w-3/5 text-center text-gray-400 text-xs font-mono">
+                        Showing {displayStart} - {displayEnd}
+                      </span>
+                      <Button onClick={handleNextProblems} variant="outline" disabled={!hasMore} className="w-1/5 text-gray-300 border-dark-border hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed text-xs py-1 px-3">
+                        Next &rarr;
+                      </Button>
                     </div>
-                  )
-                })
+                  )}
+                </>
               )}
             </div>
           </div>
