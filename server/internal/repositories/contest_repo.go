@@ -166,15 +166,15 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 	`
 	args := []interface{}{authorID}
 	argIdx := 2
-	
+
 	if viewMode == "public" {
 		query += ` AND is_public = true`
 	} else if viewMode == "faculty" {
-		query += ` AND (author_id = $1 OR is_public = false)`
+		query += ` AND author_id = $1`
 	} else {
 		query += ` AND (is_public = true OR author_id = $1)`
 	}
-	
+
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
@@ -198,11 +198,11 @@ func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, sea
 	`
 	args := []interface{}{}
 	argIdx := 1
-	
+
 	if viewMode == "public" {
 		query += ` AND is_public = true`
 	}
-	
+
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
