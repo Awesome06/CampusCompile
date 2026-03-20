@@ -32,7 +32,7 @@ export default function ContestList() {
   
   const fetchContests = (currentOffset, query) => {
     if (currentOffset === 0) setLoading(true);
-    api.get('/contests', { params: { limit, offset: currentOffset, search: query } })
+    api.get('/contests', { params: { limit, offset: currentOffset, search: query, view_mode: viewMode } })
       .then((response) => {
         const data = response.data || [];
         setContests(data);
@@ -88,23 +88,8 @@ export default function ContestList() {
   // Time & Status Evaluation
   const now = new Date();
   
-  // Filter logic based on the active tab
-  const filteredContests = contests.filter(contest => {
-    const startTime = new Date(contest.start_time);
-    const endTime = new Date(contest.end_time);
-
-    if (isElevated) {
-      if (viewMode === 'public') return contest.is_public === true;
-      if (viewMode === 'faculty') return contest.author_id === currentUser?.id || !contest.is_public || currentUser?.role === 'admin';
-    } else {
-      if (viewMode === 'upcoming') return endTime > now;
-      if (viewMode === 'past') return endTime <= now;
-    }
-    return true;
-  });
-
-  const displayStart = filteredContests.length > 0 ? offset + 1 : 0;
-  const displayEnd = offset + filteredContests.length;
+  const displayStart = contests.length > 0 ? offset + 1 : 0;
+  const displayEnd = offset + contests.length;
 
   // Helper to determine the visual status badge
   const getStatusBadge = (contest) => {
@@ -208,13 +193,13 @@ export default function ContestList() {
 
         {loading && <div className="text-center py-8 text-gray-400 animate-pulse font-mono">Scanning arena servers...</div>}
         
-        {!loading && filteredContests.length === 0 && (
+        {!loading && contests.length === 0 && (
           <div className="text-center py-10 text-gray-500 italic border-b border-dark-border last:border-0">
             No contests found in this category.
           </div>
         )}
         
-        {!loading && filteredContests.map((contest) => (
+        {!loading && contests.map((contest) => (
           <div key={contest.contest_id} className="flex justify-between items-center py-5 text-white border-b border-dark-border last:border-0 hover:bg-[#252525] px-4 rounded transition group">
             
             {/* Title, Organization & Status */}

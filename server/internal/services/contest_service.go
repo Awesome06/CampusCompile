@@ -18,7 +18,7 @@ import (
 
 type ContestService interface {
 	CreateContest(ctx context.Context, contest models.Contest, problems []map[string]interface{}) (string, error)
-	FetchContests(ctx context.Context, user models.UserDemographics, limit, offset int, searchQuery string) ([]models.Contest, error)
+	FetchContests(ctx context.Context, user models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
@@ -50,17 +50,17 @@ func (s *contestService) CreateContest(ctx context.Context, contest models.Conte
 	return s.repo.CreateContest(ctx, contest, problems)
 }
 
-func (s *contestService) FetchContests(ctx context.Context, user models.UserDemographics, limit, offset int, searchQuery string) ([]models.Contest, error) {
+func (s *contestService) FetchContests(ctx context.Context, user models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
 	var rawContests []models.Contest
 	var err error
 
 	switch user.Role {
 	case "admin":
-		rawContests, err = s.repo.GetAllContests(ctx, limit, offset, searchQuery)
+		rawContests, err = s.repo.GetAllContests(ctx, limit, offset, searchQuery, viewMode)
 	case "professor":
-		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID, limit, offset, searchQuery)
+		rawContests, err = s.repo.GetFacultyContests(ctx, user.UserID, limit, offset, searchQuery, viewMode)
 	default:
-		rawContests, err = s.repo.GetPublicContests(ctx, &user, limit, offset, searchQuery)
+		rawContests, err = s.repo.GetPublicContests(ctx, &user, limit, offset, searchQuery, viewMode)
 	}
 
 	if err != nil {

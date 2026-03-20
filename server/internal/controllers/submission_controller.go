@@ -146,7 +146,7 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 		contestID = &contestIDQuery
 	}
 
-	limit, offset := parsePaginationArgs(c)
+	limit, offset := parsePaginationArgs(c, 10)
 
 	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID, limit, offset)
 	if err != nil {

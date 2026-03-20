@@ -8,6 +8,7 @@ export default function AddContest() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [availableProblems, setAvailableProblems] = useState([]);
+  const [assignedCache, setAssignedCache] = useState([]);
 
   const [fetchingProblems, setFetchingProblems] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,14 +118,21 @@ export default function AddContest() {
   };
 
   // Handle Problem Selection
-  const toggleProblem = (problemId) => {
+  const toggleProblem = (prob) => {
     setFormData(prev => {
-      const exists = prev.problems.find(p => p.problem_id === problemId);
+      const exists = prev.problems.find(p => p.problem_id === prob.problem_id);
       if (exists) {
-        return { ...prev, problems: prev.problems.filter(p => p.problem_id !== problemId) };
+        return { ...prev, problems: prev.problems.filter(p => p.problem_id !== prob.problem_id) };
       } else {
-        return { ...prev, problems: [...prev.problems, { problem_id: problemId, points_value: 100 }] };
+        return { ...prev, problems: [...prev.problems, { problem_id: prob.problem_id, points_value: 100 }] };
       }
+    });
+
+    setAssignedCache(prev => {
+      if (!prev.find(p => p.problem_id === prob.problem_id)) {
+        return [...prev, prob];
+      }
+      return prev;
     });
   };
 
@@ -253,6 +261,35 @@ export default function AddContest() {
             <h3 className="text-xl font-bold text-white border-b border-dark-border pb-2">Step 3: Arena Setup</h3>
             <p className="text-sm text-gray-400 mb-4">Select the problems you want to feature in this contest and assign point values.</p>
 
+            {/* Pinned Selected Problems */}
+            {formData.problems.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-bold text-gray-400 mb-2">Selected Problems</h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                  {formData.problems.map(selectedData => {
+                    const prob = assignedCache.find(p => p.problem_id === selectedData.problem_id) || 
+                                 availableProblems.find(p => p.problem_id === selectedData.problem_id) || 
+                                 { problem_id: selectedData.problem_id, title: 'Pinned Problem', difficulty: 'Unknown' };
+                    return (
+                      <div key={prob.problem_id} className="flex items-center justify-between p-3 rounded border border-blue-500 bg-blue-900/10 transition">
+                        <div className="flex items-center gap-4">
+                          <input type="checkbox" checked={true} onChange={() => toggleProblem(prob)} className="w-5 h-5 accent-blue-500" />
+                          <div>
+                            <p className="text-white font-bold text-sm">{prob.title}</p>
+                            <p className={`text-xs ${prob.difficulty === 'Easy' ? 'text-green-400' : prob.difficulty === 'Medium' ? 'text-yellow-400' : 'text-red-400'}`}>{prob.difficulty}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-gray-400 font-bold">Points:</label>
+                          <input type="number" value={selectedData.points_value || 100} onChange={(e) => updatePoints(prob.problem_id, e.target.value)} className="w-16 p-1 rounded bg-[#1e1e1e] border border-dark-border text-white text-center font-mono text-sm" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="mb-4">
               <input
                 type="text"
@@ -270,31 +307,16 @@ export default function AddContest() {
                 <p className="text-center text-gray-500 italic py-10">No problems found matching this search in your workspace. You need to forge problems first!</p>
               ) : (
                 <>
-                  {availableProblems.map(prob => {
-                    const isSelected = formData.problems.some(p => p.problem_id === prob.problem_id);
-                    const selectedData = formData.problems.find(p => p.problem_id === prob.problem_id);
-
+                  {availableProblems.filter(prob => !formData.problems.some(p => p.problem_id === prob.problem_id)).map(prob => {
                     return (
-                      <div key={prob.problem_id} className={`flex items-center justify-between p-4 rounded border transition ${isSelected ? 'border-blue-500 bg-blue-900/10' : 'border-dark-border bg-dark-surface hover:bg-[#252525]'}`}>
+                      <div key={prob.problem_id} className="flex items-center justify-between p-4 rounded border transition border-dark-border bg-dark-surface hover:bg-[#252525]">
                         <div className="flex items-center gap-4">
-                          <input type="checkbox" checked={isSelected} onChange={() => toggleProblem(prob.problem_id)} className="w-5 h-5 accent-blue-500" />
+                          <input type="checkbox" checked={false} onChange={() => toggleProblem(prob)} className="w-5 h-5 accent-blue-500" />
                           <div>
                             <p className="text-white font-bold">{prob.title}</p>
                             <p className={`text-xs ${prob.difficulty === 'Easy' ? 'text-green-400' : prob.difficulty === 'Medium' ? 'text-yellow-400' : 'text-red-400'}`}>{prob.difficulty}</p>
                           </div>
                         </div>
-
-                        {isSelected && (
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm text-gray-400 font-bold">Points:</label>
-                            <input
-                              type="number"
-                              value={selectedData?.points_value || 100}
-                              onChange={(e) => updatePoints(prob.problem_id, e.target.value)}
-                              className="w-20 p-1.5 rounded bg-[#1e1e1e] border border-dark-border text-white text-center font-mono"
-                            />
-                          </div>
-                        )}
                       </div>
                     )
                   })}

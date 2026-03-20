@@ -6,15 +6,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func parsePaginationArgs(c *gin.Context) (int, int) {
-	limitStr := c.DefaultQuery("limit", "10")
+func parsePaginationArgs(c *gin.Context, defaultLimit int) (int, int) {
+	limitStr := c.DefaultQuery("limit", strconv.Itoa(defaultLimit))
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		limit = 10
+		limit = defaultLimit
 	}
 
 	if limit < 1 {
-		limit = 10
+		limit = defaultLimit
 	} else if limit > 100 {
 		limit = 100
 	}

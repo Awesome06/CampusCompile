@@ -18,9 +18,9 @@ type ContestRepository interface {
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
 	GetUserProfiles(ctx context.Context, userIDs []string) (map[string]models.ContestProfile, error)
 	GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
-	GetPublicContests(ctx context.Context, demo *models.UserDemographics, limit, offset int, searchQuery string) ([]models.Contest, error)
-	GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]models.Contest, error)
-	GetAllContests(ctx context.Context, limit, offset int, searchQuery string) ([]models.Contest, error)
+	GetPublicContests(ctx context.Context, demo *models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
+	GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
+	GetAllContests(ctx context.Context, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error
 	GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error)
@@ -84,14 +84,14 @@ func (r *contestRepo) CreateContest(ctx context.Context, contest models.Contest,
 	return contestID, nil
 }
 
-func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDemographics, limit, offset int, searchQuery string) ([]models.Contest, error) {
+func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
 	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
 		FROM contests WHERE is_public = true
 	`
 	args := []interface{}{}
 	argIdx := 1
-	
+
 	if demo != nil {
 		if demo.Course != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
@@ -137,6 +137,12 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 		}
 	}
 
+	if viewMode == "upcoming" {
+		query += ` AND end_time > NOW()`
+	} else if viewMode == "past" {
+		query += ` AND end_time <= NOW()`
+	}
+
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
@@ -153,13 +159,21 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
-func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]models.Contest, error) {
+func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
 	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests WHERE (is_public = true OR author_id = $1)
+		FROM contests WHERE 1=1
 	`
 	args := []interface{}{authorID}
 	argIdx := 2
+	
+	if viewMode == "public" {
+		query += ` AND is_public = true`
+	} else if viewMode == "faculty" {
+		query += ` AND (author_id = $1 OR is_public = false)`
+	} else {
+		query += ` AND (is_public = true OR author_id = $1)`
+	}
 	
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
@@ -177,13 +191,17 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
-func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, searchQuery string) ([]models.Contest, error) {
+func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
 	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
 		FROM contests WHERE 1=1
 	`
 	args := []interface{}{}
 	argIdx := 1
+	
+	if viewMode == "public" {
+		query += ` AND is_public = true`
+	}
 	
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
