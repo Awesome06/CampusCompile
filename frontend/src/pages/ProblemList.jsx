@@ -25,6 +25,7 @@ export default function ProblemList() {
         const data = response.data || [];
         setProblems(data);
         setHasMore(data.length === limit);
+        setOffset(currentOffset);
         setLoading(false);
       })
       .catch((error) => {
@@ -46,7 +47,6 @@ export default function ProblemList() {
   const handlePrev = () => {
     if (offset >= limit) {
       const nextOffset = offset - limit;
-      setOffset(nextOffset);
       fetchProblems(nextOffset, searchQuery);
     }
   };
@@ -54,7 +54,6 @@ export default function ProblemList() {
   const handleNext = () => {
     if (hasMore) {
       const nextOffset = offset + limit;
-      setOffset(nextOffset);
       fetchProblems(nextOffset, searchQuery);
     }
   };

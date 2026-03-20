@@ -54,6 +54,7 @@ export default function EditContest() {
         const data = res.data || [];
         setAvailableProblems(data);
         setHasMore(data.length === limit);
+        setOffset(currentOffset);
       })
       .catch(err => console.error("Failed to fetch problems", err))
       .finally(() => setFetchingProblems(false));
@@ -110,7 +111,6 @@ export default function EditContest() {
   const handlePrevProblems = () => {
     if (offset >= limit) {
       const nextOffset = offset - limit;
-      setOffset(nextOffset);
       loadProblems(nextOffset, searchQuery);
     }
   };
@@ -118,7 +118,6 @@ export default function EditContest() {
   const handleNextProblems = () => {
     if (hasMore) {
       const nextOffset = offset + limit;
-      setOffset(nextOffset);
       loadProblems(nextOffset, searchQuery);
     }
   };

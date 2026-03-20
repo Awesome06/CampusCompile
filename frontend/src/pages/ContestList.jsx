@@ -37,6 +37,7 @@ export default function ContestList() {
         const data = response.data || [];
         setContests(data);
         setHasMore(data.length === limit);
+        setOffset(currentOffset);
         setLoading(false);
       })
       .catch((error) => {
@@ -58,7 +59,6 @@ export default function ContestList() {
   const handlePrev = () => {
     if (offset >= limit) {
       const nextOffset = offset - limit;
-      setOffset(nextOffset);
       fetchContests(nextOffset, searchQuery);
     }
   };
@@ -66,7 +66,6 @@ export default function ContestList() {
   const handleNext = () => {
     if (hasMore) {
       const nextOffset = offset + limit;
-      setOffset(nextOffset);
       fetchContests(nextOffset, searchQuery);
     }
   };
