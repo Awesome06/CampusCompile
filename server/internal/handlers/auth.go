@@ -55,7 +55,7 @@ func generateStateOauthCookie(c *gin.Context) string {
 	domain := os.Getenv("COOKIE_DOMAIN")
 
 	isSecure := !strings.Contains(os.Getenv("BASE_URL"), "localhost")
-	c.SetCookie("oauth_state", state, int(10*time.Minute.Seconds()), "/", domain, isSecure, true)
+	c.SetCookie("oauth_state", state, 600, "/", domain, isSecure, true)
 	return state
 }
 
