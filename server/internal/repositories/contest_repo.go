@@ -18,9 +18,9 @@ type ContestRepository interface {
 	CheckRegistration(ctx context.Context, contestID, userID string) (bool, error)
 	GetUserProfiles(ctx context.Context, userIDs []string) (map[string]models.ContestProfile, error)
 	GetContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
-	GetPublicContests(ctx context.Context) ([]models.Contest, error)
-	GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error)
-	GetAllContests(ctx context.Context) ([]models.Contest, error)
+	GetPublicContests(ctx context.Context, demo *models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
+	GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
+	GetAllContests(ctx context.Context, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error)
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID, eventType string, metadata []byte) error
 	GetTelemetryAlerts(ctx context.Context, contestID string, userIDs []string) (map[string]models.TelemetryAlerts, error)
@@ -84,25 +84,143 @@ func (r *contestRepo) CreateContest(ctx context.Context, contest models.Contest,
 	return contestID, nil
 }
 
-func (r *contestRepo) GetPublicContests(ctx context.Context) ([]models.Contest, error) {
-	return r.fetchContestsWithQuery(ctx, `
+func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDemographics, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
+	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests WHERE is_public = true ORDER BY start_time DESC
-	`)
+		FROM contests WHERE is_public = true
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	if demo != nil {
+		if demo.Course != "" {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_typeof(access_rules->'allowed_courses') != 'array' OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
+			args = append(args, demo.Course)
+			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_typeof(access_rules->'allowed_courses') != 'array' OR jsonb_array_length(access_rules->'allowed_courses') = 0)`
+		}
+		if demo.Department != "" {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_typeof(access_rules->'allowed_departments') != 'array' OR jsonb_array_length(access_rules->'allowed_departments') = 0 OR access_rules->'allowed_departments' ? $` + fmt.Sprint(argIdx) + `)`
+			args = append(args, demo.Department)
+			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_departments' IS NULL OR jsonb_typeof(access_rules->'allowed_departments') != 'array' OR jsonb_array_length(access_rules->'allowed_departments') = 0)`
+		}
+		if demo.Batch != "" {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_typeof(access_rules->'allowed_batches') != 'array' OR jsonb_array_length(access_rules->'allowed_batches') = 0 OR access_rules->'allowed_batches' ? $` + fmt.Sprint(argIdx) + `)`
+			args = append(args, demo.Batch)
+			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_batches' IS NULL OR jsonb_typeof(access_rules->'allowed_batches') != 'array' OR jsonb_array_length(access_rules->'allowed_batches') = 0)`
+		}
+		if demo.Section != "" {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_typeof(access_rules->'allowed_sections') != 'array' OR jsonb_array_length(access_rules->'allowed_sections') = 0 OR access_rules->'allowed_sections' ? $` + fmt.Sprint(argIdx) + `)`
+			args = append(args, demo.Section)
+			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_sections' IS NULL OR jsonb_typeof(access_rules->'allowed_sections') != 'array' OR jsonb_array_length(access_rules->'allowed_sections') = 0)`
+		}
+		if demo.StudentGroup != "" {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_typeof(access_rules->'allowed_student_groups') != 'array' OR jsonb_array_length(access_rules->'allowed_student_groups') = 0 OR access_rules->'allowed_student_groups' ? $` + fmt.Sprint(argIdx) + `)`
+			args = append(args, demo.StudentGroup)
+			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_student_groups' IS NULL OR jsonb_typeof(access_rules->'allowed_student_groups') != 'array' OR jsonb_array_length(access_rules->'allowed_student_groups') = 0)`
+		}
+		if demo.GraduationYear != 0 {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_typeof(access_rules->'allowed_graduation_years') != 'array' OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0 OR access_rules->'allowed_graduation_years' @> $` + fmt.Sprint(argIdx) + `::jsonb)`
+			args = append(args, fmt.Sprintf("[%d]", demo.GraduationYear))
+			argIdx++
+		} else {
+			query += ` AND (access_rules IS NULL OR access_rules->'allowed_graduation_years' IS NULL OR jsonb_typeof(access_rules->'allowed_graduation_years') != 'array' OR jsonb_array_length(access_rules->'allowed_graduation_years') = 0)`
+		}
+	}
+
+	if viewMode == "upcoming" {
+		query += ` AND end_time > NOW()`
+	} else if viewMode == "past" {
+		query += ` AND end_time <= NOW()`
+	}
+
+	tsQuery := formatPrefixTSQuery(searchQuery)
+	if tsQuery != "" {
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
+		args = append(args, tsQuery)
+		argIdx++
+	} else {
+		query += ` ORDER BY start_time DESC`
+	}
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	args = append(args, limit, offset)
+
+	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
-func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string) ([]models.Contest, error) {
-	return r.fetchContestsWithQuery(ctx, `
+func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
+	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests WHERE is_public = true OR author_id = $1 ORDER BY start_time DESC
-	`, authorID)
+		FROM contests WHERE 1=1
+	`
+	var args []interface{}
+	argIdx := 1
+
+	if viewMode == "public" {
+		query += ` AND is_public = true`
+	} else if viewMode == "faculty" {
+		query += ` AND author_id = $` + fmt.Sprint(argIdx)
+		args = append(args, authorID)
+		argIdx++
+	} else {
+		query += ` AND (is_public = true OR author_id = $` + fmt.Sprint(argIdx) + `)`
+		args = append(args, authorID)
+		argIdx++
+	}
+
+	tsQuery := formatPrefixTSQuery(searchQuery)
+	if tsQuery != "" {
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
+		args = append(args, tsQuery)
+		argIdx++
+	} else {
+		query += ` ORDER BY start_time DESC`
+	}
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	args = append(args, limit, offset)
+
+	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
-func (r *contestRepo) GetAllContests(ctx context.Context) ([]models.Contest, error) {
-	return r.fetchContestsWithQuery(ctx, `
+func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
+	query := `
 		SELECT contest_id, title, host_organization, start_time, end_time, access_rules, author_id, is_public, created_at
-		FROM contests ORDER BY start_time DESC
-	`)
+		FROM contests WHERE 1=1
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	if viewMode == "public" {
+		query += ` AND is_public = true`
+	}
+
+	tsQuery := formatPrefixTSQuery(searchQuery)
+	if tsQuery != "" {
+		paramStr := `$` + fmt.Sprint(argIdx)
+		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, start_time DESC`
+		args = append(args, tsQuery)
+		argIdx++
+	} else {
+		query += ` ORDER BY start_time DESC`
+	}
+	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	args = append(args, limit, offset)
+
+	return r.fetchContestsWithQuery(ctx, query, args...)
 }
 
 func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, args ...interface{}) ([]models.Contest, error) {
