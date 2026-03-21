@@ -10,5 +10,6 @@ Details.txt
 /frontend/node_modules
 /frontend/dist
 
-
+Dockerfile.dev
+docker-compose.override.yml
 repomix-output.xml
