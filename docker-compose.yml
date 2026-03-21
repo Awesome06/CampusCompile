@@ -62,6 +62,9 @@ services:
     container_name: campus-frontend
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
 
   # --- 6. MINIO STORAGE ---
   minio:

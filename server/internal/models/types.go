@@ -78,8 +78,8 @@ type Contest struct {
 	StartTime        time.Time           `json:"start_time"`
 	EndTime          time.Time           `json:"end_time"`
 	AccessRules      *ContestAccessRules `json:"access_rules,omitempty"`
-	AuthorID         *string             `json:"author_id,omitempty"` // NEW: Tracks the professor who created it
-	IsPublic         bool                `json:"is_public"`           // NEW: Distinguishes drafts from live arenas
+	AuthorID         *string             `json:"author_id,omitempty"`
+	IsPublic         bool                `json:"is_public"`
 	CreatedAt        time.Time           `json:"created_at"`
 }
 
