@@ -12,7 +12,7 @@ COPY . .
 
 # Compile a microscopic, statically-linked binary.
 # We strip debugging info (-s -w) to drastically reduce the file size.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -ldflags="-s -w" -o api ./cmd/api
 
 # --- Stage 2: The Runner ---
 # We switch to a bare-bones Alpine Linux image that has ZERO Go tooling inside it
