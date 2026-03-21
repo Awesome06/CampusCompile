@@ -65,7 +65,6 @@ services:
       - "443:443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
-
   # --- 6. MINIO STORAGE ---
   minio:
     image: minio/minio
