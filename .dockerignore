@@ -13,4 +13,9 @@ frontend/dist
 # Worker (Python)
 worker/venv
 worker/__pycache__
-worker/.env
+
+.env
+Keys.txt
+Dockerfile.dev
+docker-compose.override.yml
+repomix-output.xml

@@ -39,7 +39,7 @@ func InitOAuthConfig() {
 	oauthConfig = &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURL:  "http://localhost:8080/api/auth/callback",
+		RedirectURL:  os.Getenv("REDIRECT_URL"),
 		Scopes:       []string{"openid", "profile", "email", "User.Read"},
 		Endpoint:     microsoft.AzureADEndpoint(tenantID),
 	}
@@ -49,8 +49,13 @@ func generateStateOauthCookie(c *gin.Context) string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
-	c.SetSameSite(http.SameSiteNoneMode)
-	c.SetCookie("oauth_state", state, int(10*time.Minute.Seconds()), "/", "", true, true)
+
+	c.SetSameSite(http.SameSiteLaxMode)
+
+	domain := os.Getenv("COOKIE_DOMAIN")
+
+	isSecure := !strings.Contains(os.Getenv("BASE_URL"), "localhost")
+	c.SetCookie("oauth_state", state, int(10*time.Minute.Seconds()), "/", domain, isSecure, true)
 	return state
 }
 
@@ -123,7 +128,7 @@ func HandleAzureCallback(c *gin.Context) {
 
 	if assignedRole == "professor" || assignedRole == "admin" {
 		initialOnboarded = true // Auto-skip onboarding for faculty
-		
+
 		// Automatically Assign the first part of their email address before @ with . replaced by whitespace
 		emailPrefix := strings.Split(emailLower, "@")[0]
 		spacedPrefix := strings.ReplaceAll(emailPrefix, ".", " ")
@@ -177,7 +182,8 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	frontendRedirectURL := fmt.Sprintf("http://localhost:5173/oauth-success?token=%s&role=%s&onboarded=%t", tokenString, finalRole, isOnboarded)
+	baseURL := os.Getenv("BASE_URL")
+	frontendRedirectURL := fmt.Sprintf("%s/oauth-success?token=%s&role=%s&onboarded=%t", baseURL, tokenString, finalRole, isOnboarded)
 	c.Redirect(http.StatusTemporaryRedirect, frontendRedirectURL)
 }
 
