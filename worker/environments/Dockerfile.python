@@ -1,15 +1,12 @@
-# Use the official lightweight Alpine Python image
 FROM python:3.11-alpine
 
-# Set the working directory inside the container
-WORKDIR /sandbox
-
-# CRITICAL SECURITY: Explicitly map the student user to UID 1001 to match runner.py
 RUN addgroup -g 1001 student_group && \
     adduser -D -u 1001 -G student_group student
 
-# Drop root privileges
+RUN mkdir -p /sandbox_shared && chown student:student_group /sandbox_shared
+
+WORKDIR /sandbox_shared
+
 USER student
 
-# The container will sit idle until we pass a command to it
 CMD ["/bin/sh"]
