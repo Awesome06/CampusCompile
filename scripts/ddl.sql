@@ -15,7 +15,7 @@ BEGIN
         CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'SE');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'telemetry_event_type') THEN
-        CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected', 'anomalous_routing');
+        CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected', 'anomalous_routing', 'fullscreen_dropped');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audit_status') THEN
         CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed', 'failed');
