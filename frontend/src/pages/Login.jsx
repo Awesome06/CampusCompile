@@ -10,8 +10,7 @@ export default function Login() {
   }, []);
 
   const handleSSOLogin = () => {
-    const baseUrl = api.defaults.baseURL;
-    window.location.href = `${baseUrl}/auth/login`;
+    window.location.href = '/api/auth/login';
   };
 
   return (
