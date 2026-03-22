@@ -11,9 +11,9 @@ RUN go mod download
 COPY server/ .
 
 # Compile the statically-linked binary.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
+# RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
 # The following line is for single core processors / Resource limitations
-# RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -ldflags="-s -w" -o api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -ldflags="-s -w" -o api ./cmd/api
 
 # --- Stage 2: The Runner ---
 FROM alpine:latest

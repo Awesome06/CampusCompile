@@ -59,8 +59,6 @@ services:
   frontend:
     build:
       context: ./frontend
-      args:
-        - VITE_API_URL=http://${GCP_PUBLIC_IP}:8080/api
     container_name: campus-frontend
     ports:
       - "80:80"
