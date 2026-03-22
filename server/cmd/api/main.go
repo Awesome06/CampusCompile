@@ -79,9 +79,14 @@ func main() {
 	contestService := services.NewContestService(contestRepo, redisPkg.Client)
 	contestController := controllers.NewContestController(contestService)
 
-	// Configure CORS for the React frontend
+	// Configure CORS for the React frontend dynamically
+	allowedOrigin := os.Getenv("BASE_URL")
+	if allowedOrigin == "" {
+		allowedOrigin = "http://localhost:5173" // Safe local fallback
+	}
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowOrigins:     []string{allowedOrigin},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "Retry-After"},

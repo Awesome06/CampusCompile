@@ -1,0 +1,22 @@
+services:
+  api:
+    ports:
+      - "8080:8080"
+    restart: always
+
+  worker:
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+
+  minio:
+    ports:
+      - "9000:9000"

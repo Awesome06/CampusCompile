@@ -53,9 +53,12 @@ func generateStateOauthCookie(c *gin.Context) string {
 	c.SetSameSite(http.SameSiteLaxMode)
 
 	domain := os.Getenv("COOKIE_DOMAIN")
+	baseURL := os.Getenv("BASE_URL")
 
-	//isSecure := !strings.Contains(os.Getenv("BASE_URL"), "localhost")
-	c.SetCookie("oauth_state", state, 600, "/", domain, true, true)
+	// Determine if connection is secure based on BASE_URL scheme rather than domain presence
+	isSecure := strings.HasPrefix(baseURL, "https://")
+
+	c.SetCookie("oauth_state", state, 600, "/", domain, isSecure, true)
 	return state
 }
 

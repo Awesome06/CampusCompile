@@ -47,6 +47,58 @@ func InitDB(host string) {
 
 		if err == nil {
 			fmt.Println("[*] Connected to PostgreSQL successfully!")
+
+			// --- NEW: AUTO-MIGRATION LOGIC ---
+			var tableCount int
+			checkQuery := `SELECT count(*) FROM pg_tables WHERE schemaname = 'public'`
+
+			// Start a transaction for the DDL
+			tx, err := Pool.Begin(ctx)
+			if err != nil {
+				log.Fatalf("Fatal: Could not begin transaction: %v", err)
+			}
+			defer tx.Rollback(context.Background())
+
+			// Acquire transaction-level advisory lock
+			_, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(1337)")
+			if err != nil {
+				log.Fatalf("Fatal: Could not acquire lock: %v", err)
+			}
+
+			// Use tx.QueryRow to check for the setup inside the lock
+			err = tx.QueryRow(ctx, checkQuery).Scan(&tableCount)
+			if err != nil {
+				log.Fatalf("Fatal: Failed to count tables: %v", err)
+			}
+
+			if tableCount == 0 {
+				fmt.Println("[*] Empty database found. Initializing CampusCompile schema...")
+
+				// Read the DDL file. Ensure this path is correct relative to the compiled binary!
+				ddlBytes, err := os.ReadFile("./scripts/ddl.sql")
+				if err != nil {
+					log.Fatalf("Fatal: Could not read ddl.sql file: %v", err)
+				}
+
+				// Execute the SQL schema using pgx simple protocol on the transaction
+				_, err = tx.Conn().PgConn().Exec(ctx, string(ddlBytes)).ReadAll()
+				if err != nil {
+					log.Fatalf("Fatal: Failed to execute ddl.sql: %v", err)
+				}
+
+				err = tx.Commit(ctx)
+				if err != nil {
+					log.Fatalf("Fatal: Failed to commit schema transaction: %v", err)
+				}
+
+				fmt.Println("[*] Database schema initialized successfully!")
+			} else if tableCount < 9 {
+				log.Fatalf("FATAL STARTUP ERROR: Database is in a partially initialized state (%d/9 tables found). Please drop the public schema to re-initialize.", tableCount)
+			} else {
+				fmt.Println("[*] Database schema already completely initialized. Skipping DDL execution.")
+			}
+			// ---------------------------------
+
 			return
 		}
 

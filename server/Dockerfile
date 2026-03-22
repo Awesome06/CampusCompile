@@ -3,31 +3,35 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
-# Cache dependencies first (saves time on rebuilds)
-COPY go.mod go.sum ./
+# Cache dependencies first
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
-# Copy the rest of your source code
-COPY . .
+# Copy the rest of the source code
+COPY server/ .
 
-# Compile a microscopic, statically-linked binary.
-# We strip debugging info (-s -w) to drastically reduce the file size.
-RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -ldflags="-s -w" -o api ./cmd/api
+# Compile the statically-linked binary.
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
+# The following line is for single core processors / Resource limitations
+# RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -ldflags="-s -w" -o api ./cmd/api
 
 # --- Stage 2: The Runner ---
-# We switch to a bare-bones Alpine Linux image that has ZERO Go tooling inside it
 FROM alpine:latest
 
 WORKDIR /app
 
-# Install security certificates so Go can make secure HTTPS calls (like to AWS S3/MinIO)
+RUN addgroup -S nonroot && adduser -S nonroot -G nonroot
 RUN apk --no-cache add ca-certificates tzdata
 
-# Copy ONLY the compiled binary from the builder stage
+# Copy the compiled binary
 COPY --from=builder /app/api .
 
-# Expose your API port
+# COPY THE SQL FILE SO THE SERVER CAN READ IT ON STARTUP
+COPY scripts/ddl.sql ./scripts/ddl.sql 
+
+RUN chown -R nonroot:nonroot /app
+USER nonroot
+
 EXPOSE 8080
 
-# Execute the binary
 CMD ["./api"]

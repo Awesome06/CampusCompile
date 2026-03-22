@@ -4,6 +4,7 @@ services:
     image: postgres:15-alpine
     container_name: campus-db
     restart: always
+    shm_size: 1g
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -19,7 +20,8 @@ services:
     # --- 3. GO API BACKEND ---
   api:
     build:
-      context: ./server
+      context: .
+      dockerfile: ./server/Dockerfile
     container_name: campus-api
     ports:
       - "8080:8080"

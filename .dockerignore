@@ -1,8 +1,9 @@
 # Version Control
-.gitignore
+.git
+README.md
 
 # Docker
-docker-compose.yml
+docker-compose*
 .dockerignore
 Dockerfile*
 
@@ -13,3 +14,9 @@ frontend/dist
 # Worker (Python)
 worker/venv
 worker/__pycache__
+
+# Environment
+.env*
+
+server/tmp
+.air.toml
