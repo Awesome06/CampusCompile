@@ -49,21 +49,19 @@ func InitDB(host string) {
 			fmt.Println("[*] Connected to PostgreSQL successfully!")
 
 			// --- NEW: AUTO-MIGRATION LOGIC ---
-			var tableExists bool
-			checkQuery := `SELECT EXISTS (
-				SELECT FROM pg_tables 
+			var schemaComplete bool
+			checkQuery := `SELECT count(*) = 5 FROM pg_tables 
 				WHERE schemaname = 'public' 
-				AND tablename  = 'users'
-			)`
+				AND tablename IN ('users', 'problems', 'contests', 'submissions', 'plagiarism_reports')`
 
-			// Use pgxpool QueryRow to check for the table
-			err = Pool.QueryRow(ctx, checkQuery).Scan(&tableExists)
+			// Use pgxpool QueryRow to check for the setup
+			err = Pool.QueryRow(ctx, checkQuery).Scan(&schemaComplete)
 			if err != nil {
 				log.Fatalf("Fatal: Failed to check if tables exist: %v", err)
 			}
 
-			if !tableExists {
-				fmt.Println("[*] No tables found. Initializing CampusCompile schema...")
+			if !schemaComplete {
+				fmt.Println("[*] Incomplete or no tables found. Initializing CampusCompile schema...")
 
 				// Read the DDL file. Ensure this path is correct relative to the compiled binary!
 				ddlBytes, err := os.ReadFile("./scripts/ddl.sql")
@@ -71,8 +69,14 @@ func InitDB(host string) {
 					log.Fatalf("Fatal: Could not read ddl.sql file: %v", err)
 				}
 
-				// Execute the SQL schema using pgxpool Exec
-				_, err = Pool.Exec(ctx, string(ddlBytes))
+				// Execute the SQL schema using pgx simple protocol
+				conn, err := Pool.Acquire(ctx)
+				if err != nil {
+					log.Fatalf("Fatal: Could not acquire connection to execute ddl.sql: %v", err)
+				}
+				
+				_, err = conn.Conn().PgConn().Exec(ctx, string(ddlBytes)).ReadAll()
+				conn.Release()
 				if err != nil {
 					log.Fatalf("Fatal: Failed to execute ddl.sql: %v", err)
 				}

@@ -20,7 +20,8 @@ services:
     # --- 3. GO API BACKEND ---
   api:
     build:
-      context: ./server
+      context: .
+      dockerfile: ./server/Dockerfile
     container_name: campus-api
     ports:
       - "8080:8080"

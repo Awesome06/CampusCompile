@@ -15,7 +15,7 @@ frontend/dist
 worker/venv
 worker/__pycache__
 
-# Envoirment
+# Environment
 .env*
 
 server/tmp

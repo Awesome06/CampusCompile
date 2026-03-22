@@ -3,10 +3,6 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Accept the API URL from docker-compose.prod.yml
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
-
 # Copy ONLY package files first. 
 # Docker caches this layer. If you only change your React components, 
 # Docker skips the slow 'npm install' step entirely.

@@ -6,11 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Ensure print statements instantly appear in Docker logs
 ENV PYTHONUNBUFFERED=1
 
-# Install Docker CLI to natively communicate with the host's docker.sock
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends docker.io && \
-    rm -rf /var/lib/apt/lists/*
-
+# Install dependencies first for better layer caching
 WORKDIR /app
 
 # Install dependencies first for better layer caching

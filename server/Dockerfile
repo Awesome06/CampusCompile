@@ -4,11 +4,11 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
 # Cache dependencies first
-COPY go.mod go.sum ./
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
 # Copy the rest of the source code
-COPY . .
+COPY server/ .
 
 # Compile the statically-linked binary.
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
