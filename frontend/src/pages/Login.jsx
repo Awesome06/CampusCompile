@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import Button from '../components/ui/Button';
 import MicrosoftIcon from '../components/icons/MicrosoftIcon';
-import api from '../services/api';
 
 export default function Login() {
   useEffect(() => {
