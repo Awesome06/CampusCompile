@@ -54,8 +54,11 @@ func generateStateOauthCookie(c *gin.Context) string {
 
 	domain := os.Getenv("COOKIE_DOMAIN")
 
-	//isSecure := !strings.Contains(os.Getenv("BASE_URL"), "localhost")
-	c.SetCookie("oauth_state", state, 600, "/", domain, true, true)
+	// If a domain is provided (Production), enforce HTTPS-only cookies.
+	// If empty (Local Dev), allow HTTP cookies.
+	isSecure := domain != ""
+
+	c.SetCookie("oauth_state", state, 600, "/", domain, isSecure, true)
 	return state
 }
 
