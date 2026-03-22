@@ -10,19 +10,20 @@ services:
       POSTGRES_DB: CampusCompile_db
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - shm_size: 1g
 
   # --- 2. REDIS MESSAGE QUEUE ---
   redis:
     image: redis:alpine
     container_name: campus-redis
     restart: always
-    # --- 3. GO API BACKEND ---
+    command: redis-server --appendonly yes
+
+  # --- 3. GO API BACKEND ---
   api:
     build:
       context: ./server
     container_name: campus-api
-    ports:
-      - "8080:8080"
     depends_on:
       - db
       - redis
@@ -47,40 +48,29 @@ services:
       - ./.env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - sandbox_volume:/sandbox_shared
+    tmpfs:
+      - /sandbox_shared:exec,mode=777
     environment:
       - DB_HOST=db
       - REDIS_HOST=redis
       - S3_ENDPOINT=http://minio:9000
+    user: root
 
   # --- 5. REACT FRONTEND ---
   frontend:
-    build:
-      context: ./frontend
-      args:
-        - VITE_API_URL=http://${GCP_PUBLIC_IP}:8080/api
     container_name: campus-frontend
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+
   # --- 6. MINIO STORAGE ---
   minio:
     image: minio/minio
+    container_name: campus-minio
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000" # Open so users can potentially download testcases/images
-      - "9001:9001" # Web UI port (Keep this open only if you need Admin access)
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     volumes:
       - minio_data:/data
 
-# Define the persistent storage
 volumes:
   pgdata:
-  sandbox_volume:
-    name: sandbox_volume
   minio_data:
