@@ -54,8 +54,21 @@ func InitDB(host string) {
 				WHERE schemaname = 'public' 
 				AND tablename IN ('users', 'problems', 'contests', 'submissions', 'plagiarism_reports')`
 
-			// Use pgxpool QueryRow to check for the setup
-			err = Pool.QueryRow(ctx, checkQuery).Scan(&schemaComplete)
+			// Start a transaction for the DDL
+			tx, err := Pool.Begin(ctx)
+			if err != nil {
+				log.Fatalf("Fatal: Could not begin transaction: %v", err)
+			}
+			defer tx.Rollback(context.Background())
+
+			// Acquire transaction-level advisory lock
+			_, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(1337)")
+			if err != nil {
+				log.Fatalf("Fatal: Could not acquire lock: %v", err)
+			}
+
+			// Use tx.QueryRow to check for the setup inside the lock
+			err = tx.QueryRow(ctx, checkQuery).Scan(&schemaComplete)
 			if err != nil {
 				log.Fatalf("Fatal: Failed to check if tables exist: %v", err)
 			}
@@ -69,16 +82,15 @@ func InitDB(host string) {
 					log.Fatalf("Fatal: Could not read ddl.sql file: %v", err)
 				}
 
-				// Execute the SQL schema using pgx simple protocol
-				conn, err := Pool.Acquire(ctx)
-				if err != nil {
-					log.Fatalf("Fatal: Could not acquire connection to execute ddl.sql: %v", err)
-				}
-				
-				_, err = conn.Conn().PgConn().Exec(ctx, string(ddlBytes)).ReadAll()
-				conn.Release()
+				// Execute the SQL schema using pgx simple protocol on the transaction
+				_, err = tx.Conn().PgConn().Exec(ctx, string(ddlBytes)).ReadAll()
 				if err != nil {
 					log.Fatalf("Fatal: Failed to execute ddl.sql: %v", err)
+				}
+
+				err = tx.Commit(ctx)
+				if err != nil {
+					log.Fatalf("Fatal: Failed to commit schema transaction: %v", err)
 				}
 
 				fmt.Println("[*] Database schema initialized successfully!")
