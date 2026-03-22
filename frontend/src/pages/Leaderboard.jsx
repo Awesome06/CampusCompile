@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Trophy, Clock, CheckCircle, AlertTriangle } from 'lucide-react'; 
+import { Trophy, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 
 export default function Leaderboard() {
@@ -29,11 +29,11 @@ export default function Leaderboard() {
       try {
         // 1. Fetch the static leaderboard state first
         const res = await api.get(`/contests/${contestId}/leaderboard`);
-        
+
         if (!isMounted) return; // Prevent state update on unmounted component
-        
+
         const currentAuditStatus = res.data.audit_status || 'pending';
-        
+
         setLeaderboard(res.data.leaderboard || []);
         setAuditStatus(currentAuditStatus);
         setConnectionError(false); // Drop the error immediately on successful GET
@@ -41,7 +41,7 @@ export default function Leaderboard() {
 
         // 2. Only open the SSE stream if the contest is NOT finalized
         if (isMounted && currentAuditStatus !== 'completed' && currentAuditStatus !== 'failed') {
-          const sseUrl = `${api.defaults.baseURL}/contests/${contestId}/leaderboard/stream?token=${token}`;
+          const sseUrl = `/api/contests/${contestId}/leaderboard/stream?token=${token}`;
           source = new EventSource(sseUrl);
 
           source.onmessage = (event) => {
@@ -103,7 +103,7 @@ export default function Leaderboard() {
           <Trophy className="text-yellow-500" size={32} />
           Live Standings
         </h2>
-        
+
         <div className="flex items-center gap-2 font-mono text-sm">
           <span className="text-gray-400">STATUS:</span>
           {connectionError ? (
@@ -131,17 +131,17 @@ export default function Leaderboard() {
         {/* Table Header */}
         <div className="grid grid-cols-12 gap-4 bg-[#2a2a2a] p-4 border-b border-dark-border text-xs font-bold text-gray-400 uppercase tracking-wider">
           <div className="col-span-1 text-center">Rank</div>
-          
+
           {/* 👇 Stretch the participant column to span 7 spaces if we are hiding the integrity column (2 spaces) */}
           <div className={isElevated ? "col-span-5" : "col-span-7"}>Participant</div>
-          
+
           <div className="col-span-2 text-center flex items-center justify-center gap-1">
             <CheckCircle size={14} /> Solves
           </div>
           <div className="col-span-2 text-center flex items-center justify-center gap-1">
             <Clock size={14} /> Penalty
           </div>
-          
+
           {/* 👇 Only render Integrity Header for Faculty/Admin */}
           {isElevated && (
             <div className="col-span-2 text-center flex items-center justify-center gap-1">
@@ -158,20 +158,19 @@ export default function Leaderboard() {
             </div>
           ) : (
             leaderboard.map((player) => (
-              <div 
-                key={player.user_id} 
-                className={`grid grid-cols-12 gap-4 p-4 items-center transition-colors duration-300 hover:bg-[#252525] ${
-                  player.rank === 1 ? 'bg-yellow-900/10' : 
-                  player.rank === 2 ? 'bg-gray-400/10' : 
-                  player.rank === 3 ? 'bg-amber-700/10' : ''
-                }`}
+              <div
+                key={player.user_id}
+                className={`grid grid-cols-12 gap-4 p-4 items-center transition-colors duration-300 hover:bg-[#252525] ${player.rank === 1 ? 'bg-yellow-900/10' :
+                    player.rank === 2 ? 'bg-gray-400/10' :
+                      player.rank === 3 ? 'bg-amber-700/10' : ''
+                  }`}
               >
                 {/* Rank */}
                 <div className="col-span-1 text-center font-mono text-lg font-bold">
                   {player.rank === 1 ? <span className="text-yellow-500">🏆 1</span> :
-                   player.rank === 2 ? <span className="text-gray-300">🥈 2</span> :
-                   player.rank === 3 ? <span className="text-amber-600">🥉 3</span> :
-                   <span className="text-gray-500">{player.rank}</span>}
+                    player.rank === 2 ? <span className="text-gray-300">🥈 2</span> :
+                      player.rank === 3 ? <span className="text-amber-600">🥉 3</span> :
+                        <span className="text-gray-500">{player.rank}</span>}
                 </div>
 
                 {/* Username */}
@@ -195,40 +194,40 @@ export default function Leaderboard() {
                     {player.alerts && player.alerts.total > 0 && (
                       <>
                         <AlertTriangle className="text-red-500 cursor-help animate-pulse" size={22} />
-                        
+
                         <div className="absolute bottom-full mb-2 hidden group-hover:block w-56 bg-[#2a2a2a] text-gray-300 text-sm rounded border border-red-800/50 shadow-2xl z-50 p-3 transform -translate-x-1/4">
                           <div className="font-bold text-red-400 border-b border-dark-border mb-2 pb-1 text-left uppercase tracking-wider text-xs">
                             Telemetry Flags ({player.alerts.total})
                           </div>
-                          
+
                           <div className="space-y-1">
                             {player.alerts.blur > 0 && (
                               <div className="flex justify-between">
-                                <span>Tab Switches:</span> 
+                                <span>Tab Switches:</span>
                                 <span className="font-mono text-red-400">{player.alerts.blur}</span>
                               </div>
                             )}
                             {player.alerts.paste_attempt > 0 && (
                               <div className="flex justify-between">
-                                <span>Paste Attempts:</span> 
+                                <span>Paste Attempts:</span>
                                 <span className="font-mono text-red-400">{player.alerts.paste_attempt}</span>
                               </div>
                             )}
                             {player.alerts.autotyper_suspected > 0 && (
                               <div className="flex justify-between">
-                                <span>AutoTyper:</span> 
+                                <span>AutoTyper:</span>
                                 <span className="font-mono text-red-400">{player.alerts.autotyper_suspected}</span>
                               </div>
                             )}
                             {player.alerts.visibility_spoof_suspected > 0 && (
                               <div className="flex justify-between">
-                                <span>Visibility Spoof:</span> 
+                                <span>Visibility Spoof:</span>
                                 <span className="font-mono text-red-400">{player.alerts.visibility_spoof_suspected}</span>
                               </div>
                             )}
                             {player.alerts.anomalous_routing > 0 && (
                               <div className="flex justify-between">
-                                <span>IP Hopping:</span> 
+                                <span>IP Hopping:</span>
                                 <span className="font-mono text-red-400">{player.alerts.anomalous_routing}</span>
                               </div>
                             )}

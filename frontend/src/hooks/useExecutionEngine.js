@@ -10,17 +10,17 @@ export const boilerplates = {
 
 export default function useExecutionEngine(problemId, contestId = null) {
   const { currentUser } = useAuth();
-  
+
   // UI and Editor State
   const [problem, setProblem] = useState(null);
   const [code, setCode] = useState(boilerplates['cpp']);
   const [language, setLanguage] = useState('cpp');
-  const [submitStatus, setSubmitStatus] = useState(''); 
+  const [submitStatus, setSubmitStatus] = useState('');
   const [history, setHistory] = useState([]);
   const [historyOffset, setHistoryOffset] = useState(0);
   const historyLimit = 10;
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
-  
+
   // Console State
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('input');
@@ -32,8 +32,8 @@ export default function useExecutionEngine(problemId, contestId = null) {
 
   // Dynamic Draft Key
   const draftKey = currentUser ? (
-    contestId 
-      ? `draft_contest_${contestId}_${currentUser.id}_${problemId}` 
+    contestId
+      ? `draft_contest_${contestId}_${currentUser.id}_${problemId}`
       : `draft_${currentUser.id}_${problemId}`
   ) : null;
 
@@ -45,11 +45,11 @@ export default function useExecutionEngine(problemId, contestId = null) {
   // Fetch Problem Details & History
   useEffect(() => {
     if (!problemId) return;
-    
+
     api.get(`/problems/${problemId}`)
       .then(res => setProblem(res.data))
       .catch(err => console.error("Could not fetch problem details", err));
-      
+
     fetchHistory(0);
   }, [problemId, contestId]);
 
@@ -62,7 +62,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
           const parsed = JSON.parse(savedDraft);
           setLanguage(parsed.language);
           setCode(parsed.code);
-          return; 
+          return;
         } catch (e) {
           console.error("Failed to parse draft", e);
         }
@@ -76,16 +76,16 @@ export default function useExecutionEngine(problemId, contestId = null) {
     if (!draftKey || !code) return;
     const timer = setTimeout(() => {
       if (code !== boilerplates[language]) {
-         localStorage.setItem(draftKey, JSON.stringify({ language, code }));
+        localStorage.setItem(draftKey, JSON.stringify({ language, code }));
       }
-    }, 1000); 
+    }, 1000);
     return () => clearTimeout(timer);
   }, [code, language, draftKey]);
 
   const fetchHistory = async (offset = 0) => {
     try {
-      const endpoint = contestId 
-        ? `/submissions/history/${problemId}?contest_id=${contestId}&limit=${historyLimit}&offset=${offset}` 
+      const endpoint = contestId
+        ? `/submissions/history/${problemId}?contest_id=${contestId}&limit=${historyLimit}&offset=${offset}`
         : `/submissions/history/${problemId}?limit=${historyLimit}&offset=${offset}`;
       const res = await api.get(endpoint);
       const data = res.data || [];
@@ -117,9 +117,9 @@ export default function useExecutionEngine(problemId, contestId = null) {
 
       const response = await api.post('/submit', payload);
       const token = localStorage.getItem('token');
-      
-      sseRef.current = new EventSource(`${api.defaults.baseURL}/submissions/stream/${response.data.submission_id}?token=${token}`);
-      
+
+      sseRef.current = new EventSource(`/api/submissions/stream/${response.data.submission_id}?token=${token}`);
+
       sseRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.status === 'Running') {
@@ -127,7 +127,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
         } else {
           setSubmitStatus(data.status);
           fetchHistory(0);
-          
+
           if (['CE', 'RE', 'WA', 'TLE', 'SE'].includes(data.status)) {
             setConsoleOutput(data.message || `Verdict: ${data.status}`);
             setActiveTab('output');
@@ -143,19 +143,19 @@ export default function useExecutionEngine(problemId, contestId = null) {
         }
       };
 
-      sseRef.current.onerror = () => { 
+      sseRef.current.onerror = () => {
         setIsProcessing(false);
-        sseRef.current.close(); 
+        sseRef.current.close();
       };
     } catch (error) {
       const errorMessage = error.customMessage || 'Error: Submission Failed';
       const status = error.response?.status;
-      
+
       // Dynamically assign the visual status based on the actual HTTP code
       let finalStatus = 'Error ❌';
       if (status === 429) finalStatus = 'Rate Limited 🛑';
       else if (status === 503) finalStatus = 'Unavailable ⚠️';
-      
+
       setSubmitStatus(finalStatus);
       setConsoleOutput(`[SYSTEM REJECTED]\n${errorMessage}`);
       setActiveTab('output');
@@ -174,9 +174,9 @@ export default function useExecutionEngine(problemId, contestId = null) {
     try {
       const response = await api.post('/run', { language, source_code: code, custom_input: customInput });
       const token = localStorage.getItem('token');
-      
-      sseRef.current = new EventSource(`${api.defaults.baseURL}/run/stream/${response.data.run_id}?token=${token}`);
-      
+
+      sseRef.current = new EventSource(`/api/run/stream/${response.data.run_id}?token=${token}`);
+
       sseRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.status === 'Running') {
@@ -195,7 +195,7 @@ export default function useExecutionEngine(problemId, contestId = null) {
       };
     } catch (error) {
       const errorMessage = error.customMessage || 'Error: Could not connect to execution engine.';
-      
+
       // Keep the console output descriptive without falsely claiming they were "blocked"
       setConsoleOutput(`[SYSTEM REJECTED]\n${errorMessage}`);
       setActiveTab('output');
