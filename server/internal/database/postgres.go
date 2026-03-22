@@ -49,10 +49,8 @@ func InitDB(host string) {
 			fmt.Println("[*] Connected to PostgreSQL successfully!")
 
 			// --- NEW: AUTO-MIGRATION LOGIC ---
-			var schemaComplete bool
-			checkQuery := `SELECT count(*) = 5 FROM pg_tables 
-				WHERE schemaname = 'public' 
-				AND tablename IN ('users', 'problems', 'contests', 'submissions', 'plagiarism_reports')`
+			var tableCount int
+			checkQuery := `SELECT count(*) FROM pg_tables WHERE schemaname = 'public'`
 
 			// Start a transaction for the DDL
 			tx, err := Pool.Begin(ctx)
@@ -68,13 +66,13 @@ func InitDB(host string) {
 			}
 
 			// Use tx.QueryRow to check for the setup inside the lock
-			err = tx.QueryRow(ctx, checkQuery).Scan(&schemaComplete)
+			err = tx.QueryRow(ctx, checkQuery).Scan(&tableCount)
 			if err != nil {
-				log.Fatalf("Fatal: Failed to check if tables exist: %v", err)
+				log.Fatalf("Fatal: Failed to count tables: %v", err)
 			}
 
-			if !schemaComplete {
-				fmt.Println("[*] Incomplete or no tables found. Initializing CampusCompile schema...")
+			if tableCount == 0 {
+				fmt.Println("[*] Empty database found. Initializing CampusCompile schema...")
 
 				// Read the DDL file. Ensure this path is correct relative to the compiled binary!
 				ddlBytes, err := os.ReadFile("./scripts/ddl.sql")
@@ -94,8 +92,10 @@ func InitDB(host string) {
 				}
 
 				fmt.Println("[*] Database schema initialized successfully!")
+			} else if tableCount < 9 {
+				log.Fatalf("FATAL STARTUP ERROR: Database is in a partially initialized state (%d/9 tables found). Please drop the public schema to re-initialize.", tableCount)
 			} else {
-				fmt.Println("[*] Database schema already exists. Skipping DDL execution.")
+				fmt.Println("[*] Database schema already completely initialized. Skipping DDL execution.")
 			}
 			// ---------------------------------
 

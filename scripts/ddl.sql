@@ -1,18 +1,33 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- ==========================================
 -- 1. CUSTOM TYPES
 -- ==========================================
-CREATE TYPE user_role AS ENUM ('student', 'professor', 'admin');
-CREATE TYPE problem_difficulty AS ENUM ('Easy', 'Medium', 'Hard');
-CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'SE');
-CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected', 'anomalous_routing');
-CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed', 'failed');
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('student', 'professor', 'admin');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'problem_difficulty') THEN
+        CREATE TYPE problem_difficulty AS ENUM ('Easy', 'Medium', 'Hard');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'submission_status') THEN
+        CREATE TYPE submission_status AS ENUM ('Pending', 'Running', 'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'SE');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'telemetry_event_type') THEN
+        CREATE TYPE telemetry_event_type AS ENUM ('blur', 'paste_attempt', 'autotyper_suspected', 'visibility_spoof_suspected', 'anomalous_routing');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audit_status') THEN
+        CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed', 'failed');
+    END IF;
+END $$;
 
 -- ==========================================
 -- 2. CORE ENTITIES
 -- ==========================================
 
 -- Users table: Stores all user profiles and authentication mappings
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     provider_id VARCHAR(255) UNIQUE,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -31,7 +46,7 @@ CREATE TABLE users (
 );
 
 -- Problems table: Stores the problem statements, limits, and checker metadata
-CREATE TABLE problems (
+CREATE TABLE IF NOT EXISTS problems (
     problem_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) NOT NULL,
     slug VARCHAR(255) UNIQUE NOT NULL,
@@ -50,7 +65,7 @@ CREATE TABLE problems (
 );
 
 -- Contests table: Manages competition windows and rules
-CREATE TABLE contests (
+CREATE TABLE IF NOT EXISTS contests (
     contest_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) NOT NULL,
     host_organization VARCHAR(255),
@@ -72,7 +87,7 @@ CREATE TABLE contests (
 -- ==========================================
 
 -- Contest Registrations: Maps users to the contests they joined
-CREATE TABLE contest_registrations (
+CREATE TABLE IF NOT EXISTS contest_registrations (
     contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     registered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -80,7 +95,7 @@ CREATE TABLE contest_registrations (
 );
 
 -- Contest Problems: Maps specific problems to specific contests
-CREATE TABLE contest_problems (
+CREATE TABLE IF NOT EXISTS contest_problems (
     contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
     points_value INTEGER NOT NULL DEFAULT 100,
@@ -88,7 +103,7 @@ CREATE TABLE contest_problems (
 );
 
 -- Submissions table: Tracks code execution runs
-CREATE TABLE submissions (
+CREATE TABLE IF NOT EXISTS submissions (
     submission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
@@ -103,7 +118,7 @@ CREATE TABLE submissions (
 );
 
 -- Test Cases: Stores I/O data or S3 references for validating submissions
-CREATE TABLE test_cases (
+CREATE TABLE IF NOT EXISTS test_cases (
     test_case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
     is_hidden BOOLEAN DEFAULT true,
@@ -116,7 +131,7 @@ CREATE TABLE test_cases (
 -- ==========================================
 
 -- Contest Telemetry: Logs suspicious browser and editor activity
-CREATE TABLE contest_telemetry (
+CREATE TABLE IF NOT EXISTS contest_telemetry (
     telemetry_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
@@ -126,7 +141,7 @@ CREATE TABLE contest_telemetry (
 );
 
 -- Plagiarism Reports: Stores MOSS audit results from the Python worker
-CREATE TABLE plagiarism_reports (
+CREATE TABLE IF NOT EXISTS plagiarism_reports (
     report_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
@@ -142,28 +157,28 @@ CREATE TABLE plagiarism_reports (
 -- ==========================================
 
 -- Contests
-CREATE INDEX idx_contests_author_id ON contests(author_id);
-CREATE INDEX idx_contests_times ON contests(start_time, end_time);
-CREATE INDEX idx_contests_moss_audit ON contests(moss_audit_status, end_time, updated_at);
-CREATE INDEX idx_contests_fts ON contests USING GIN (fts);
+CREATE INDEX IF NOT EXISTS idx_contests_author_id ON contests(author_id);
+CREATE INDEX IF NOT EXISTS idx_contests_times ON contests(start_time, end_time);
+CREATE INDEX IF NOT EXISTS idx_contests_moss_audit ON contests(moss_audit_status, end_time, updated_at);
+CREATE INDEX IF NOT EXISTS idx_contests_fts ON contests USING GIN (fts);
 
 -- Problems
-CREATE INDEX idx_problems_fts ON problems USING GIN (fts);
-CREATE INDEX idx_problems_created_at ON problems(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_problems_fts ON problems USING GIN (fts);
+CREATE INDEX IF NOT EXISTS idx_problems_created_at ON problems(created_at DESC);
 
 -- Contest Registrations
-CREATE INDEX idx_contest_registrations_user_id ON contest_registrations(user_id);
+CREATE INDEX IF NOT EXISTS idx_contest_registrations_user_id ON contest_registrations(user_id);
 
 -- Submissions
-CREATE INDEX idx_submissions_contest_id ON submissions(contest_id);
-CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);
-CREATE INDEX idx_submissions_user_id ON submissions(user_id);
-CREATE INDEX idx_submissions_status ON submissions(status);
-CREATE INDEX idx_submissions_submitted_at ON submissions(submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_contest_id ON submissions(contest_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_problem_id ON submissions(problem_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON submissions(user_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status);
+CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON submissions(submitted_at DESC);
 
 -- Telemetry & Plagiarism
-CREATE INDEX idx_telemetry_contest_user ON contest_telemetry(contest_id, user_id);
-CREATE INDEX idx_plagiarism_contest_problem ON plagiarism_reports(contest_id, problem_id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_contest_user ON contest_telemetry(contest_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_plagiarism_contest_problem ON plagiarism_reports(contest_id, problem_id);
 
 
 -- ==========================================
@@ -180,6 +195,7 @@ END;
 $$ language 'plpgsql';
 
 -- Attach the auto-update trigger to the contests table
+DROP TRIGGER IF EXISTS update_contests_modtime ON contests;
 CREATE TRIGGER update_contests_modtime
     BEFORE UPDATE ON contests
     FOR EACH ROW
