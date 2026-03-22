@@ -195,8 +195,13 @@ END;
 $$ language 'plpgsql';
 
 -- Attach the auto-update trigger to the contests table
-DROP TRIGGER IF EXISTS update_contests_modtime ON contests;
-CREATE TRIGGER update_contests_modtime
-    BEFORE UPDATE ON contests
-    FOR EACH ROW
-    EXECUTE FUNCTION update_modified_column();
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'contests') THEN
+        DROP TRIGGER IF EXISTS update_contests_modtime ON contests;
+        CREATE TRIGGER update_contests_modtime
+            BEFORE UPDATE ON contests
+            FOR EACH ROW
+            EXECUTE FUNCTION update_modified_column();
+    END IF;
+END $$;
