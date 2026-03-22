@@ -2,9 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  # Exactly where to build and run the binary
   cmd = "go build -o ./tmp/main ./cmd/api"
-  bin = "./tmp/main"
+  entrypoint = "./tmp/main"
   
   # Delay in milliseconds before building to batch multiple quick saves
   delay = 1000 

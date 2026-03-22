@@ -18,5 +18,5 @@ worker/__pycache__
 # Envoirment
 .env*
 
-tmp/
+server/tmp
 .air.toml
