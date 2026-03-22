@@ -1,0 +1,17 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Exactly where to build and run the binary
+  cmd = "go build -o ./tmp/main ./cmd/api"
+  bin = "./tmp/main"
+  
+  # Delay in milliseconds before building to batch multiple quick saves
+  delay = 1000 
+  
+  # Ignore directories that don't need watching
+  exclude_dir = ["assets", "tmp", "vendor", "testdata"]
+  
+  # CRITICAL FOR DOCKER: Enable polling to bypass volume mount sync issues
+  poll = true
+  poll_interval = 500

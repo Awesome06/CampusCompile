@@ -47,6 +47,42 @@ func InitDB(host string) {
 
 		if err == nil {
 			fmt.Println("[*] Connected to PostgreSQL successfully!")
+
+			// --- NEW: AUTO-MIGRATION LOGIC ---
+			var tableExists bool
+			checkQuery := `SELECT EXISTS (
+				SELECT FROM pg_tables 
+				WHERE schemaname = 'public' 
+				AND tablename  = 'users'
+			)`
+
+			// Use pgxpool QueryRow to check for the table
+			err = Pool.QueryRow(ctx, checkQuery).Scan(&tableExists)
+			if err != nil {
+				log.Fatalf("Fatal: Failed to check if tables exist: %v", err)
+			}
+
+			if !tableExists {
+				fmt.Println("[*] No tables found. Initializing CampusCompile schema...")
+
+				// Read the DDL file. Ensure this path is correct relative to the compiled binary!
+				ddlBytes, err := os.ReadFile("./scripts/ddl.sql")
+				if err != nil {
+					log.Fatalf("Fatal: Could not read ddl.sql file: %v", err)
+				}
+
+				// Execute the SQL schema using pgxpool Exec
+				_, err = Pool.Exec(ctx, string(ddlBytes))
+				if err != nil {
+					log.Fatalf("Fatal: Failed to execute ddl.sql: %v", err)
+				}
+
+				fmt.Println("[*] Database schema initialized successfully!")
+			} else {
+				fmt.Println("[*] Database schema already exists. Skipping DDL execution.")
+			}
+			// ---------------------------------
+
 			return
 		}
 

@@ -20,17 +20,16 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Create a non-root user for security purposes
 RUN addgroup -S nonroot && adduser -S nonroot -G nonroot
-
-# Install security certificates
 RUN apk --no-cache add ca-certificates tzdata
 
-# Copy the compiled binary and set ownership
+# Copy the compiled binary
 COPY --from=builder /app/api .
-RUN chown nonroot:nonroot /app/api
 
-# Drop root privileges
+# COPY THE SQL FILE SO THE SERVER CAN READ IT ON STARTUP
+COPY scripts/ddl.sql ./scripts/ddl.sql 
+
+RUN chown -R nonroot:nonroot /app
 USER nonroot
 
 EXPOSE 8080
