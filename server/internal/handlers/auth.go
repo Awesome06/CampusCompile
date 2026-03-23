@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -93,15 +96,81 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	token, err := oauthConfig.Exchange(reqCtx, code)
+	// Check if we are running locally based on BASE_URL
+	baseURL := os.Getenv("BASE_URL")
+	isLocal := strings.HasPrefix(baseURL, "http://localhost") || strings.HasPrefix(baseURL, "http://127.0.0.1")
+
+	// Detach context to prevent client disconnect from aborting the token exchange
+	exchangeCtx := context.Background()
+
+	// If local, use a custom HTTP client that ignores TLS errors from proxies or docker mismatch
+	// and forces a reliable DNS resolver (like Google's 8.8.8.8) to bypass Alpine/Docker DNS timeouts
+	if isLocal {
+		customTransport := http.DefaultTransport.(*http.Transport).Clone()
+		customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		// Create a custom dialer that bypasses pure DNS ports (53) by resolving Microsoft's domains
+		// using Google's DNS-over-HTTPS (DoH) API over port 443
+		customTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			
+			// Only tunnel specific Microsoft domains via DoH to minimize overhead
+			if host == "login.microsoftonline.com" || host == "graph.microsoft.com" {
+				req, err := http.NewRequestWithContext(ctx, "GET", "https://8.8.8.8/resolve?name="+host+"&type=A", nil)
+				if err == nil {
+					req.Host = "dns.google" // Required for SNI with raw IP
+					
+					// Use a dedicated short-lived client for the DoH request
+					dohClient := &http.Client{
+						Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+						Timeout:   5 * time.Second,
+					}
+					
+					if resp, err := dohClient.Do(req); err == nil {
+						defer resp.Body.Close()
+						var dohRes struct {
+							Answer []struct {
+								Type int    `json:"type"`
+								Data string `json:"data"`
+							} `json:"Answer"`
+						}
+						
+						if err := json.NewDecoder(resp.Body).Decode(&dohRes); err == nil {
+							for _, ans := range dohRes.Answer {
+								if ans.Type == 1 { // Found A record setup the actual connection
+									var d net.Dialer
+									d.Timeout = 15 * time.Second
+									return d.DialContext(ctx, network, net.JoinHostPort(ans.Data, port))
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			// Fallback to standard dialer if DoH fails or for other domains
+			var d net.Dialer
+			d.Timeout = 15 * time.Second
+			return d.DialContext(ctx, network, addr)
+		}
+
+		client := &http.Client{Transport: customTransport, Timeout: 15 * time.Second}
+		exchangeCtx = context.WithValue(exchangeCtx, oauth2.HTTPClient, client)
+	}
+
+	token, err := oauthConfig.Exchange(exchangeCtx, code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+		log.Printf("[OAuth Error] Failed to exchange token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token", "details": err.Error()})
 		return
 	}
 
-	client := oauthConfig.Client(reqCtx, token)
+	client := oauthConfig.Client(exchangeCtx, token)
 	resp, err := client.Get("https://graph.microsoft.com/v1.0/me")
 	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Printf("[OAuth Error] Failed to fetch user profile: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
 		return
 	}
@@ -185,7 +254,7 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	baseURL := os.Getenv("BASE_URL")
+	baseURL = os.Getenv("BASE_URL")
 	frontendRedirectURL := fmt.Sprintf("%s/oauth-success?token=%s&role=%s&onboarded=%t", baseURL, tokenString, finalRole, isOnboarded)
 	c.Redirect(http.StatusTemporaryRedirect, frontendRedirectURL)
 }
