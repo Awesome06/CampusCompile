@@ -100,8 +100,9 @@ func HandleAzureCallback(c *gin.Context) {
 	baseURL := os.Getenv("BASE_URL")
 	isLocal := strings.HasPrefix(baseURL, "http://localhost") || strings.HasPrefix(baseURL, "http://127.0.0.1")
 
-	// Detach context to prevent client disconnect from aborting the token exchange
-	exchangeCtx := context.Background()
+	// Detach context cancellation (to prevent browser disconnect from aborting) but add a fallback timeout
+	exchangeCtx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), 15*time.Second)
+	defer cancel()
 
 	// If local, use a custom HTTP client that ignores TLS errors from proxies or docker mismatch
 	// and forces a reliable DNS resolver (like Google's 8.8.8.8) to bypass Alpine/Docker DNS timeouts
@@ -124,7 +125,7 @@ func HandleAzureCallback(c *gin.Context) {
 					
 					// Use a dedicated short-lived client for the DoH request
 					dohClient := &http.Client{
-						Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+						Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: "dns.google"}},
 						Timeout:   5 * time.Second,
 					}
 					
@@ -163,18 +164,28 @@ func HandleAzureCallback(c *gin.Context) {
 	token, err := oauthConfig.Exchange(exchangeCtx, code)
 	if err != nil {
 		log.Printf("[OAuth Error] Failed to exchange token: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token", "details": err.Error()})
+		if isLocal {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token", "details": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+		}
 		return
 	}
 
 	client := oauthConfig.Client(exchangeCtx, token)
 	resp, err := client.Get("https://graph.microsoft.com/v1.0/me")
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
 		log.Printf("[OAuth Error] Failed to fetch user profile: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
 		return
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[OAuth Error] Graph API returned status %d", resp.StatusCode)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		return
+	}
 
 	var msUser models.MicrosoftGraphUser
 	if err := json.NewDecoder(resp.Body).Decode(&msUser); err != nil {
