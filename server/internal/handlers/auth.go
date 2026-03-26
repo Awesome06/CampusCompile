@@ -145,8 +145,16 @@ func HandleAzureCallback(c *gin.Context) {
 	// Only enable insecure token exchange / DoH bypass if explicitly flagged
 	isLocal := os.Getenv("OAUTH_INSECURE_LOCAL_DEV") == "1"
 
-	// Detach context cancellation (to prevent browser disconnect from aborting) but add a fallback timeout
-	exchangeCtx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), 15*time.Second)
+	// Default to standard request context with a timeout
+	baseCtx := reqCtx
+	
+	// Only detach context cancellation (to prevent browser disconnect from aborting) if we are in local dev
+	if isLocal {
+		baseCtx = context.WithoutCancel(reqCtx)
+	}
+	
+	// Enforce a hard 15s timeout
+	exchangeCtx, cancel := context.WithTimeout(baseCtx, 15*time.Second)
 	defer cancel()
 
 	// If properly flagged as local development, configure custom transport
