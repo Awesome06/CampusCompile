@@ -78,7 +78,7 @@ func HandleAzureLogin(c *gin.Context) {
 // Shared HTTP client for DoH queries to prevent allocating new transports on every dial
 var dohClient = &http.Client{
 	Transport: &http.Transport{
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true, ServerName: "dns.google"},
+		TLSClientConfig:   &tls.Config{ServerName: "dns.google"},
 		ForceAttemptHTTP2: true,
 	},
 	Timeout: 5 * time.Second,
@@ -114,7 +114,7 @@ func resolveViaDoH(ctx context.Context, host string) (string, error) {
 	}
 
 	for _, ans := range dohRes.Answer {
-		if ans.Type == 1 { // Context: Typ 1 is an A record
+		if ans.Type == 1 { // Context: Type 1 is an A record
 			return ans.Data, nil
 		}
 	}
@@ -152,8 +152,7 @@ func HandleAzureCallback(c *gin.Context) {
 	// If properly flagged as local development, configure custom transport
 	if isLocal {
 		customTransport := http.DefaultTransport.(*http.Transport).Clone()
-		customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		
+
 		// Create a custom dialer that bypasses pure DNS ports (53) by tunneling Microsoft's
 		// domain resolution via Google's DNS-over-HTTPS (DoH) API over port 443
 		customTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -161,7 +160,7 @@ func HandleAzureCallback(c *gin.Context) {
 			if err != nil {
 				return nil, err
 			}
-			
+
 			// Only tunnel specific Microsoft domains via DoH to minimize overhead
 			if host == "login.microsoftonline.com" || host == "graph.microsoft.com" {
 				if ip, err := resolveViaDoH(ctx, host); err == nil {
@@ -171,7 +170,7 @@ func HandleAzureCallback(c *gin.Context) {
 					return d.DialContext(ctx, network, net.JoinHostPort(ip, port))
 				}
 			}
-			
+
 			// Fallback to standard dialer
 			var d net.Dialer
 			d.Timeout = 15 * time.Second
@@ -195,7 +194,14 @@ func HandleAzureCallback(c *gin.Context) {
 	}
 
 	client := oauthConfig.Client(exchangeCtx, token)
-	resp, err := client.Get("https://graph.microsoft.com/v1.0/me")
+	req, err := http.NewRequestWithContext(exchangeCtx, "GET", "https://graph.microsoft.com/v1.0/me", nil)
+	if err != nil {
+		log.Printf("[OAuth Error] Failed to create profile request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		return
+	}
+	
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("[OAuth Error] Failed to fetch user profile: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
