@@ -75,6 +75,52 @@ func HandleAzureLogin(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
+// Shared HTTP client for DoH queries to prevent allocating new transports on every dial
+var dohClient = &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true, ServerName: "dns.google"},
+		ForceAttemptHTTP2: true,
+	},
+	Timeout: 5 * time.Second,
+}
+
+// resolveViaDoH queries Google's DNS-over-HTTPS API to bypass arbitrary Docker/VPN DNS port 53 blocking
+func resolveViaDoH(ctx context.Context, host string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://8.8.8.8/resolve?name="+host+"&type=A", nil)
+	if err != nil {
+		return "", err
+	}
+	// Required for virtual-host routing at 8.8.8.8 (SNI is handled by tls.Config.ServerName above)
+	req.Host = "dns.google"
+
+	resp, err := dohClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("DoH returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var dohRes struct {
+		Answer []struct {
+			Type int    `json:"type"`
+			Data string `json:"data"`
+		} `json:"Answer"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&dohRes); err != nil {
+		return "", err
+	}
+
+	for _, ans := range dohRes.Answer {
+		if ans.Type == 1 { // Context: Typ 1 is an A record
+			return ans.Data, nil
+		}
+	}
+	return "", fmt.Errorf("no A record found via DoH for %s", host)
+}
+
 func HandleAzureCallback(c *gin.Context) {
 	reqCtx := c.Request.Context()
 
@@ -96,21 +142,20 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	// Check if we are running locally based on BASE_URL
-	baseURL := os.Getenv("BASE_URL")
-	isLocal := strings.HasPrefix(baseURL, "http://localhost") || strings.HasPrefix(baseURL, "http://127.0.0.1")
+	// Only enable insecure token exchange / DoH bypass if explicitly flagged
+	isLocal := os.Getenv("OAUTH_INSECURE_LOCAL_DEV") == "1"
 
 	// Detach context cancellation (to prevent browser disconnect from aborting) but add a fallback timeout
 	exchangeCtx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), 15*time.Second)
 	defer cancel()
 
-	// If local, use a custom HTTP client that ignores TLS errors from proxies or docker mismatch
-	// and forces a reliable DNS resolver (like Google's 8.8.8.8) to bypass Alpine/Docker DNS timeouts
+	// If properly flagged as local development, configure custom transport
 	if isLocal {
 		customTransport := http.DefaultTransport.(*http.Transport).Clone()
 		customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		// Create a custom dialer that bypasses pure DNS ports (53) by resolving Microsoft's domains
-		// using Google's DNS-over-HTTPS (DoH) API over port 443
+		
+		// Create a custom dialer that bypasses pure DNS ports (53) by tunneling Microsoft's
+		// domain resolution via Google's DNS-over-HTTPS (DoH) API over port 443
 		customTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
@@ -119,41 +164,18 @@ func HandleAzureCallback(c *gin.Context) {
 			
 			// Only tunnel specific Microsoft domains via DoH to minimize overhead
 			if host == "login.microsoftonline.com" || host == "graph.microsoft.com" {
-				req, err := http.NewRequestWithContext(ctx, "GET", "https://8.8.8.8/resolve?name="+host+"&type=A", nil)
-				if err == nil {
-					req.Host = "dns.google" // Required for SNI with raw IP
-					
-					// Use a dedicated short-lived client for the DoH request
-					dohClient := &http.Client{
-						Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: "dns.google"}},
-						Timeout:   5 * time.Second,
-					}
-					
-					if resp, err := dohClient.Do(req); err == nil {
-						defer resp.Body.Close()
-						var dohRes struct {
-							Answer []struct {
-								Type int    `json:"type"`
-								Data string `json:"data"`
-							} `json:"Answer"`
-						}
-						
-						if err := json.NewDecoder(resp.Body).Decode(&dohRes); err == nil {
-							for _, ans := range dohRes.Answer {
-								if ans.Type == 1 { // Found A record setup the actual connection
-									var d net.Dialer
-									d.Timeout = 15 * time.Second
-									return d.DialContext(ctx, network, net.JoinHostPort(ans.Data, port))
-								}
-							}
-						}
-					}
+				if ip, err := resolveViaDoH(ctx, host); err == nil {
+					var d net.Dialer
+					d.Timeout = 15 * time.Second
+					d.KeepAlive = 30 * time.Second
+					return d.DialContext(ctx, network, net.JoinHostPort(ip, port))
 				}
 			}
 			
-			// Fallback to standard dialer if DoH fails or for other domains
+			// Fallback to standard dialer
 			var d net.Dialer
 			d.Timeout = 15 * time.Second
+			d.KeepAlive = 30 * time.Second
 			return d.DialContext(ctx, network, addr)
 		}
 
@@ -265,7 +287,7 @@ func HandleAzureCallback(c *gin.Context) {
 		return
 	}
 
-	baseURL = os.Getenv("BASE_URL")
+	baseURL := os.Getenv("BASE_URL")
 	frontendRedirectURL := fmt.Sprintf("%s/oauth-success?token=%s&role=%s&onboarded=%t", baseURL, tokenString, finalRole, isOnboarded)
 	c.Redirect(http.StatusTemporaryRedirect, frontendRedirectURL)
 }
