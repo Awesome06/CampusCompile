@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 )
@@ -32,9 +32,7 @@ func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 
 	// If the contest is fully graded/audited, reject the persistent stream to save server resources.
 	if err == nil && (auditStatus == "completed" || auditStatus == "failed") {
-		c.JSON(http.StatusGone, gin.H{
-			"error": "Contest is finalized. Persistent streaming is disabled to conserve resources.",
-		})
+		c.Error(appErrors.NewAppError(http.StatusGone, nil, "Contest is finalized. Persistent streaming is disabled to conserve resources."))
 		return // Terminates the request immediately!
 	}
 
@@ -107,7 +105,7 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 	// 3. Fetch cleanly filtered contests
 	contests, err := ctrl.service.FetchContests(c.Request.Context(), demo, limit, offset, searchQuery, viewMode)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contests"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch contests"))
 		return
 	}
 
@@ -129,7 +127,7 @@ func (ctrl *ContestController) GetContestDetails(c *gin.Context) {
 	// 🔒 API GUARD: PREVENT EARLY ACCESS 🔒
 	if time.Now().Before(contest.StartTime) && userRole != "admin" {
 		if contest.AuthorID == nil || *contest.AuthorID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "The Arena is locked. Please wait until the start time."})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "The Arena is locked. Please wait until the start time."))
 			return
 		}
 	}
@@ -150,7 +148,7 @@ func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
 
 	err := ctrl.service.EnrollUser(c.Request.Context(), contestID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register for contest"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to register for contest"))
 		return
 	}
 
@@ -164,8 +162,7 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 
 	auditStatus, leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err != nil {
-		log.Printf("[CRITICAL ERROR] Failed to FetchEnrichedLeaderboard for contest %s: %v", contestID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load leaderboard"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to load leaderboard"))
 		return
 	}
 
@@ -191,7 +188,7 @@ func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err == nil && time.Now().Before(contest.StartTime) && userRole != "admin" {
 		if contest.AuthorID == nil || *contest.AuthorID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Classified: Problems cannot be viewed before the contest begins."})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Classified: Problems cannot be viewed before the contest begins."))
 			return
 		}
 	}
@@ -199,7 +196,7 @@ func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	// 👇 Pass the userID down to the SQL query
 	problems, err := ctrl.service.FetchContestProblems(c.Request.Context(), contestID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contest problems"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch contest problems"))
 		return
 	}
 
@@ -228,7 +225,7 @@ func (ctrl *ContestController) CreateContest(c *gin.Context) {
 
 	contestID, err := ctrl.service.CreateContest(c.Request.Context(), contest, input.Problems)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forge contest in database"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to forge contest in database"))
 		return
 	}
 
@@ -246,28 +243,28 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 	// 1. Fetch the existing contest to check ownership and time
 	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
+		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Contest not found"))
 		return
 	}
 
 	// 2. Security Check: Ownership Check
 	if userRole != "admin" {
 		if existingContest.AuthorID == nil || *existingContest.AuthorID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this contest"})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Access Denied: You do not own this contest"))
 			return
 		}
 	}
 
 	// 3. 🔒 NEW: TIME LOCK CHECK 🔒
 	if time.Now().After(existingContest.StartTime) && userRole != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Time Lock Active: You cannot modify an arena that has already started."})
+		c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Time Lock Active: You cannot modify an arena that has already started."))
 		return
 	}
 
 	// 4. Parse the payload
 	var input models.CreateContestInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid payload: " + err.Error()))
 		return
 	}
 
@@ -283,7 +280,7 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 	// 5. Execute the update
 	err = ctrl.service.UpdateContest(c.Request.Context(), contestID, contest, input.Problems)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contest"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to update contest"))
 		return
 	}
 
@@ -298,31 +295,31 @@ func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 	// Fetch the contest to check its timing and ownership
 	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Contest not found"})
+		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Contest not found"))
 		return
 	}
 
 	// 🔒 PROFESSOR DELETION RULES 🔒
 	if userRole == "professor" {
 		if existingContest.AuthorID == nil || *existingContest.AuthorID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this contest."})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Access Denied: You do not own this contest."))
 			return
 		}
 		if existingContest.IsPublic {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: Professors cannot delete published contests. Please contact an Administrator."})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Access Denied: Professors cannot delete published contests. Please contact an Administrator."))
 			return
 		}
 	}
 
 	// 🔒 TIME LOCK CHECK (Kept from Phase 3) 🔒
 	if time.Now().After(existingContest.StartTime) && userRole != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Time Lock Active: You cannot delete a contest that has already started."})
+		c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Time Lock Active: You cannot delete a contest that has already started."))
 		return
 	}
 
 	err = ctrl.service.DeleteContest(c.Request.Context(), contestID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete contest"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to delete contest"))
 		return
 	}
 
@@ -336,7 +333,7 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 
 	var payload models.TelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload format"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid payload format"))
 		return
 	}
 
@@ -349,10 +346,7 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 
 	// Fire and forget for students, with error logging to catch DB drops
 	go func() {
-		err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, payload)
-		if err != nil {
-			log.Printf("[ERROR] Telemetry drop for user %s: %v", userID, err)
-		}
+		_ = ctrl.service.LogTelemetry(context.Background(), contestID, userID, payload)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"status": "logged"})
@@ -365,7 +359,7 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 
 	var payload models.BatchTelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid batch payload format"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid batch payload format"))
 		return
 	}
 
@@ -378,10 +372,7 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 	// 3. Fire and forget for students
 	go func() {
 		for _, event := range payload.Events {
-			err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
-			if err != nil {
-				log.Printf("[ERROR] Batch telemetry drop for user %s: %v", userID, err)
-			}
+			_ = ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
 		}
 	}()
 

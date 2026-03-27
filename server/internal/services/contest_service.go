@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
@@ -116,7 +115,6 @@ func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[*] Leaderboard Daemon cleanly shutting down...")
 			return
 		case <-ticker.C:
 			// 1. Fetch all contest IDs currently flagged as dirty using SMembers (O(N) where N is dirty count)
@@ -262,7 +260,6 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[*] MOSS Audit Daemon cleanly shutting down...")
 			return
 		case <-ticker.C:
 			// 1. SWEEP FOR PENDING AND STUCK JOBS
@@ -279,35 +276,24 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 					"queued_at":  time.Now().Unix(), // Helpful for worker metrics
 				})
 				if err != nil {
-					log.Printf("[ERROR] Failed to marshal MOSS payload for %s: %v\n", id, err)
 					continue
 				}
 
 				// 2. ATOMIC-LIKE DB CLAIM
 				// Claim the job first to prevent other daemon instances from grabbing it
 				if err := s.repo.UpdateMossAuditStatus(ctx, id, "in_progress"); err != nil {
-					log.Printf("[ERROR] Failed to claim DB status for %s, skipping queue: %v\n", id, err)
 					continue
 				}
 
 				// 3. PUSH TO REDIS
 				if err := s.redis.LPush(ctx, "submission_queue", payload).Err(); err != nil {
-					log.Printf("[CRITICAL] Redis LPush failed for contest %s: %v. Attempting state revert.\n", id, err)
-
 					// 4. EXPLICIT REVERT HANDLING
-					revertErr := s.repo.UpdateMossAuditStatus(ctx, id, "pending")
-					if revertErr != nil {
-						// This is the split-brain scenario. Log as FATAL/ALERT.
-						// We don't panic, because the 30-minute DB sweep will eventually rescue it.
-						log.Printf("[FATAL ALERT] Split-brain! Redis failed AND DB revert failed for %s. Revert Error: %v\n", id, revertErr)
-					}
+					_ = s.repo.UpdateMossAuditStatus(ctx, id, "pending")
 					continue
 				}
 
 				// 5. CACHE / UI UPDATES
-				if err := s.redis.SAdd(ctx, "dirty_contests", id).Err(); err != nil {
-					log.Printf("[WARN] Failed to mark contest %s as dirty: %v\n", id, err)
-				}
+				_ = s.redis.SAdd(ctx, "dirty_contests", id).Err()
 			}
 		}
 	}

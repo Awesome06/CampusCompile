@@ -2,7 +2,6 @@ package redis
 
 import (
 	"context"
-	"log"
 	"sync"
 
 	redisClient "github.com/redis/go-redis/v9"
@@ -75,11 +74,9 @@ func (h *Hub) Unsubscribe(topic string, ch chan string) {
 
 	h.Unlock() // Manually release the lock BEFORE executing network I/O
 
-	// Safely close the Redis connection outside the critical section and log failures
+	// Safely close the Redis connection outside the critical section
 	if pubsubToClose != nil {
-		if err := pubsubToClose.Close(); err != nil {
-			log.Printf("[ERROR] Failed to cleanly close Redis PubSub for topic %s: %v", topic, err)
-		}
+		_ = pubsubToClose.Close()
 	}
 }
 
@@ -88,20 +85,13 @@ func (h *Hub) broadcast(topic string, redisCh <-chan *redisClient.Message) {
 	for msg := range redisCh {
 		h.RLock()
 		subs := h.subscribers[topic]
-		droppedCount := 0
 
 		for ch := range subs {
 			select {
 			case ch <- msg.Payload:
 			default:
-				droppedCount++
 			}
 		}
 		h.RUnlock()
-
-		// Execute I/O-heavy logging strictly outside the read lock
-		if droppedCount > 0 {
-			log.Printf("[WARN] Dropped delivery for %d slow subscribers on topic %s", droppedCount, topic)
-		}
 	}
 }

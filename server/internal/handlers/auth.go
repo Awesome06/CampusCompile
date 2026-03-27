@@ -21,6 +21,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
 
+	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/database"
 	"campuscompile/api/internal/middleware"
 	"campuscompile/api/internal/models"
@@ -128,17 +129,17 @@ func HandleAzureCallback(c *gin.Context) {
 	returnedState := c.Query("state")
 	cookieState, err := c.Cookie("oauth_state")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "OAuth state cookie missing."})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "OAuth state cookie missing."))
 		return
 	}
 	if returnedState != cookieState {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OAuth state. Potential CSRF attack detected."})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, nil, "Invalid OAuth state. Potential CSRF attack detected."))
 		return
 	}
 
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Authorization code missing"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, nil, "Authorization code missing"))
 		return
 	}
 
@@ -192,11 +193,10 @@ func HandleAzureCallback(c *gin.Context) {
 
 	token, err := oauthConfig.Exchange(exchangeCtx, code)
 	if err != nil {
-		log.Printf("[OAuth Error] Failed to exchange token: %v", err)
 		if isLocal {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token", "details": err.Error()})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to exchange token: " + err.Error()))
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to exchange token"))
 		}
 		return
 	}
@@ -204,28 +204,25 @@ func HandleAzureCallback(c *gin.Context) {
 	client := oauthConfig.Client(exchangeCtx, token)
 	req, err := http.NewRequestWithContext(exchangeCtx, "GET", "https://graph.microsoft.com/v1.0/me", nil)
 	if err != nil {
-		log.Printf("[OAuth Error] Failed to create profile request: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch user profile"))
 		return
 	}
 	
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[OAuth Error] Failed to fetch user profile: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch user profile"))
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[OAuth Error] Graph API returned status %d", resp.StatusCode)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, fmt.Errorf("Graph API status %d", resp.StatusCode), "Failed to fetch user profile"))
 		return
 	}
 
 	var msUser models.MicrosoftGraphUser
 	if err := json.NewDecoder(resp.Body).Decode(&msUser); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Microsoft response"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to parse Microsoft response"))
 		return
 	}
 
@@ -276,7 +273,7 @@ func HandleAzureCallback(c *gin.Context) {
 	)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Database error during login"))
 		return
 	}
 
@@ -288,16 +285,14 @@ func HandleAzureCallback(c *gin.Context) {
 		course, department, batch, section, studentGroup, graduationYear,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate JWT"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to generate JWT"))
 		return
 	}
 
 	redisKey := fmt.Sprintf("active_session:%s", userID)
 	err = redisPkg.Client.Set(reqCtx, redisKey, sessionID, 72*time.Hour).Err()
 	if err != nil {
-		// Log the error internally and fail the login
-		log.Printf("[CRITICAL] Failed to register session for User %s: %v", userID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize active session. Please try again."})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to initialize active session. Please try again."))
 		return
 	}
 
@@ -311,7 +306,7 @@ func CompleteOnboarding(c *gin.Context) {
 
 	var req models.OnboardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input data."})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid input data."))
 		return
 	}
 
@@ -323,7 +318,7 @@ func CompleteOnboarding(c *gin.Context) {
     `, req.Username, req.Course, req.Department, req.GraduationYear, req.Batch, req.Section, req.StudentGroup, userID)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database update failed"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Database update failed"))
 		return
 	}
 
@@ -335,14 +330,13 @@ func CompleteOnboarding(c *gin.Context) {
 		&req.Course, &req.Department, &req.Batch, &req.Section, &req.StudentGroup, &req.GraduationYear,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new session"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to generate new session"))
 		return
 	}
 
 	err = redisPkg.Client.Set(c.Request.Context(), fmt.Sprintf("active_session:%s", userID), sessionID, 72*time.Hour).Err()
 	if err != nil {
-		log.Printf("[CRITICAL] Failed to register elevated session for User %s: %v", userID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Profile saved, but failed to initialize active session. Please log in again."})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Profile saved, but failed to initialize active session. Please log in again."))
 		return
 	}
 

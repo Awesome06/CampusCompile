@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -152,23 +151,17 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 	// 3. Delete from MinIO/S3 and log errors, but don't stop execution
 	for _, tc := range oldTestCases {
 		if inKey, ok := tc["input_s3_key"].(string); ok && inKey != "" {
-			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			_, _ = storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(storage.BucketName),
 				Key:    aws.String(inKey),
 			})
-			if err != nil {
-				log.Printf("[!] S3 Deletion Error (Input) for key %s: %v", inKey, err)
-			}
 		}
 
 		if outKey, ok := tc["expected_s3_key"].(string); ok && outKey != "" {
-			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			_, _ = storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(storage.BucketName),
 				Key:    aws.String(outKey),
 			})
-			if err != nil {
-				log.Printf("[!] S3 Deletion Error (Output) for key %s: %v", outKey, err)
-			}
 		}
 	}
 
