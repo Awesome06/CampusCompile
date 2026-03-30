@@ -60,12 +60,24 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 	}
 	defer tx.Rollback(ctx)
 
+	var overallDiff string
+	odStr := strings.TrimSpace(req.OverallDifficulty)
+	if strings.EqualFold(odStr, "easy") {
+		overallDiff = "Easy"
+	} else if strings.EqualFold(odStr, "medium") {
+		overallDiff = "Medium"
+	} else if strings.EqualFold(odStr, "hard") {
+		overallDiff = "Hard"
+	} else {
+		return "", fmt.Errorf("%w: invalid overall_difficulty literal '%s'", appErrors.ErrValidationFailed, req.OverallDifficulty)
+	}
+
 	var playlistID string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO playlists (title, description, author_id, is_public, overall_difficulty)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING playlist_id
-	`, req.Title, req.Description, authorID, req.IsPublic, req.OverallDifficulty).Scan(&playlistID)
+	`, req.Title, req.Description, authorID, req.IsPublic, overallDiff).Scan(&playlistID)
 
 	if err != nil {
 		return "", err
@@ -234,7 +246,8 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 		       ) as status
 		FROM playlist_problems pp
 		JOIN problems p ON pp.problem_id = p.problem_id
-		WHERE pp.playlist_id = $1
+		JOIN playlists pl ON pp.playlist_id = pl.playlist_id
+		WHERE pp.playlist_id = $1 AND (pl.is_public = false OR p.is_public = true)
 		ORDER BY pp.order_index ASC
 	`, playlistID, userID)
 
@@ -342,11 +355,23 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 	}
 	defer tx.Rollback(ctx)
 
+	var overallDiff string
+	odStr := strings.TrimSpace(req.OverallDifficulty)
+	if strings.EqualFold(odStr, "easy") {
+		overallDiff = "Easy"
+	} else if strings.EqualFold(odStr, "medium") {
+		overallDiff = "Medium"
+	} else if strings.EqualFold(odStr, "hard") {
+		overallDiff = "Hard"
+	} else {
+		return fmt.Errorf("%w: invalid overall_difficulty literal '%s'", appErrors.ErrValidationFailed, req.OverallDifficulty)
+	}
+
 	_, err = tx.Exec(ctx, `
 		UPDATE playlists 
 		SET title = $1, description = $2, is_public = $3, overall_difficulty = $4, updated_at = NOW()
 		WHERE playlist_id = $5
-	`, req.Title, req.Description, req.IsPublic, req.OverallDifficulty, playlistID)
+	`, req.Title, req.Description, req.IsPublic, overallDiff, playlistID)
 	if err != nil {
 		return err
 	}
