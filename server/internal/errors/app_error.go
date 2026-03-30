@@ -26,3 +26,8 @@ func NewAppError(httpStatus int, internal error, clientMsg string) *AppError {
 		ClientMsg:  clientMsg,
 	}
 }
+
+// Unwrap returns the underlying wrapped error so callers can use errors.Is/As
+func (e *AppError) Unwrap() error {
+	return e.Internal
+}

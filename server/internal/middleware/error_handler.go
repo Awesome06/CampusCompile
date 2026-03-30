@@ -1,12 +1,13 @@
 package middleware
 
 import (
+	stdErrors "errors"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	"campuscompile/api/internal/errors"
+	appErrors "campuscompile/api/internal/errors"
 )
 
 // ErrorInterceptor acts as a global catcher for all AppErrors propagated by controllers.
@@ -17,7 +18,9 @@ func ErrorInterceptor() gin.HandlerFunc {
 
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last().Err
-			if appErr, ok := err.(*errors.AppError); ok {
+			var appErr *appErrors.AppError
+			
+			if stdErrors.As(err, &appErr) {
 				// Server-side logging (Strict isolation: only middleware logs)
 				log.Printf("[ERROR] %v | Internal: %v", appErr.ClientMsg, appErr.Internal)
 				
