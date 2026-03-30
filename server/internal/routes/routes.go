@@ -89,6 +89,7 @@ func Setup(
 			faculty.PUT("/contests/:id", jsonArmor, contestController.UpdateContest)
 
 			faculty.POST("/playlists", jsonArmor, playlistController.CreatePlaylist)
+			faculty.PUT("/playlists/:id", jsonArmor, playlistController.UpdatePlaylist)
 			faculty.GET("/playlists/:id/analytics", playlistController.GetPlaylistAnalytics)
 
 			// Test case uploads remain under the heavier uploadArmor

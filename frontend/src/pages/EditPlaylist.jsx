@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import api from '../services/api';
 import Button from '../components/ui/Button';
 
@@ -10,8 +10,9 @@ const PLAYLIST_TAGS = [
   'Dynamic Programming', 'Bit Manipulation', 'Divide and Conquer', 'Sorting'
 ];
 
-export default function AddPlaylist() {
+export default function EditPlaylist() {
   const navigate = useNavigate();
+  const { id } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -32,12 +33,35 @@ export default function AddPlaylist() {
     // Fetch all public/faculty problems
     api.get('/faculty/problems', { params: { limit: 50, offset: 0 } })
       .then((res) => {
-        // Handle both pagination format and array formats
         const data = Array.isArray(res.data) ? res.data : (res.data?.problems || []);
         setAvailableProblems(data);
       })
       .catch((err) => console.error("Error fetching problems:", err));
-  }, []);
+
+    // Fetch Target Playlist
+    api.get(`/playlists/${id}`).then(res => {
+      const p = res.data;
+      setTitle(p.title);
+      setDescription(p.description || '');
+      setIsPublic(p.is_public);
+      setOverallDifficulty(p.overall_difficulty);
+      setSelectedTags(p.tags || []);
+    }).catch(err => {
+      setError("Failed to fetch existing playlist configuration.");
+    });
+
+    // Fetch Sequence
+    api.get(`/playlists/${id}/problems`).then(res => {
+      setSelectedProblems(res.data.map(prob => ({
+        problem_id: prob.problem_id,
+        title: prob.title,
+        difficulty: prob.difficulty,
+        custom_difficulty: prob.custom_difficulty || 'No Change',
+        order_index: prob.order_index
+      })));
+    }).catch(err => console.error(err));
+
+  }, [id]);
 
   const handleFetchMoreProblems = () => {
     api.get('/faculty/problems', { params: { limit: 50, search: searchQuery } })
@@ -102,8 +126,8 @@ export default function AddPlaylist() {
     };
 
     try {
-      const res = await api.post('/playlists', payload);
-      navigate(`/playlists/${res.data.playlist_id}`);
+      await api.put(`/playlists/${id}`, payload);
+      navigate(`/playlists/${id}`);
     } catch (err) {
       setError(err.response?.data?.error || "Failed to create playlist");
       setLoading(false);
@@ -112,7 +136,7 @@ export default function AddPlaylist() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto text-white">
-      <h1 className="text-3xl font-bold mb-8">Forge New Playlist</h1>
+      <h1 className="text-3xl font-bold mb-8">Edit Playlist Sequence</h1>
 
       {error && (
         <div className="bg-red-900/40 border border-red-500 text-red-300 p-4 rounded mb-6 font-mono text-sm leading-relaxed whitespace-pre-wrap">
@@ -192,7 +216,7 @@ export default function AddPlaylist() {
         {/* Selected Problems Configuration */}
         <div>
           <h2 className="text-xl font-bold mb-4">Problem Sequence</h2>
-          <p className="text-sm text-gray-400 mb-4">You must create playlists from scratch. Add problems from the repository to build your sequence.</p>
+          <p className="text-sm text-gray-400 mb-4">Edit the problem sequence mapping below.</p>
 
           {selectedProblems.length === 0 ? (
             <div className="bg-[#2a2a2a] p-4 text-center rounded border border-dashed border-gray-600 text-gray-500 font-mono text-sm">
@@ -279,7 +303,7 @@ export default function AddPlaylist() {
 
         <div className="pt-4 border-t border-dark-border mt-6">
           <Button type="submit" disabled={loading} variant="primary" className="w-full border-blue-600 shadow-md h-12">
-            {loading ? 'Forging Playlist...' : 'Forge Playlist'}
+            {loading ? 'Saving Changes...' : 'Save Playlist Configuration'}
           </Button>
         </div>
       </form>

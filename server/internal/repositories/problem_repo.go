@@ -95,20 +95,30 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 
 	// Now fetch the paginated problem list with the user's status
 	query := `
+		WITH LatestSubmissions AS (
+			SELECT problem_id, status::VARCHAR
+			FROM (
+				SELECT problem_id, status,
+				ROW_NUMBER() OVER(PARTITION BY problem_id ORDER BY CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC) as rn
+				FROM submissions
+				WHERE user_id = $1
+			) s
+			WHERE rn = 1
+		),
+		AggTags AS (
+			SELECT pt.problem_id, ARRAY_AGG(t.name) as tag_array
+			FROM problem_tags pt
+			JOIN tags t ON pt.tag_id = t.tag_id
+			GROUP BY pt.problem_id
+		)
 		SELECT 
 			p.problem_id, p.title, p.slug, p.difficulty, p.time_limit_ms, p.memory_limit_kb,
-			COALESCE(
-				(SELECT status::VARCHAR FROM submissions 
-				 WHERE problem_id = p.problem_id AND user_id = $1 
-				 ORDER BY CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC LIMIT 1),
-				'Unattempted'
-			) as user_status,
-			COALESCE((
-				SELECT ARRAY_AGG(t.name) 
-				FROM problem_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
-				WHERE pt.problem_id = p.problem_id
-			), ARRAY[]::VARCHAR[]) as tags
-		FROM problems p WHERE p.is_public = true
+			COALESCE(ls.status, 'Unattempted') as user_status,
+			COALESCE(at.tag_array, ARRAY[]::VARCHAR[]) as tags
+		FROM problems p 
+		LEFT JOIN LatestSubmissions ls ON p.problem_id = ls.problem_id
+		LEFT JOIN AggTags at ON p.problem_id = at.problem_id
+		WHERE p.is_public = true
 	`
 	args := []interface{}{userID}
 	argIdx := 2
@@ -138,17 +148,18 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 		var id, title, slug, difficulty, userStatus string
 		var timeLimit, memLimit int
 		var tags []string
-		if err := rows.Scan(&id, &title, &slug, &difficulty, &timeLimit, &memLimit, &userStatus, &tags); err == nil {
-			// Normalize status to match standard
-			if userStatus != "AC" && userStatus != "Unattempted" {
-				userStatus = "Attempted" // Could be WA, TLE, etc.
-			}
-			problems = append(problems, map[string]interface{}{
-				"problem_id": id, "title": title, "slug": slug,
-				"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memLimit,
-				"user_status": userStatus, "tags": tags,
-			})
+		if err := rows.Scan(&id, &title, &slug, &difficulty, &timeLimit, &memLimit, &userStatus, &tags); err != nil {
+			return nil, fmt.Errorf("failed to scan problem row: %w", err)
 		}
+		// Normalize status to match standard
+		if userStatus != "AC" && userStatus != "Unattempted" {
+			userStatus = "Attempted" // Could be WA, TLE, etc.
+		}
+		problems = append(problems, map[string]interface{}{
+			"problem_id": id, "title": title, "slug": slug,
+			"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memLimit,
+			"user_status": userStatus, "tags": tags,
+		})
 	}
 	
 	if problems == nil {
@@ -316,12 +327,13 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 		var isPublic bool
 		var createdAt time.Time
 		var tags []string
-		if err := rows.Scan(&id, &title, &difficulty, &isPublic, &createdAt, &tags); err == nil {
-			problems = append(problems, map[string]interface{}{
-				"problem_id": id, "title": title, "difficulty": difficulty,
-				"is_public": isPublic, "created_at": createdAt, "tags": tags,
-			})
+		if err := rows.Scan(&id, &title, &difficulty, &isPublic, &createdAt, &tags); err != nil {
+			return nil, fmt.Errorf("failed to scan faculty problem row: %w", err)
 		}
+		problems = append(problems, map[string]interface{}{
+			"problem_id": id, "title": title, "difficulty": difficulty,
+			"is_public": isPublic, "created_at": createdAt, "tags": tags,
+		})
 	}
 	return problems, nil
 }
@@ -338,15 +350,16 @@ func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]
 		var inS3, outS3 string
 		var isHidden bool
 
-		if err := rows.Scan(&isHidden, &inS3, &outS3); err == nil {
-			testCases = append(testCases, map[string]interface{}{
-				"is_hidden":       isHidden,
-				"input_data":      "", // Will be inflated by the Service layer
-				"expected_output": "", // Will be inflated by the Service layer
-				"input_s3_key":    inS3,
-				"expected_s3_key": outS3,
-			})
+		if err := rows.Scan(&isHidden, &inS3, &outS3); err != nil {
+			return nil, fmt.Errorf("failed to scan testcase row: %w", err)
 		}
+		testCases = append(testCases, map[string]interface{}{
+			"is_hidden":       isHidden,
+			"input_data":      "", // Inflated by Service
+			"expected_output": "", // Inflated by Service
+			"input_s3_key":    inS3,
+			"expected_s3_key": outS3,
+		})
 	}
 	return testCases, nil
 }

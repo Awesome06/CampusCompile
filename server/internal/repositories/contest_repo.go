@@ -91,8 +91,10 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 	`
 	args := []interface{}{}
 	argIdx := 1
+	var userID string
 
 	if demo != nil {
+		userID = demo.UserID
 		if demo.Course != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_typeof(access_rules->'allowed_courses') != 'array' OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Course)
@@ -156,7 +158,7 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, demo.UserID, query, args...)
+	return r.fetchContestsWithQuery(ctx, userID, query, args...)
 }
 
 func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {

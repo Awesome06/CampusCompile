@@ -57,13 +57,7 @@ func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 	limit, offset := parsePaginationArgs(c, 25)
 	searchQuery := c.Query("search")
 
-	// Get UserID dynamically, allow missing if public
-	var userID string
-	if uid, exists := c.Get("user_id"); exists {
-		if strUid, ok := uid.(string); ok {
-			userID = strUid
-		}
-	}
+	userID := c.MustGet("user_id").(string)
 
 	result, err := ctrl.service.FetchProblems(c.Request.Context(), userID, limit, offset, searchQuery)
 	if err != nil {

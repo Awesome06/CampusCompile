@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
@@ -13,6 +14,7 @@ type PlaylistService interface {
 	GetPlaylistByID(ctx context.Context, playlistID string) (models.PlaylistResponse, error)
 	GetPlaylistProblems(ctx context.Context, playlistID, userID string) ([]models.PlaylistProblemResponse, error)
 	GetPlaylistAnalytics(ctx context.Context, playlistID string) ([]models.PlaylistAnalyticsItem, error)
+	ModifyPlaylist(ctx context.Context, playlistID, userID, userRole string, req models.CreatePlaylistRequest) error
 }
 
 type playlistService struct {
@@ -41,4 +43,18 @@ func (s *playlistService) GetPlaylistProblems(ctx context.Context, playlistID, u
 
 func (s *playlistService) GetPlaylistAnalytics(ctx context.Context, playlistID string) ([]models.PlaylistAnalyticsItem, error) {
 	return s.repo.GetPlaylistAnalytics(ctx, playlistID)
+}
+
+func (s *playlistService) ModifyPlaylist(ctx context.Context, playlistID, userID, userRole string, req models.CreatePlaylistRequest) error {
+	playlist, err := s.repo.GetPlaylistByID(ctx, playlistID)
+	if err != nil {
+		return err
+	}
+	
+	isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
+	if !isAuthor && userRole != "admin" {
+		return errors.New("unauthorized: you do not have permission to modify this playlist")
+	}
+
+	return s.repo.UpdatePlaylist(ctx, playlistID, req)
 }

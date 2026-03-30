@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 
 	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
@@ -64,7 +66,11 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
-		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		if errors.Is(err, pgx.ErrNoRows) || err.Error() == "no rows in result set" {
+			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		} else {
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch playlist"))
+		}
 		return
 	}
 
@@ -84,7 +90,7 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 		}
 
 		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == reqUserID
-		hasPermission := reqUserRole == "admin" || reqUserRole == "professor"
+		hasPermission := reqUserRole == "admin"
 
 		if !isAuthor && !hasPermission {
 			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "You do not have permission to view this private playlist"))
@@ -102,7 +108,11 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 	// Authenticate Visibility before fetching problems
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
-		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		if errors.Is(err, pgx.ErrNoRows) || err.Error() == "no rows in result set" {
+			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		} else {
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to authenticate playlist visibility"))
+		}
 		return
 	}
 
@@ -115,7 +125,7 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 		}
 
 		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
-		hasPermission := reqUserRole == "admin" || reqUserRole == "professor"
+		hasPermission := reqUserRole == "admin"
 
 		if !isAuthor && !hasPermission {
 			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "You do not have permission to view problems in this private playlist"))
@@ -143,4 +153,28 @@ func (ctrl *PlaylistController) GetPlaylistAnalytics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, analytics)
+}
+
+func (ctrl *PlaylistController) UpdatePlaylist(c *gin.Context) {
+	var req models.CreatePlaylistRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid request payload"))
+		return
+	}
+
+	playlistID := c.Param("id")
+	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string)
+
+	err := ctrl.service.ModifyPlaylist(c.Request.Context(), playlistID, userID, userRole, req)
+	if err != nil {
+		if err.Error() == "unauthorized: you do not have permission to modify this playlist" {
+			c.Error(appErrors.NewAppError(http.StatusForbidden, err, err.Error()))
+		} else {
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to update playlist"))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Playlist updated successfully"})
 }

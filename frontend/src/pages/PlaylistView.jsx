@@ -13,6 +13,7 @@ export default function PlaylistView() {
   const navigate = useNavigate();
 
   const isElevated = currentUser?.role === 'admin' || currentUser?.role === 'professor';
+  const canEdit = currentUser?.role === 'admin' || (playlist && playlist.author_id === currentUser?.user_id);
 
   useEffect(() => {
     setLoading(true);
@@ -71,9 +72,14 @@ export default function PlaylistView() {
           )}
         </div>
 
-        {/* Analytics Button for Faculty */}
+        {/* Action Buttons for Faculty */}
         {isElevated && (
-          <div className="absolute top-6 right-6">
+          <div className="absolute top-6 right-6 flex items-center gap-2">
+            {canEdit && (
+              <Button onClick={() => navigate(`/playlists/${id}/edit`)} variant="secondary" className="border border-dark-border hover:bg-gray-700">
+                ⚙️ Edit
+              </Button>
+            )}
             <Button onClick={() => navigate(`/playlists/${id}/analytics`)} variant="primary" className="border border-blue-600">
               📊 View Analytics
             </Button>
@@ -99,7 +105,7 @@ export default function PlaylistView() {
                   <div className="w-12 text-left font-bold text-gray-500">{prob.order_index}</div>
 
                   <div className="w-1/2 font-medium flex items-center gap-3">
-                    <Link to={`/problems/${prob.problem_id}`} className="hover:text-blue-400 transition text-lg">
+                    <Link to={`/arena/${prob.problem_id}`} className="hover:text-blue-400 transition text-lg">
                       {prob.title}
                     </Link>
                     {/* Custom Difficulty Override if any */}

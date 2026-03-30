@@ -16,6 +16,7 @@ type PlaylistRepository interface {
 	GetPlaylistByID(ctx context.Context, playlistID string) (models.PlaylistResponse, error)
 	GetPlaylistProblems(ctx context.Context, playlistID, userID string) ([]models.PlaylistProblemResponse, error)
 	GetPlaylistAnalytics(ctx context.Context, playlistID string) ([]models.PlaylistAnalyticsItem, error)
+	UpdatePlaylist(ctx context.Context, playlistID string, req models.CreatePlaylistRequest) error
 }
 
 type playlistRepo struct {
@@ -78,8 +79,19 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 		}
 		
 		var customDiff *string
-		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" {
-			customDiff = &cd
+		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" && cd != "No Change" {
+			cdStr := strings.TrimSpace(cd)
+			// Postgres format casing matches UI
+			if strings.EqualFold(cdStr, "easy") { 
+				cdStr = "Easy" 
+			} else if strings.EqualFold(cdStr, "medium") { 
+				cdStr = "Medium" 
+			} else if strings.EqualFold(cdStr, "hard") { 
+				cdStr = "Hard" 
+			} else {
+				return "", fmt.Errorf("invalid custom_difficulty literal '%s' attached to sequence index %d", cd, i)
+			}
+			customDiff = &cdStr
 		}
 
 		_, err = tx.Exec(ctx, `
@@ -108,7 +120,7 @@ func (r *playlistRepo) GetPlaylists(ctx context.Context, userID, viewMode string
                    WHERE pt.playlist_id = p.playlist_id
 		       ), ARRAY[]::VARCHAR[]) as tags,
 		       p.created_at, p.updated_at,
-		       COALESCE(u.username, 'Anonymous') as author_name,
+		       COALESCE(u.real_name, u.username, 'Anonymous') as author_name,
 		       (SELECT COUNT(*) FROM playlist_problems pp WHERE pp.playlist_id = p.playlist_id) as total_count,
 		       COALESCE((
 		           SELECT COUNT(DISTINCT s.problem_id) 
@@ -146,10 +158,11 @@ func (r *playlistRepo) GetPlaylists(ctx context.Context, userID, viewMode string
 	for rows.Next() {
 		var p models.PlaylistResponse
 		var authorID *string
-		if err := rows.Scan(&p.ID, &p.Title, &p.Description, &authorID, &p.IsPublic, &p.OverallDifficulty, &p.Tags, &p.CreatedAt, &p.UpdatedAt, &p.AuthorName, &p.TotalCount, &p.SolvedCount); err == nil {
-			p.AuthorID = authorID
-			playlists = append(playlists, p)
+		if err := rows.Scan(&p.ID, &p.Title, &p.Description, &authorID, &p.IsPublic, &p.OverallDifficulty, &p.Tags, &p.CreatedAt, &p.UpdatedAt, &p.AuthorName, &p.TotalCount, &p.SolvedCount); err != nil {
+			return nil, fmt.Errorf("failed to scan playlist row: %w", err)
 		}
+		p.AuthorID = authorID
+		playlists = append(playlists, p)
 	}
 	if playlists == nil {
 		playlists = []models.PlaylistResponse{}
@@ -168,7 +181,7 @@ func (r *playlistRepo) GetPlaylistByID(ctx context.Context, playlistID string) (
                    WHERE pt.playlist_id = p.playlist_id
 		       ), ARRAY[]::VARCHAR[]) as tags,
 		       p.created_at, p.updated_at,
-		       COALESCE(u.username, 'Anonymous') as author_name,
+		       COALESCE(u.real_name, u.username, 'Anonymous') as author_name,
 		       (SELECT COUNT(*) FROM playlist_problems pp WHERE pp.playlist_id = p.playlist_id) as total_count
 		FROM playlists p
 		LEFT JOIN users u ON p.author_id = u.user_id
@@ -202,15 +215,16 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 	for rows.Next() {
 		var pr models.PlaylistProblemResponse
 		var customDiff *string
-		if err := rows.Scan(&pr.ID, &pr.Title, &pr.Slug, &pr.Difficulty, &pr.OrderIndex, &customDiff, &pr.Status); err == nil {
-			pr.CustomDifficulty = customDiff
-			if pr.Status != "AC" && pr.Status != "Unattempted" {
-				pr.Status = "Attempted/WA"
-			} else if pr.Status == "AC" {
-				pr.Status = "Accepted"
-			}
-			problems = append(problems, pr)
+		if err := rows.Scan(&pr.ID, &pr.Title, &pr.Slug, &pr.Difficulty, &pr.OrderIndex, &customDiff, &pr.Status); err != nil {
+			return nil, fmt.Errorf("failed to scan playlist problem row: %w", err)
 		}
+		pr.CustomDifficulty = customDiff
+		if pr.Status != "AC" && pr.Status != "Unattempted" {
+			pr.Status = "Attempted/WA"
+		} else if pr.Status == "AC" {
+			pr.Status = "Accepted"
+		}
+		problems = append(problems, pr)
 	}
 	if problems == nil {
 		problems = []models.PlaylistProblemResponse{}
@@ -249,12 +263,100 @@ func (r *playlistRepo) GetPlaylistAnalytics(ctx context.Context, playlistID stri
 	var analytics []models.PlaylistAnalyticsItem
 	for rows.Next() {
 		var a models.PlaylistAnalyticsItem
-		if err := rows.Scan(&a.ProblemID, &a.OrderIndex, &a.CompletedCount, &a.TotalStudents); err == nil {
-			analytics = append(analytics, a)
+		if err := rows.Scan(&a.ProblemID, &a.OrderIndex, &a.CompletedCount, &a.TotalStudents); err != nil {
+			return nil, fmt.Errorf("failed to scan playlist analytics row: %w", err)
 		}
+		analytics = append(analytics, a)
 	}
 	if analytics == nil {
 		analytics = []models.PlaylistAnalyticsItem{}
 	}
 	return analytics, nil
+}
+
+func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, req models.CreatePlaylistRequest) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
+		UPDATE playlists 
+		SET title = $1, description = $2, is_public = $3, overall_difficulty = $4, updated_at = NOW()
+		WHERE playlist_id = $5
+	`, req.Title, req.Description, req.IsPublic, req.OverallDifficulty, playlistID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, "DELETE FROM playlist_tags WHERE playlist_id = $1", playlistID)
+	if err != nil {
+		return err
+	}
+
+	tagSet := make(map[string]bool)
+	for _, tag := range req.Tags {
+		tagStr := strings.TrimSpace(strings.ToLower(tag))
+		if tagStr == "" || tagSet[tagStr] {
+			continue
+		}
+		tagSet[tagStr] = true
+
+		var tagID int
+		err = tx.QueryRow(ctx, `
+			INSERT INTO tags (name) VALUES ($1)
+			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
+			RETURNING tag_id
+		`, tagStr).Scan(&tagID)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO playlist_tags (playlist_id, tag_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
+		`, playlistID, tagID)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = tx.Exec(ctx, "DELETE FROM playlist_problems WHERE playlist_id = $1", playlistID)
+	if err != nil {
+		return err
+	}
+
+	for i, p := range req.Problems {
+		problemID, ok := p["problem_id"].(string)
+		if !ok || problemID == "" {
+			return fmt.Errorf("invalid or missing problem_id attached to sequence index %d", i)
+		}
+		
+		var customDiff *string
+		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" && cd != "No Change" {
+			cdStr := strings.TrimSpace(cd)
+			if strings.EqualFold(cdStr, "easy") { 
+				cdStr = "Easy" 
+			} else if strings.EqualFold(cdStr, "medium") { 
+				cdStr = "Medium" 
+			} else if strings.EqualFold(cdStr, "hard") { 
+				cdStr = "Hard" 
+			} else {
+				return fmt.Errorf("invalid custom_difficulty literal '%s' attached to sequence index %d", cd, i)
+			}
+			customDiff = &cdStr
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO playlist_problems (playlist_id, problem_id, order_index, custom_difficulty)
+			VALUES ($1, $2, $3, $4)
+		`, playlistID, problemID, i+1, customDiff)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }

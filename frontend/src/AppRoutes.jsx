@@ -20,6 +20,7 @@ import Leaderboard from './pages/Leaderboard';
 import PlaylistList from './pages/PlaylistList';
 import PlaylistView from './pages/PlaylistView';
 import AddPlaylist from './pages/AddPlaylist';
+import EditPlaylist from './pages/EditPlaylist';
 import PlaylistAnalytics from './pages/PlaylistAnalytics';
 
 // Phase 4 Imports
@@ -118,6 +119,13 @@ export default function AppRoutes() {
                     <ProtectedRoute>
                         <RequireRole allowedRoles={['admin', 'professor']}>
                             <AddPlaylist />
+                        </RequireRole>
+                    </ProtectedRoute>
+                } />
+                <Route path="/playlists/:id/edit" element={
+                    <ProtectedRoute>
+                        <RequireRole allowedRoles={['admin', 'professor']}>
+                            <EditPlaylist />
                         </RequireRole>
                     </ProtectedRoute>
                 } />
