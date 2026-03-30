@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log" // <-- Added
+	"log/slog"
 	"net/http"
 	"strconv" // <-- Added
 	"time"
@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 
+	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/storage"
@@ -30,19 +31,19 @@ func NewProblemController(service services.ProblemService) *ProblemController {
 func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 	var req models.CreateProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid request payload"))
 		return
 	}
 
 	authorID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User identity not found in request context"})
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, nil, "User identity not found in request context"))
 		return
 	}
 
 	problemID, err := ctrl.service.ForgeProblem(c.Request.Context(), req, authorID.(string))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forge problem in database"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to forge problem in database"))
 		return
 	}
 
@@ -58,7 +59,7 @@ func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 
 	problems, err := ctrl.service.FetchProblems(c.Request.Context(), limit, offset, searchQuery)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Database query failed"))
 		return
 	}
 	if problems == nil {
@@ -70,7 +71,7 @@ func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 func (ctrl *ProblemController) GetProblemByID(c *gin.Context) {
 	problem, err := ctrl.service.FetchProblemByID(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found in the Arena."})
+		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Problem not found in the Arena."))
 		return
 	}
 	c.JSON(http.StatusOK, problem)
@@ -79,7 +80,7 @@ func (ctrl *ProblemController) GetProblemByID(c *gin.Context) {
 func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 	var req models.CreateProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid payload"))
 		return
 	}
 
@@ -88,7 +89,7 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 
 	err := ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), userID, userRole, req)
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Update failed or unauthorized"})
+		c.Error(appErrors.NewAppError(http.StatusForbidden, err, "Update failed or unauthorized"))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Problem updated successfully"})
@@ -102,26 +103,26 @@ func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 	// Fetch problem to verify ownership and publish status
 	problemMeta, err := ctrl.service.FetchProblemByID(c.Request.Context(), problemID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
+		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Problem not found"))
 		return
 	}
 
 	if userRole == "professor" {
 		authorID, ok := problemMeta["author_id"].(string)
 		if !ok || authorID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not own this problem"})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Access Denied: You do not own this problem"))
 			return
 		}
 
 		isPublic, ok := problemMeta["is_public"].(bool)
 		if ok && isPublic {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: Professors cannot delete published problems. Please contact an Administrator."})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Access Denied: Professors cannot delete published problems. Please contact an Administrator."))
 			return
 		}
 	}
 
 	if err := ctrl.service.RemoveProblem(c.Request.Context(), problemID, userID, userRole); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete problem"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to delete problem"))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Problem completely erased."})
@@ -133,7 +134,7 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 
 	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), c.MustGet("user_id").(string), limit, offset, searchQuery)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch your problems"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch your problems"))
 		return
 	}
 	if problems == nil {
@@ -145,7 +146,7 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 	testCases, err := ctrl.service.FetchAllTestCases(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch test cases"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch test cases"))
 		return
 	}
 	if testCases == nil {
@@ -163,9 +164,9 @@ func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 	if err != nil {
 		// 👇 NEW: Safely check for the Sentinel Error
 		if errors.Is(err, services.ErrUnauthorizedAction) {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			c.Error(appErrors.NewAppError(http.StatusForbidden, err, "You lack permissions to clear these test cases."))
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to clear test cases due to an internal system error."))
 		}
 		return
 	}
@@ -187,23 +188,23 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	authorID, err := ctrl.service.GetProblemAuthor(c.Request.Context(), problemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Problem not found"})
+			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Problem not found"))
 		} else {
 			// Operational database issue (connectivity, timeout, etc.)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify problem ownership"})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to verify problem ownership"))
 		}
 		return
 	}
 
 	if userRole != "admin" && userID != authorID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized: only the original author or an admin can upload test cases"})
+		c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "unauthorized: only the original author or an admin can upload test cases"))
 		return
 	}
 
 	// 2. Parse Multipart Form
 	form, err := c.MultipartForm()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form data"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid form data"))
 		return
 	}
 
@@ -213,12 +214,12 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 
 	// 3. Strict Payload Validation
 	if len(inputFiles) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No test cases provided in payload"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, nil, "No test cases provided in payload"))
 		return
 	}
 
 	if len(inputFiles) != len(expectedFiles) || len(inputFiles) != len(isHiddenVals) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Mismatched file arrays in payload"})
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, nil, "Mismatched file arrays in payload"))
 		return
 	}
 
@@ -231,7 +232,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		inFile, err := inputFiles[i].Open()
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open input file"})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to open input file"))
 			return
 		}
 
@@ -245,7 +246,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "S3 input upload failed"})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "S3 input upload failed"))
 			return
 		}
 		uploadedKeys = append(uploadedKeys, inKey)
@@ -254,7 +255,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		outFile, err := expectedFiles[i].Open()
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open expected file"})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to open expected file"))
 			return
 		}
 
@@ -268,7 +269,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "S3 expected output upload failed"})
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "S3 expected output upload failed"))
 			return
 		}
 		uploadedKeys = append(uploadedKeys, outKey)
@@ -277,7 +278,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		isHidden, err := strconv.ParseBool(isHiddenVals[i])
 		if err != nil {
 			ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid boolean value for is_hidden flag"})
+			c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid boolean value for is_hidden flag"))
 			return
 		}
 
@@ -293,7 +294,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	err = ctrl.service.SaveTestCasesBatch(c.Request.Context(), problemID, records)
 	if err != nil {
 		ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist test cases to database"})
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to persist test cases to database"))
 		return
 	}
 
@@ -308,7 +309,11 @@ func (ctrl *ProblemController) cleanupS3Keys(ctx context.Context, keys []string)
 			Key:    aws.String(key),
 		})
 		if err != nil {
-			log.Printf("[ERROR] Failed to clean up orphaned S3 object (%s): %v", key, err)
+			slog.Error("Failed to clean up orphaned S3 object",
+				"component", "ProblemController.cleanupS3Keys",
+				"s3_key", key,
+				"error", err,
+			)
 		}
 	}
 }

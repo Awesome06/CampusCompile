@@ -17,6 +17,9 @@ func Setup(
 	jsonArmor gin.HandlerFunc,
 	uploadArmor gin.HandlerFunc,
 ) {
+	// --- GLOBAL MIDDLEWARE ---
+	router.Use(middleware.ErrorInterceptor())
+
 	// --- PUBLIC ROUTES ---
 	authGroup := router.Group("/api/auth")
 	{

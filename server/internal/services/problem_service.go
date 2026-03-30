@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -157,7 +157,12 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 				Key:    aws.String(inKey),
 			})
 			if err != nil {
-				log.Printf("[!] S3 Deletion Error (Input) for key %s: %v", inKey, err)
+				slog.Error("Failed to delete orphaned S3 input object",
+					"component", "ProblemService.ClearTestCases",
+					"problem_id", problemID,
+					"s3_key", inKey,
+					"error", err,
+				)
 			}
 		}
 
@@ -167,7 +172,12 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 				Key:    aws.String(outKey),
 			})
 			if err != nil {
-				log.Printf("[!] S3 Deletion Error (Output) for key %s: %v", outKey, err)
+				slog.Error("Failed to delete orphaned S3 expected output object",
+					"component", "ProblemService.ClearTestCases",
+					"problem_id", problemID,
+					"s3_key", outKey,
+					"error", err,
+				)
 			}
 		}
 	}
