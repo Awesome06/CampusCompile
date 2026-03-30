@@ -27,13 +27,12 @@ func Setup(
 		authGroup.GET("/login", handlers.HandleAzureLogin)
 		authGroup.GET("/callback", handlers.HandleAzureCallback)
 	}
-	router.GET("/api/problems", problemController.GetProblems)
-
 	// --- PROTECTED ROUTES (Requires JWT) ---
 	protected := router.Group("/api")
 	protected.Use(middleware.RequireAuth)
 	{
 		protected.POST("/auth/onboard", jsonArmor, handlers.CompleteOnboarding)
+		protected.GET("/problems", problemController.GetProblems)
 		protected.GET("/problems/:id", problemController.GetProblemByID)
 
 		// Submissions
