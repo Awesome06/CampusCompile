@@ -9,6 +9,7 @@ export default function PlaylistView() {
   const [playlist, setPlaylist] = useState(null);
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [errorStatus, setErrorStatus] = useState(null);
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
@@ -23,10 +24,19 @@ export default function PlaylistView() {
       .then(([playlistRes, problemsRes]) => {
         setPlaylist(playlistRes.data);
         setProblems(problemsRes.data || []);
+        setErrorStatus(null);
         setLoading(false);
       })
       .catch((err) => {
         console.error("Error loading playlist:", err);
+        if (err.response?.status === 403) {
+          setErrorStatus('forbidden');
+        } else if (err.response?.status === 404) {
+          setErrorStatus('not-found');
+        } else {
+          setErrorStatus('generic');
+        }
+        setPlaylist(null);
         setLoading(false);
       });
   }, [id]);
@@ -35,8 +45,29 @@ export default function PlaylistView() {
     return <div className="p-8 text-center font-mono text-gray-400 animate-pulse">Loading playlist...</div>;
   }
 
-  if (!playlist) {
-    return <div className="p-8 text-center font-mono text-red-500">Playlist not found</div>;
+  if (errorStatus === 'forbidden') {
+    return (
+      <div className="p-8 max-w-2xl mx-auto mt-20 text-center">
+        <div className="bg-red-900/10 border border-red-900/50 p-10 rounded-lg shadow-2xl">
+          <h2 className="text-3xl font-bold text-red-500 mb-4 tracking-wider">RESTRICTED ACCESS</h2>
+          <p className="text-gray-400 font-mono mb-8 text-sm leading-relaxed">
+            This collection is currently classified as a private or draft sequence.<br />
+            You do not have the required clearance to view these specific materials.
+          </p>
+          <Button onClick={() => navigate('/playlists')} variant="outline" className="text-gray-300 border-dark-border hover:bg-dark-surface w-full md:w-auto px-8">
+            &larr; Return to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorStatus === 'not-found' || !playlist) {
+    return (
+      <div className="p-8 text-center font-mono text-gray-500 mt-20">
+        Record not found or has been deleted.
+      </div>
+    );
   }
 
   const getStatusColor = (status) => {

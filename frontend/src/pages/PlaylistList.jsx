@@ -13,7 +13,7 @@ export default function PlaylistList() {
   const isElevated = currentUser?.role === 'admin' || currentUser?.role === 'professor';
 
   // "public" or "faculty"
-  const [viewMode, setViewMode] = useState(isElevated ? 'faculty' : 'public');
+  const [viewMode, setViewMode] = useState('public');
   const [offset, setOffset] = useState(0);
   const limit = 10;
   const [hasMore, setHasMore] = useState(true);
@@ -39,6 +39,12 @@ export default function PlaylistList() {
     setHasMore(true);
     fetchPlaylists(0, viewMode);
   }, [viewMode]);
+
+  useEffect(() => {
+    if (isElevated) {
+      setViewMode('faculty');
+    }
+  }, [isElevated]);
 
   const handlePrev = () => {
     if (offset >= limit) {
