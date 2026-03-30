@@ -31,7 +31,11 @@ func (ctrl *PlaylistController) CreatePlaylist(c *gin.Context) {
 
 	playlistID, err := ctrl.service.CreatePlaylist(c.Request.Context(), req, authorID)
 	if err != nil {
-		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to create playlist"))
+		if errors.Is(err, appErrors.ErrValidationFailed) {
+			c.Error(appErrors.NewAppError(http.StatusBadRequest, err, err.Error()))
+		} else {
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to create playlist"))
+		}
 		return
 	}
 
@@ -186,8 +190,10 @@ func (ctrl *PlaylistController) UpdatePlaylist(c *gin.Context) {
 
 	err := ctrl.service.ModifyPlaylist(c.Request.Context(), playlistID, userID, userRole, req)
 	if err != nil {
-		if err.Error() == "unauthorized: you do not have permission to modify this playlist" {
+		if errors.Is(err, appErrors.ErrUnauthorized) || err.Error() == "unauthorized: you do not have permission to modify this playlist" {
 			c.Error(appErrors.NewAppError(http.StatusForbidden, err, err.Error()))
+		} else if errors.Is(err, appErrors.ErrValidationFailed) {
+			c.Error(appErrors.NewAppError(http.StatusBadRequest, err, err.Error()))
 		} else {
 			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to update playlist"))
 		}

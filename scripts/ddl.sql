@@ -223,6 +223,11 @@ CREATE INDEX IF NOT EXISTS idx_problems_created_at ON problems(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_contest_registrations_user_id ON contest_registrations(user_id);
 
 -- Submissions
+-- --------------------------------------------------------------------------------
+-- Phase 3 Indices
+-- --------------------------------------------------------------------------------
+CREATE INDEX idx_submissions_user_problem_time ON submissions(user_id, problem_id, submitted_at DESC);
+CREATE INDEX idx_playlist_problems_problem_id ON playlist_problems(problem_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_contest_id ON submissions(contest_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_problem_id ON submissions(problem_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON submissions(user_id);

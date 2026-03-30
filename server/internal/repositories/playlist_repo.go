@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	appErrors "campuscompile/api/internal/errors"
+
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"campuscompile/api/internal/models"
@@ -43,7 +46,7 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 				return "", fmt.Errorf("failed to validate problem visibility: %w", err)
 			}
 			if privateCount > 0 {
-				return "", fmt.Errorf("cannot publish playlist: it contains %d private/draft problems", privateCount)
+				return "", fmt.Errorf("%w: cannot publish playlist: it contains %d private/draft problems", appErrors.ErrValidationFailed, privateCount)
 			}
 		}
 	}
@@ -95,7 +98,7 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 	for i, p := range req.Problems {
 		problemID, ok := p["problem_id"].(string)
 		if !ok || problemID == "" {
-			return "", fmt.Errorf("invalid or missing problem_id attached to sequence index %d", i)
+			return "", fmt.Errorf("%w: invalid or missing problem_id attached to sequence index %d", appErrors.ErrValidationFailed, i)
 		}
 		
 		var customDiff *string
@@ -109,7 +112,7 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 			} else if strings.EqualFold(cdStr, "hard") { 
 				cdStr = "Hard" 
 			} else {
-				return "", fmt.Errorf("invalid custom_difficulty literal '%s' attached to sequence index %d", cd, i)
+				return "", fmt.Errorf("%w: invalid custom_difficulty literal '%s' attached to sequence index %d", appErrors.ErrValidationFailed, cd, i)
 			}
 			customDiff = &cdStr
 		}
@@ -184,6 +187,9 @@ func (r *playlistRepo) GetPlaylists(ctx context.Context, userID, viewMode string
 		p.AuthorID = authorID
 		playlists = append(playlists, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during playlist retrieval: %w", err)
+	}
 	if playlists == nil {
 		playlists = []models.PlaylistResponse{}
 	}
@@ -246,6 +252,9 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 		}
 		problems = append(problems, pr)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during playlist problem retrieval: %w", err)
+	}
 	if problems == nil {
 		problems = []models.PlaylistProblemResponse{}
 	}
@@ -288,6 +297,9 @@ func (r *playlistRepo) GetPlaylistAnalytics(ctx context.Context, playlistID stri
 		}
 		analytics = append(analytics, a)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during playlist analytics retrieval: %w", err)
+	}
 	if analytics == nil {
 		analytics = []models.PlaylistAnalyticsItem{}
 	}
@@ -310,7 +322,7 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 				return fmt.Errorf("failed to validate problem visibility: %w", err)
 			}
 			if privateCount > 0 {
-				return fmt.Errorf("cannot publish playlist: it contains %d private/draft problems", privateCount)
+				return fmt.Errorf("%w: cannot publish playlist: it contains %d private/draft problems", appErrors.ErrValidationFailed, privateCount)
 			}
 		}
 	}
@@ -370,7 +382,7 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 	for i, p := range req.Problems {
 		problemID, ok := p["problem_id"].(string)
 		if !ok || problemID == "" {
-			return fmt.Errorf("invalid or missing problem_id attached to sequence index %d", i)
+			return fmt.Errorf("%w: invalid or missing problem_id attached to sequence index %d", appErrors.ErrValidationFailed, i)
 		}
 		
 		var customDiff *string
@@ -383,7 +395,7 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 			} else if strings.EqualFold(cdStr, "hard") { 
 				cdStr = "Hard" 
 			} else {
-				return fmt.Errorf("invalid custom_difficulty literal '%s' attached to sequence index %d", cd, i)
+				return fmt.Errorf("%w: invalid custom_difficulty literal '%s' attached to sequence index %d", appErrors.ErrValidationFailed, cd, i)
 			}
 			customDiff = &cdStr
 		}

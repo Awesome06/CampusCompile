@@ -367,6 +367,9 @@ func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]
 			"expected_s3_key": outS3,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during testcase retrieval: %w", err)
+	}
 	return testCases, nil
 }
 

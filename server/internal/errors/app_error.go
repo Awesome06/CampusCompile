@@ -27,7 +27,12 @@ func NewAppError(httpStatus int, internal error, clientMsg string) *AppError {
 	}
 }
 
-// Unwrap returns the underlying wrapped error so callers can use errors.Is/As
 func (e *AppError) Unwrap() error {
 	return e.Internal
 }
+
+var (
+	ErrValidationFailed = fmt.Errorf("validation failed")
+	ErrUnauthorized     = fmt.Errorf("unauthorized action")
+	ErrNotFound         = fmt.Errorf("resource not found")
+)

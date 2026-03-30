@@ -73,13 +73,11 @@ export default function PlaylistView() {
         </div>
 
         {/* Action Buttons for Faculty */}
-        {isElevated && (
+        {canEdit && (
           <div className="absolute top-6 right-6 flex items-center gap-2">
-            {canEdit && (
-              <Button onClick={() => navigate(`/playlists/${id}/edit`)} variant="secondary" className="border border-dark-border hover:bg-gray-700">
-                ⚙️ Edit
-              </Button>
-            )}
+            <Button onClick={() => navigate(`/playlists/${id}/edit`)} variant="secondary" className="border border-dark-border hover:bg-gray-700">
+              ⚙️ Edit
+            </Button>
             <Button onClick={() => navigate(`/playlists/${id}/analytics`)} variant="primary" className="border border-blue-600">
               📊 View Analytics
             </Button>
