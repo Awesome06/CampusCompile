@@ -384,7 +384,7 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 			err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
 			if err != nil {
 				slog.Error("Batch telemetry drop detected",
-					"component", "LogTelemetry",
+					"component", "ContestController.LogTelemetryBatch",
 					"contest_id", contestID,
 					"user_id", userID,
 					"error", err,

@@ -77,7 +77,14 @@ func (h *Hub) Unsubscribe(topic string, ch chan string) {
 
 	// Safely close the Redis connection outside the critical section
 	if pubsubToClose != nil {
-		_ = pubsubToClose.Close()
+		err := pubsubToClose.Close()
+		if err != nil {
+			slog.Error("Failed to close Redis PubSub connection",
+				"component", "Hub.Unsubscribe",
+				"topic", topic,
+				"error", err,
+			)
+		}
 	}
 }
 
@@ -86,17 +93,23 @@ func (h *Hub) broadcast(topic string, redisCh <-chan *redisClient.Message) {
 	for msg := range redisCh {
 		h.RLock()
 		subs := h.subscribers[topic]
+		droppedCount := 0
 
 		for ch := range subs {
 			select {
 			case ch <- msg.Payload:
 			default:
-				slog.Warn("Dropped SSE broadcast message to slow subscriber",
-					"component", "Hub.broadcast",
-					"topic", topic,
-				)
+				droppedCount++
 			}
 		}
 		h.RUnlock()
+
+		if droppedCount > 0 {
+			slog.Warn("Dropped SSE broadcast messages to slow subscribers",
+				"component", "Hub.broadcast",
+				"topic", topic,
+				"dropped_count", droppedCount,
+			)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"log"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,7 +28,7 @@ func ErrorInterceptor() gin.HandlerFunc {
 
 			// Fallback for non-AppErrors (e.g. raw standard library errors)
 			log.Printf("[UNHANDLED ERROR] %v", err)
-			c.JSON(500, gin.H{"error": "An unexpected system error occurred."})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "An unexpected system error occurred."})
 		}
 	}
 }
