@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"campuscompile/api/internal/errors"
+	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/services"
 	"campuscompile/api/internal/utils"
@@ -30,7 +30,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// No internal logging needed here as the middleware catches it if we wrap it
-		c.Error(errors.NewAppError(http.StatusBadRequest, err, "Invalid request payload. Please verify your submission format."))
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid request payload. Please verify your submission format."))
 		return
 	}
 
@@ -40,7 +40,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 
 	if req.ContestID != nil && *req.ContestID != "" {
 		if err := uuid.Validate(*req.ContestID); err != nil {
-			c.Error(errors.NewAppError(http.StatusBadRequest, err, "Invalid contest identifier format."))
+			c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid contest identifier format."))
 			return
 		}
 
@@ -51,7 +51,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	// 3. SINGLE, ACCURATE RATE LIMIT ENFORCEMENT
 	allowed, remaining, err := utils.EnforceCooldown(c.Request.Context(), ctrl.rdb, userID, "submit", cooldownDuration)
 	if err != nil {
-		c.Error(errors.NewAppError(http.StatusInternalServerError, err, "Failed to verify submission rate limit"))
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to verify submission rate limit"))
 		return
 	}
 
@@ -76,7 +76,7 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	// 4. Hand off to the Service layer
 	submissionID, err := ctrl.service.ProcessSubmission(c.Request.Context(), req, userID)
 	if err != nil {
-		c.Error(errors.NewAppError(http.StatusInternalServerError, err, "Failed to process submission"))
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to process submission"))
 		return
 	}
 
@@ -90,13 +90,13 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 func (ctrl *SubmissionController) RunCode(c *gin.Context) {
 	var req models.RunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(errors.NewAppError(http.StatusBadRequest, err, "Invalid request payload"))
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid request payload"))
 		return
 	}
 
 	runID, err := ctrl.service.ProcessRun(c.Request.Context(), req)
 	if err != nil {
-		c.Error(errors.NewAppError(http.StatusInternalServerError, err, "Failed to queue run"))
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to queue run"))
 		return
 	}
 
@@ -108,7 +108,7 @@ func (ctrl *SubmissionController) GetRunStatus(c *gin.Context) {
 
 	result, err := ctrl.service.FetchRunStatus(c.Request.Context(), runID)
 	if err != nil {
-		c.Error(errors.NewAppError(http.StatusInternalServerError, err, "Execution engine disconnected or malformed result"))
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Execution engine disconnected or malformed result"))
 		return
 	}
 
@@ -120,7 +120,7 @@ func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 
 	result, err := ctrl.service.FetchSubmissionStatus(c.Request.Context(), submissionID)
 	if err != nil {
-		c.Error(errors.NewAppError(http.StatusNotFound, err, "Submission not found"))
+		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Submission not found"))
 		return
 	}
 
@@ -141,7 +141,7 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 
 	history, err := ctrl.service.FetchSubmissionHistory(c.Request.Context(), userID, problemID, contestID, limit, offset)
 	if err != nil {
-		c.Error(errors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch history"))
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch history"))
 		return
 	}
 

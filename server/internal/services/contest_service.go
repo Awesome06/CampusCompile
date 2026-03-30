@@ -116,6 +116,7 @@ func (s *contestService) StartLeaderboardDaemon(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			slog.Info("Shutting down leaderboard daemon gracefully", "component", "StartLeaderboardDaemon")
 			return
 		case <-ticker.C:
 			// 1. Fetch all contest IDs currently flagged as dirty using SMembers (O(N) where N is dirty count)
@@ -261,6 +262,7 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			slog.Info("Shutting down MOSS audit daemon gracefully", "component", "StartAuditDaemon")
 			return
 		case <-ticker.C:
 			// 1. SWEEP FOR PENDING AND STUCK JOBS
