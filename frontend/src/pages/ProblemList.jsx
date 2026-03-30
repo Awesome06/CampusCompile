@@ -184,6 +184,18 @@ export default function ProblemList() {
                   </span>
                 )
               )}
+
+              {/* Public Workspace Status Indicators */}
+              {viewMode === 'public' && prob.user_status === 'AC' && (
+                <span className="bg-green-900/20 text-green-400 border border-green-700/50 text-[10px] px-2 py-0.5 rounded font-bold tracking-wider whitespace-nowrap">
+                  ACCEPTED
+                </span>
+              )}
+              {viewMode === 'public' && prob.user_status === 'Attempted' && (
+                <span className="bg-yellow-900/20 text-yellow-500 border border-yellow-700/50 text-[10px] px-2 py-0.5 rounded font-bold tracking-wider whitespace-nowrap">
+                  ATTEMPTED
+                </span>
+              )}
             </div>
 
             {/* Difficulty */}
