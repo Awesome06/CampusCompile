@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -43,19 +44,27 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 		return "", err
 	}
 
+	tagSet := make(map[string]bool)
 	for _, tag := range req.Tags {
+		tagStr := strings.TrimSpace(strings.ToLower(tag))
+		if tagStr == "" || tagSet[tagStr] {
+			continue
+		}
+		tagSet[tagStr] = true
+
 		var tagID int
 		err = tx.QueryRow(ctx, `
 			INSERT INTO tags (name) VALUES ($1)
 			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
 			RETURNING tag_id
-		`, tag).Scan(&tagID)
+		`, tagStr).Scan(&tagID)
 		if err != nil {
 			return "", err
 		}
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO playlist_tags (playlist_id, tag_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
 		`, playlistID, tagID)
 		if err != nil {
 			return "", err
@@ -63,7 +72,10 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 	}
 
 	for i, p := range req.Problems {
-		problemID := p["problem_id"].(string)
+		problemID, ok := p["problem_id"].(string)
+		if !ok || problemID == "" {
+			return "", fmt.Errorf("invalid or missing problem_id attached to sequence index %d", i)
+		}
 		
 		var customDiff *string
 		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" {
@@ -208,13 +220,21 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 
 func (r *playlistRepo) GetPlaylistAnalytics(ctx context.Context, playlistID string) ([]models.PlaylistAnalyticsItem, error) {
 	rows, err := r.db.Query(ctx, `
-		WITH TotalStudents AS (
-		    SELECT COUNT(DISTINCT user_id) as t FROM submissions s JOIN playlist_problems pp ON s.problem_id = pp.problem_id WHERE pp.playlist_id = $1
+		WITH PlaylistStudents AS (
+		    SELECT DISTINCT s.user_id 
+			FROM submissions s 
+			JOIN playlist_problems pp ON s.problem_id = pp.problem_id 
+			WHERE pp.playlist_id = $1
+		),
+		TotalStudents AS (
+		    SELECT COUNT(*) as t FROM PlaylistStudents
 		)
 		SELECT 
 		    pp.problem_id, 
 		    pp.order_index, 
-		    (SELECT COUNT(DISTINCT user_id) FROM submissions WHERE problem_id = pp.problem_id AND status = 'AC') as completed_count,
+		    (SELECT COUNT(DISTINCT s.user_id) FROM submissions s 
+			 JOIN PlaylistStudents ps ON s.user_id = ps.user_id 
+			 WHERE s.problem_id = pp.problem_id AND s.status = 'AC') as completed_count,
 		    (SELECT t FROM TotalStudents) as total_students
 		FROM playlist_problems pp
 		WHERE pp.playlist_id = $1

@@ -51,7 +51,7 @@ export default function AddPlaylist() {
   const handleAddProblem = (prob) => {
     if (!selectedProblems.find(p => p.problem_id === prob.problem_id)) {
       setSelectedProblems([
-        ...selectedProblems, 
+        ...selectedProblems,
         { problem_id: prob.problem_id, title: prob.title, difficulty: prob.difficulty, custom_difficulty: '' }
       ]);
     }
@@ -62,7 +62,7 @@ export default function AddPlaylist() {
   };
 
   const handleCustomDiffChange = (problemId, customDifficulty) => {
-    setSelectedProblems(selectedProblems.map(p => 
+    setSelectedProblems(selectedProblems.map(p =>
       p.problem_id === problemId ? { ...p, custom_difficulty: customDifficulty } : p
     ));
   };
@@ -124,9 +124,9 @@ export default function AddPlaylist() {
       <form onSubmit={handleSubmit} className="space-y-6 bg-[#1e1e1e] p-6 rounded-lg border border-dark-border shadow-lg">
         <div>
           <label className="block text-sm font-medium text-gray-400 mb-1">Playlist Title *</label>
-          <input 
-            type="text" 
-            value={title} 
+          <input
+            type="text"
+            value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
             className="w-full bg-dark-bg border border-dark-border rounded px-4 py-2 focus:border-blue-500 outline-none text-white shadow-inner block"
@@ -134,19 +134,19 @@ export default function AddPlaylist() {
         </div>
 
         <div>
-           <label className="block text-sm font-medium text-gray-400 mb-1">Description</label>
-           <textarea 
-             value={description}
-             onChange={(e) => setDescription(e.target.value)}
-             className="w-full bg-dark-bg border border-dark-border rounded px-4 py-2 focus:border-blue-500 outline-none text-white shadow-inner min-h-[100px] block"
-           />
+          <label className="block text-sm font-medium text-gray-400 mb-1">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full bg-dark-bg border border-dark-border rounded px-4 py-2 focus:border-blue-500 outline-none text-white shadow-inner min-h-[100px] block"
+          />
         </div>
 
         <div className="flex gap-4">
           <div className="w-1/2">
             <label className="block text-sm font-medium text-gray-400 mb-1">Overall Difficulty</label>
-            <select 
-              value={overallDifficulty} 
+            <select
+              value={overallDifficulty}
               onChange={(e) => setOverallDifficulty(e.target.value)}
               className="w-full bg-dark-bg border border-dark-border rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
             >
@@ -157,10 +157,10 @@ export default function AddPlaylist() {
           </div>
           <div className="w-1/2 flex items-center pt-6">
             <label className="flex items-center gap-3 cursor-pointer group">
-              <input 
-                type="checkbox" 
-                checked={isPublic} 
-                onChange={(e) => setIsPublic(e.target.checked)} 
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
                 className="w-5 h-5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 focus:ring-offset-gray-900 bg-gray-800 transition"
               />
               <span className="text-gray-300 font-medium group-hover:text-white transition">Publish Playlist (Make visible to Students)</span>
@@ -176,11 +176,10 @@ export default function AddPlaylist() {
                 key={tag}
                 type="button"
                 onClick={() => toggleTag(tag)}
-                className={`px-3 py-1 rounded-full text-xs font-mono border transition ${
-                  selectedTags.includes(tag) 
-                  ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30' 
-                  : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
-                }`}
+                className={`px-3 py-1 rounded-full text-xs font-mono border transition ${selectedTags.includes(tag)
+                    ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30'
+                    : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
+                  }`}
               >
                 {tag}
               </button>
@@ -192,9 +191,9 @@ export default function AddPlaylist() {
 
         {/* Selected Problems Configuration */}
         <div>
-          <h2 className="text-xl font-bold mb-4">Problem Sequence Sequence</h2>
+          <h2 className="text-xl font-bold mb-4">Problem Sequence</h2>
           <p className="text-sm text-gray-400 mb-4">You must create playlists from scratch. Add problems from the repository to build your sequence.</p>
-          
+
           {selectedProblems.length === 0 ? (
             <div className="bg-[#2a2a2a] p-4 text-center rounded border border-dashed border-gray-600 text-gray-500 font-mono text-sm">
               Your playlist is empty. Add problems below.
@@ -209,16 +208,16 @@ export default function AddPlaylist() {
                     <div className="text-xs text-gray-400 font-mono">Standard Diff: {prob.difficulty}</div>
                   </div>
                   <div>
-                    <input 
-                      type="text" 
-                      placeholder="Override Diff (Opt)" 
+                    <input
+                      type="text"
+                      placeholder="Override Diff (Opt)"
                       value={prob.custom_difficulty}
                       onChange={(e) => handleCustomDiffChange(prob.problem_id, e.target.value)}
                       className="w-36 bg-dark-bg border border-dark-border rounded px-2 py-1 text-sm focus:border-blue-500 focus:outline-none text-white shadow-inner place-placeholder"
                     />
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => handleRemoveProblem(prob.problem_id)}
                     className="text-red-400 hover:text-red-300 mx-2 transition"
                   >
@@ -236,9 +235,9 @@ export default function AddPlaylist() {
         <div className="bg-[#2a2a2a] p-4 rounded border border-dark-border">
           <h3 className="font-bold text-lg mb-3">Find Problems</h3>
           <div className="flex gap-2 mb-4">
-            <input 
-              type="text" 
-              placeholder="Search problems..." 
+            <input
+              type="text"
+              placeholder="Search problems..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 bg-dark-bg border border-dark-border rounded px-4 py-2 text-sm focus:border-blue-500 focus:outline-none text-white"
@@ -256,19 +255,18 @@ export default function AddPlaylist() {
                 <div key={prob.problem_id} className="flex justify-between items-center p-2 hover:bg-[#333] rounded">
                   <span className="text-sm font-medium">{prob.title}</span>
                   <div className="flex items-center gap-4">
-                     <span className="text-xs text-gray-500 border border-gray-600 px-1 py-0.5 rounded uppercase">{prob.difficulty}</span>
-                     <button
-                        type="button"
-                        disabled={isSelected}
-                        onClick={() => handleAddProblem(prob)}
-                        className={`px-3 py-1 text-xs font-bold rounded min-w-[60px] ${
-                          isSelected 
-                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600' 
+                    <span className="text-xs text-gray-500 border border-gray-600 px-1 py-0.5 rounded uppercase">{prob.difficulty}</span>
+                    <button
+                      type="button"
+                      disabled={isSelected}
+                      onClick={() => handleAddProblem(prob)}
+                      className={`px-3 py-1 text-xs font-bold rounded min-w-[60px] ${isSelected
+                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
                           : 'bg-green-600/20 text-green-400 border border-green-600/50 hover:bg-green-600/40 transition'
                         }`}
-                      >
-                        {isSelected ? 'Added' : 'Add'}
-                      </button>
+                    >
+                      {isSelected ? 'Added' : 'Add'}
+                    </button>
                   </div>
                 </div>
               );

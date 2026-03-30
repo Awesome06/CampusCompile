@@ -68,12 +68,60 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 		return
 	}
 
+	if !playlist.IsPublic {
+		reqUserID := ""
+		reqUserRole := "student"
+
+		if uid, exists := c.Get("user_id"); exists {
+			if strUid, ok := uid.(string); ok {
+				reqUserID = strUid
+			}
+		}
+		if role, exists := c.Get("role"); exists {
+			if strRole, ok := role.(string); ok {
+				reqUserRole = strRole
+			}
+		}
+
+		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == reqUserID
+		hasPermission := reqUserRole == "admin" || reqUserRole == "professor"
+
+		if !isAuthor && !hasPermission {
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "You do not have permission to view this private playlist"))
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, playlist)
 }
 
 func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 	playlistID := c.Param("id")
 	userID := c.MustGet("user_id").(string)
+
+	// Authenticate Visibility before fetching problems
+	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		return
+	}
+
+	if !playlist.IsPublic {
+		reqUserRole := "student"
+		if role, exists := c.Get("role"); exists {
+			if strRole, ok := role.(string); ok {
+				reqUserRole = strRole
+			}
+		}
+
+		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
+		hasPermission := reqUserRole == "admin" || reqUserRole == "professor"
+
+		if !isAuthor && !hasPermission {
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "You do not have permission to view problems in this private playlist"))
+			return
+		}
+	}
 
 	problems, err := ctrl.service.GetPlaylistProblems(c.Request.Context(), playlistID, userID)
 	if err != nil {

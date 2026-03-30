@@ -4,6 +4,7 @@ import (
 	"campuscompile/api/internal/models"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,19 +46,27 @@ func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug,
 		return err
 	}
 
+	tagSet := make(map[string]bool)
 	for _, tag := range tags {
+		tagStr := strings.TrimSpace(strings.ToLower(tag))
+		if tagStr == "" || tagSet[tagStr] {
+			continue
+		}
+		tagSet[tagStr] = true
+
 		var tagID int
 		err = tx.QueryRow(ctx, `
 			INSERT INTO tags (name) VALUES ($1)
 			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
 			RETURNING tag_id
-		`, tag).Scan(&tagID)
+		`, tagStr).Scan(&tagID)
 		if err != nil {
 			return err
 		}
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO problem_tags (problem_id, tag_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
 		`, problemID, tagID)
 		if err != nil {
 			return err
@@ -79,7 +88,10 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 		LEFT JOIN submissions s ON p.problem_id = s.problem_id AND s.user_id = $1
 		WHERE p.is_public = true
 	`
-	_ = r.db.QueryRow(ctx, countQuery, userID).Scan(&totalCount, &solvedCount)
+	err := r.db.QueryRow(ctx, countQuery, userID).Scan(&totalCount, &solvedCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch problem progression counts: %w", err)
+	}
 
 	// Now fetch the paginated problem list with the user's status
 	query := `
@@ -231,19 +243,27 @@ func (r *problemRepo) UpdateProblem(ctx context.Context, problemID, title, descr
 		return err
 	}
 
+	tagSet := make(map[string]bool)
 	for _, tag := range tags {
+		tagStr := strings.TrimSpace(strings.ToLower(tag))
+		if tagStr == "" || tagSet[tagStr] {
+			continue
+		}
+		tagSet[tagStr] = true
+
 		var tagID int
 		err = tx.QueryRow(ctx, `
 			INSERT INTO tags (name) VALUES ($1)
 			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
 			RETURNING tag_id
-		`, tag).Scan(&tagID)
+		`, tagStr).Scan(&tagID)
 		if err != nil {
 			return err
 		}
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO problem_tags (problem_id, tag_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
 		`, problemID, tagID)
 		if err != nil {
 			return err

@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS playlist_problems (
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
     order_index INTEGER NOT NULL,
     custom_difficulty problem_difficulty,
-    PRIMARY KEY (playlist_id, problem_id)
+    PRIMARY KEY (playlist_id, problem_id),
+    CONSTRAINT unique_playlist_order UNIQUE (playlist_id, order_index)
 );
 
 -- Central Tags Table: Stores all unique problem and playlist tags

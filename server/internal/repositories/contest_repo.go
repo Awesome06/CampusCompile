@@ -249,18 +249,49 @@ func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, userID string,
 		contests = []models.Contest{}
 	}
 
-	// Fetch gamification stats for the contests
-	for i := range contests {
-		totalCount := 0
-		solvedCount := 0
-		_ = r.db.QueryRow(ctx, "SELECT COUNT(*) FROM contest_problems WHERE contest_id = $1", contests[i].ID).Scan(&totalCount)
+	if len(contests) == 0 {
+		return contests, nil
+	}
 
-		if userID != "" {
-			_ = r.db.QueryRow(ctx, "SELECT COUNT(DISTINCT problem_id) FROM submissions WHERE contest_id = $1 AND user_id = $2 AND status = 'AC'", contests[i].ID, userID).Scan(&solvedCount)
+	var contestIDs []string
+	contestMap := make(map[string]int) // Maps contest ID to index in contests array
+	for i, c := range contests {
+		contestIDs = append(contestIDs, c.ID)
+		contestMap[c.ID] = i
+	}
+
+	// 1. Fetch total counts
+	rowsTotal, err := r.db.Query(ctx, "SELECT contest_id::text, COUNT(*) FROM contest_problems WHERE contest_id = ANY($1::uuid[]) GROUP BY contest_id", contestIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch contest problem counts: %w", err)
+	}
+	defer rowsTotal.Close()
+	for rowsTotal.Next() {
+		var cid string
+		var total int
+		if err := rowsTotal.Scan(&cid, &total); err == nil {
+			if idx, ok := contestMap[cid]; ok {
+				contests[idx].TotalCount = total
+			}
 		}
+	}
 
-		contests[i].TotalCount = totalCount
-		contests[i].SolvedCount = solvedCount
+	// 2. Fetch solved counts
+	if userID != "" {
+		rowsSolved, err := r.db.Query(ctx, "SELECT contest_id::text, COUNT(DISTINCT problem_id) FROM submissions WHERE contest_id = ANY($1::uuid[]) AND user_id = NULLIF($2, '')::uuid AND status = 'AC' GROUP BY contest_id", contestIDs, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch contest solved counts: %w", err)
+		}
+		defer rowsSolved.Close()
+		for rowsSolved.Next() {
+			var cid string
+			var solved int
+			if err := rowsSolved.Scan(&cid, &solved); err == nil {
+				if idx, ok := contestMap[cid]; ok {
+					contests[idx].SolvedCount = solved
+				}
+			}
+		}
 	}
 
 	return contests, nil

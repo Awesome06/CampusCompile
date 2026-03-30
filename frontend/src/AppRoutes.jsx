@@ -55,6 +55,28 @@ const ProtectedRoute = ({ children, requireOnboarding = true }) => {
     return children;
 };
 
+// 👇 THE ROLE BOUNCER 👇
+const RequireRole = ({ children, allowedRoles }) => {
+    const { token, isLoading } = useAuth();
+
+    if (isLoading) {
+        return <div className="flex h-screen items-center justify-center bg-dark-bg text-white font-mono">Verifying Clearance...</div>;
+    }
+
+    if (!token) return <Navigate to="/login" replace />;
+
+    try {
+        const decoded = jwtDecode(token);
+        if (!allowedRoles.includes(decoded.role?.toLowerCase())) {
+            return <Navigate to="/problems" replace />;
+        }
+    } catch (error) {
+        return <Navigate to="/login" replace />;
+    }
+
+    return children;
+};
+
 // 👇 THE NAVBAR WRAPPER 👇
 const NavbarLayout = () => {
     return (
@@ -92,8 +114,20 @@ export default function AppRoutes() {
                 
                 <Route path="/playlists" element={<ProtectedRoute><PlaylistList /></ProtectedRoute>} />
                 <Route path="/playlists/:id" element={<ProtectedRoute><PlaylistView /></ProtectedRoute>} />
-                <Route path="/add-playlist" element={<ProtectedRoute><AddPlaylist /></ProtectedRoute>} />
-                <Route path="/playlists/:id/analytics" element={<ProtectedRoute><PlaylistAnalytics /></ProtectedRoute>} />
+                <Route path="/add-playlist" element={
+                    <ProtectedRoute>
+                        <RequireRole allowedRoles={['admin', 'professor']}>
+                            <AddPlaylist />
+                        </RequireRole>
+                    </ProtectedRoute>
+                } />
+                <Route path="/playlists/:id/analytics" element={
+                    <ProtectedRoute>
+                        <RequireRole allowedRoles={['admin', 'professor']}>
+                            <PlaylistAnalytics />
+                        </RequireRole>
+                    </ProtectedRoute>
+                } />
             </Route>
 
             {/* =========================================
