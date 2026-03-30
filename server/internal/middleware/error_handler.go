@@ -22,13 +22,25 @@ func ErrorInterceptor() gin.HandlerFunc {
 			
 			if stdErrors.As(err, &appErr) {
 				// Server-side logging (Strict isolation: only middleware logs)
-				slog.Error("Intercepted structured application error",
-					"component", "ErrorInterceptor",
-					"method", c.Request.Method,
-					"path", c.Request.URL.Path,
-					"internal_error", appErr.Internal,
-					"client_msg", appErr.ClientMsg,
-				)
+				if appErr.HTTPStatus >= 500 {
+					slog.Error("Intercepted structured application error",
+						"component", "ErrorInterceptor",
+						"method", c.Request.Method,
+						"path", c.Request.URL.Path,
+						"internal_error", appErr.Internal,
+						"client_msg", appErr.ClientMsg,
+						"status", appErr.HTTPStatus,
+					)
+				} else {
+					slog.Warn("Intercepted structured application warning",
+						"component", "ErrorInterceptor",
+						"method", c.Request.Method,
+						"path", c.Request.URL.Path,
+						"internal_error", appErr.Internal,
+						"client_msg", appErr.ClientMsg,
+						"status", appErr.HTTPStatus,
+					)
+				}
 				
 				// Safe client-facing response
 				c.JSON(appErr.HTTPStatus, gin.H{"error": appErr.ClientMsg})
@@ -36,7 +48,7 @@ func ErrorInterceptor() gin.HandlerFunc {
 			}
 
 			// Fallback for non-AppErrors (e.g. raw standard library errors)
-			slog.Error("Intercepted unhandled raw panic or error",
+			slog.Error("Intercepted unhandled standard error",
 				"component", "ErrorInterceptor",
 				"method", c.Request.Method,
 				"path", c.Request.URL.Path,
