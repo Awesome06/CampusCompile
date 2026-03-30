@@ -54,7 +54,7 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 
 	err := s.repo.CreateProblem(
 		ctx, problemID, req.Title, slug, req.Description, req.Difficulty,
-		req.TimeLimit, req.MemoryLimit, authorID, req.IsPublic,
+		req.TimeLimit, req.MemoryLimit, authorID, req.IsPublic, req.Tags,
 	)
 
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, u
 		return errors.New("unauthorized: only the original author can edit this problem")
 	}
 
-	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic)
+	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic, req.Tags)
 }
 
 func (s *problemService) RemoveProblem(ctx context.Context, problemID, userID, userRole string) error {

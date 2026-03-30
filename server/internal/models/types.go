@@ -116,8 +116,9 @@ type CreateProblemRequest struct {
 	Description string `json:"description"`
 	Difficulty  string `json:"difficulty"`
 	TimeLimit   int    `json:"time_limit"`
-	MemoryLimit int    `json:"memory_limit"`
-	IsPublic    bool   `json:"is_public"`
+	MemoryLimit int      `json:"memory_limit"`
+	IsPublic    bool     `json:"is_public"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 type Problem struct {
@@ -125,9 +126,10 @@ type Problem struct {
 	Title        string  `json:"title"`
 	Slug         string  `json:"slug"`
 	Description  string  `json:"description"`
-	Difficulty   string  `json:"difficulty"`
-	SampleInput  *string `json:"sample_input,omitempty"`
-	SampleOutput *string `json:"sample_output,omitempty"`
+	Difficulty   string   `json:"difficulty"`
+	SampleInput  *string  `json:"sample_input,omitempty"`
+	SampleOutput *string  `json:"sample_output,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
 }
 
 type TestCaseUploadRecord struct {

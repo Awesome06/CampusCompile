@@ -20,13 +20,6 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audit_status') THEN
         CREATE TYPE audit_status AS ENUM ('pending', 'in_progress', 'completed', 'failed');
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'playlist_tag') THEN
-        CREATE TYPE playlist_tag AS ENUM (
-            'Array', 'String', 'Two Pointers', 'Sliding Window', 'Binary Search', 
-            'Linked List', 'Stack', 'Queue', 'Tree', 'Graph', 'DFS', 'BFS', 
-            'DP', 'Greedy', 'Math', 'Sorting', 'Hashing', 'Bit Manipulation'
-        );
-    END IF;
 END $$;
 
 -- ==========================================
@@ -97,7 +90,6 @@ CREATE TABLE IF NOT EXISTS playlists (
     author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
     is_public BOOLEAN NOT NULL DEFAULT false,
     overall_difficulty problem_difficulty NOT NULL DEFAULT 'Easy',
-    tags playlist_tag[],
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     fts tsvector GENERATED ALWAYS AS (
@@ -133,6 +125,27 @@ CREATE TABLE IF NOT EXISTS playlist_problems (
     custom_difficulty problem_difficulty,
     PRIMARY KEY (playlist_id, problem_id)
 );
+
+-- Central Tags Table: Stores all unique problem and playlist tags
+CREATE TABLE IF NOT EXISTS tags (
+    tag_id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL
+);
+
+-- Problem Tags: Maps generic tags directly to the problem
+CREATE TABLE IF NOT EXISTS problem_tags (
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    tag_id INTEGER REFERENCES tags(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (problem_id, tag_id)
+);
+
+-- Playlist Tags: Maps generic topic tags directly to the playlist
+CREATE TABLE IF NOT EXISTS playlist_tags (
+    playlist_id UUID REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+    tag_id INTEGER REFERENCES tags(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (playlist_id, tag_id)
+);
+
 
 -- Submissions table: Tracks code execution runs
 CREATE TABLE IF NOT EXISTS submissions (

@@ -10,11 +10,11 @@ import (
 )
 
 type ProblemRepository interface {
-	CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error
+	CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool, tags []string) error
 	GetProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error)
 	GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error)
 	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
-	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool) error
+	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool, tags []string) error
 	DeleteProblem(ctx context.Context, problemID string) error
 	GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
@@ -30,12 +30,40 @@ func NewProblemRepository(db *pgxpool.Pool) ProblemRepository {
 	return &problemRepo{db: db}
 }
 
-func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error {
-	_, err := r.db.Exec(ctx, `
+func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool, tags []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
 		INSERT INTO problems (problem_id, title, slug, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, problemID, title, slug, description, difficulty, timeLimit, memoryLimit, authorID, isPublic)
-	return err
+	if err != nil {
+		return err
+	}
+
+	for _, tag := range tags {
+		var tagID int
+		err = tx.QueryRow(ctx, `
+			INSERT INTO tags (name) VALUES ($1)
+			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
+			RETURNING tag_id
+		`, tag).Scan(&tagID)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO problem_tags (problem_id, tag_id) VALUES ($1, $2)
+		`, problemID, tagID)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error) {
@@ -58,11 +86,16 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 		SELECT 
 			p.problem_id, p.title, p.slug, p.difficulty, p.time_limit_ms, p.memory_limit_kb,
 			COALESCE(
-				(SELECT status FROM submissions 
+				(SELECT status::VARCHAR FROM submissions 
 				 WHERE problem_id = p.problem_id AND user_id = $1 
 				 ORDER BY CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC LIMIT 1),
 				'Unattempted'
-			) as user_status
+			) as user_status,
+			COALESCE((
+				SELECT ARRAY_AGG(t.name) 
+				FROM problem_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
+				WHERE pt.problem_id = p.problem_id
+			), ARRAY[]::VARCHAR[]) as tags
 		FROM problems p WHERE p.is_public = true
 	`
 	args := []interface{}{userID}
@@ -92,7 +125,8 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 	for rows.Next() {
 		var id, title, slug, difficulty, userStatus string
 		var timeLimit, memLimit int
-		if err := rows.Scan(&id, &title, &slug, &difficulty, &timeLimit, &memLimit, &userStatus); err == nil {
+		var tags []string
+		if err := rows.Scan(&id, &title, &slug, &difficulty, &timeLimit, &memLimit, &userStatus, &tags); err == nil {
 			// Normalize status to match standard
 			if userStatus != "AC" && userStatus != "Unattempted" {
 				userStatus = "Attempted" // Could be WA, TLE, etc.
@@ -100,7 +134,7 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 			problems = append(problems, map[string]interface{}{
 				"problem_id": id, "title": title, "slug": slug,
 				"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memLimit,
-				"user_status": userStatus,
+				"user_status": userStatus, "tags": tags,
 			})
 		}
 	}
@@ -121,11 +155,17 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	var authorID *string
 	var timeLimit, memoryLimit int
 	var isPublic bool
+	var tags []string
 
 	err := r.db.QueryRow(ctx, `
-		SELECT title, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public 
-		FROM problems WHERE problem_id = $1
-	`, problemID).Scan(&title, &description, &difficulty, &timeLimit, &memoryLimit, &authorID, &isPublic)
+		SELECT title, description, difficulty, time_limit_ms, memory_limit_kb, author_id, is_public,
+			COALESCE((
+				SELECT ARRAY_AGG(t.name) 
+				FROM problem_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
+				WHERE pt.problem_id = p.problem_id
+			), ARRAY[]::VARCHAR[]) as tags
+		FROM problems p WHERE problem_id = $1
+	`, problemID).Scan(&title, &description, &difficulty, &timeLimit, &memoryLimit, &authorID, &isPublic, &tags)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -138,7 +178,7 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 	problemMeta := map[string]interface{}{
 		"problem_id": problemID, "title": title, "description": description,
 		"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memoryLimit,
-		"author_id": safeAuthorID, "is_public": isPublic,
+		"author_id": safeAuthorID, "is_public": isPublic, "tags": tags,
 	}
 
 	rows, err := r.db.Query(ctx, `
@@ -171,12 +211,45 @@ func (r *problemRepo) GetProblemAuthor(ctx context.Context, problemID string) (s
 	return authorID, err
 }
 
-func (r *problemRepo) UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool) error {
-	_, err := r.db.Exec(ctx, `
+func (r *problemRepo) UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool, tags []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
 		UPDATE problems SET title = $1, description = $2, difficulty = $3, time_limit_ms = $4, memory_limit_kb = $5, is_public = $6
 		WHERE problem_id = $7
 	`, title, description, difficulty, timeLimit, memoryLimit, isPublic, problemID)
-	return err
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, "DELETE FROM problem_tags WHERE problem_id = $1", problemID)
+	if err != nil {
+		return err
+	}
+
+	for _, tag := range tags {
+		var tagID int
+		err = tx.QueryRow(ctx, `
+			INSERT INTO tags (name) VALUES ($1)
+			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
+			RETURNING tag_id
+		`, tag).Scan(&tagID)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO problem_tags (problem_id, tag_id) VALUES ($1, $2)
+		`, problemID, tagID)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *problemRepo) DeleteProblem(ctx context.Context, problemID string) error {
@@ -186,8 +259,13 @@ func (r *problemRepo) DeleteProblem(ctx context.Context, problemID string) error
 
 func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
 	query := `
-		SELECT problem_id, title, difficulty, is_public, created_at 
-		FROM problems WHERE (is_public = true OR author_id = $1)
+		SELECT problem_id, title, difficulty, is_public, created_at,
+			COALESCE((
+				SELECT ARRAY_AGG(t.name) 
+				FROM problem_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
+				WHERE pt.problem_id = p.problem_id
+			), ARRAY[]::VARCHAR[]) as tags
+		FROM problems p WHERE (is_public = true OR author_id = $1)
 	`
 	args := []interface{}{authorID}
 	argIdx := 2
@@ -217,10 +295,11 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 		var id, title, difficulty string
 		var isPublic bool
 		var createdAt time.Time
-		if err := rows.Scan(&id, &title, &difficulty, &isPublic, &createdAt); err == nil {
+		var tags []string
+		if err := rows.Scan(&id, &title, &difficulty, &isPublic, &createdAt, &tags); err == nil {
 			problems = append(problems, map[string]interface{}{
 				"problem_id": id, "title": title, "difficulty": difficulty,
-				"is_public": isPublic, "created_at": createdAt,
+				"is_public": isPublic, "created_at": createdAt, "tags": tags,
 			})
 		}
 	}

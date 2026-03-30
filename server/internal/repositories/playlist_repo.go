@@ -34,13 +34,32 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 
 	var playlistID string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO playlists (title, description, author_id, is_public, overall_difficulty, tags)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO playlists (title, description, author_id, is_public, overall_difficulty)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING playlist_id
-	`, req.Title, req.Description, authorID, req.IsPublic, req.OverallDifficulty, req.Tags).Scan(&playlistID)
+	`, req.Title, req.Description, authorID, req.IsPublic, req.OverallDifficulty).Scan(&playlistID)
 
 	if err != nil {
 		return "", err
+	}
+
+	for _, tag := range req.Tags {
+		var tagID int
+		err = tx.QueryRow(ctx, `
+			INSERT INTO tags (name) VALUES ($1)
+			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
+			RETURNING tag_id
+		`, tag).Scan(&tagID)
+		if err != nil {
+			return "", err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO playlist_tags (playlist_id, tag_id) VALUES ($1, $2)
+		`, playlistID, tagID)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	for i, p := range req.Problems {
@@ -70,7 +89,13 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 
 func (r *playlistRepo) GetPlaylists(ctx context.Context, userID, viewMode string, limit, offset int) ([]models.PlaylistResponse, error) {
 	query := `
-		SELECT p.playlist_id, p.title, p.description, p.author_id, p.is_public, p.overall_difficulty, p.tags, p.created_at, p.updated_at,
+		SELECT p.playlist_id, p.title, p.description, p.author_id, p.is_public, p.overall_difficulty, 
+		       COALESCE((
+		           SELECT ARRAY_AGG(t.name) 
+		           FROM playlist_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
+                   WHERE pt.playlist_id = p.playlist_id
+		       ), ARRAY[]::VARCHAR[]) as tags,
+		       p.created_at, p.updated_at,
 		       COALESCE(u.username, 'Anonymous') as author_name,
 		       (SELECT COUNT(*) FROM playlist_problems pp WHERE pp.playlist_id = p.playlist_id) as total_count,
 		       COALESCE((
@@ -124,7 +149,13 @@ func (r *playlistRepo) GetPlaylistByID(ctx context.Context, playlistID string) (
 	var p models.PlaylistResponse
 	var authorID *string
 	err := r.db.QueryRow(ctx, `
-		SELECT p.playlist_id, p.title, p.description, p.author_id, p.is_public, p.overall_difficulty, p.tags, p.created_at, p.updated_at,
+		SELECT p.playlist_id, p.title, p.description, p.author_id, p.is_public, p.overall_difficulty, 
+		       COALESCE((
+		           SELECT ARRAY_AGG(t.name) 
+		           FROM playlist_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
+                   WHERE pt.playlist_id = p.playlist_id
+		       ), ARRAY[]::VARCHAR[]) as tags,
+		       p.created_at, p.updated_at,
 		       COALESCE(u.username, 'Anonymous') as author_name,
 		       (SELECT COUNT(*) FROM playlist_problems pp WHERE pp.playlist_id = p.playlist_id) as total_count
 		FROM playlists p
@@ -139,7 +170,7 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 	rows, err := r.db.Query(ctx, `
 		SELECT p.problem_id, p.title, p.slug, p.difficulty, pp.order_index, pp.custom_difficulty,
 		       COALESCE(
-		           (SELECT status FROM submissions 
+		           (SELECT status::VARCHAR FROM submissions 
 		            WHERE user_id = $2 AND problem_id = p.problem_id 
 		            ORDER BY CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC LIMIT 1),
 		           'Unattempted'
