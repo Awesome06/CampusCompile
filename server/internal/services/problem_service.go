@@ -19,7 +19,7 @@ import (
 
 type ProblemService interface {
 	ForgeProblem(ctx context.Context, req models.CreateProblemRequest, authorID string) (string, error)
-	FetchProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
+	FetchProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error)
 	FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error)
 	ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error
 	RemoveProblem(ctx context.Context, problemID, userID, userRole string) error
@@ -63,8 +63,8 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 	return problemID, nil
 }
 
-func (s *problemService) FetchProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
-	return s.repo.GetProblems(ctx, limit, offset, searchQuery)
+func (s *problemService) FetchProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error) {
+	return s.repo.GetProblems(ctx, userID, limit, offset, searchQuery)
 }
 
 func (s *problemService) FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error) {

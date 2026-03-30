@@ -57,15 +57,23 @@ func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 	limit, offset := parsePaginationArgs(c, 25)
 	searchQuery := c.Query("search")
 
-	problems, err := ctrl.service.FetchProblems(c.Request.Context(), limit, offset, searchQuery)
+	// Get UserID dynamically, allow missing if public
+	var userID string
+	if uid, exists := c.Get("user_id"); exists {
+		if strUid, ok := uid.(string); ok {
+			userID = strUid
+		}
+	}
+
+	result, err := ctrl.service.FetchProblems(c.Request.Context(), userID, limit, offset, searchQuery)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Database query failed"))
 		return
 	}
-	if problems == nil {
-		problems = []map[string]interface{}{}
+	if result == nil {
+		result = map[string]interface{}{"problems": []map[string]interface{}{}, "solved_count": 0, "total_count": 0}
 	}
-	c.JSON(http.StatusOK, problems)
+	c.JSON(http.StatusOK, result)
 }
 
 func (ctrl *ProblemController) GetProblemByID(c *gin.Context) {

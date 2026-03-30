@@ -11,7 +11,7 @@ import (
 
 type ProblemRepository interface {
 	CreateProblem(ctx context.Context, problemID, title, slug, description, difficulty string, timeLimit, memoryLimit int, authorID string, isPublic bool) error
-	GetProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
+	GetProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error)
 	GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error)
 	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
 	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool) error
@@ -38,23 +38,45 @@ func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug,
 	return err
 }
 
-func (r *problemRepo) GetProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
-	query := `
-		SELECT problem_id, title, slug, difficulty, time_limit_ms, memory_limit_kb 
-		FROM problems WHERE is_public = true
+func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error) {
+	// First, fetch the global counts for this user (only public problems)
+	totalCount := 0
+	solvedCount := 0
+
+	countQuery := `
+		SELECT 
+			COUNT(DISTINCT p.problem_id) as total_count,
+			COUNT(DISTINCT CASE WHEN s.status = 'AC' THEN p.problem_id END) as solved_count
+		FROM problems p
+		LEFT JOIN submissions s ON p.problem_id = s.problem_id AND s.user_id = $1
+		WHERE p.is_public = true
 	`
-	args := []interface{}{}
-	argIdx := 1
+	_ = r.db.QueryRow(ctx, countQuery, userID).Scan(&totalCount, &solvedCount)
+
+	// Now fetch the paginated problem list with the user's status
+	query := `
+		SELECT 
+			p.problem_id, p.title, p.slug, p.difficulty, p.time_limit_ms, p.memory_limit_kb,
+			COALESCE(
+				(SELECT status FROM submissions 
+				 WHERE problem_id = p.problem_id AND user_id = $1 
+				 ORDER BY CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC LIMIT 1),
+				'Unattempted'
+			) as user_status
+		FROM problems p WHERE p.is_public = true
+	`
+	args := []interface{}{userID}
+	argIdx := 2
 
 	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
-		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
-		query += ` ORDER BY ts_rank(fts, to_tsquery('english', ` + paramStr + `)) DESC, created_at DESC`
+		query += ` AND p.fts @@ to_tsquery('english', ` + paramStr + `)`
+		query += ` ORDER BY ts_rank(p.fts, to_tsquery('english', ` + paramStr + `)) DESC, p.created_at DESC`
 		args = append(args, tsQuery)
 		argIdx++
 	} else {
-		query += ` ORDER BY created_at DESC`
+		query += ` ORDER BY p.created_at DESC`
 	}
 
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
@@ -68,16 +90,30 @@ func (r *problemRepo) GetProblems(ctx context.Context, limit, offset int, search
 
 	var problems []map[string]interface{}
 	for rows.Next() {
-		var id, title, slug, difficulty string
+		var id, title, slug, difficulty, userStatus string
 		var timeLimit, memLimit int
-		if err := rows.Scan(&id, &title, &slug, &difficulty, &timeLimit, &memLimit); err == nil {
+		if err := rows.Scan(&id, &title, &slug, &difficulty, &timeLimit, &memLimit, &userStatus); err == nil {
+			// Normalize status to match standard
+			if userStatus != "AC" && userStatus != "Unattempted" {
+				userStatus = "Attempted" // Could be WA, TLE, etc.
+			}
 			problems = append(problems, map[string]interface{}{
 				"problem_id": id, "title": title, "slug": slug,
 				"difficulty": difficulty, "time_limit_ms": timeLimit, "memory_limit_kb": memLimit,
+				"user_status": userStatus,
 			})
 		}
 	}
-	return problems, nil
+	
+	if problems == nil {
+		problems = []map[string]interface{}{}
+	}
+
+	return map[string]interface{}{
+		"problems":     problems,
+		"solved_count": solvedCount,
+		"total_count":  totalCount,
+	}, nil
 }
 
 func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map[string]interface{}, []map[string]interface{}, error) {

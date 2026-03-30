@@ -17,6 +17,10 @@ import ContestList from './pages/ContestList';
 import EditContest from './pages/EditContest';
 import AddContest from './pages/AddContest';
 import Leaderboard from './pages/Leaderboard';
+import PlaylistList from './pages/PlaylistList';
+import PlaylistView from './pages/PlaylistView';
+import AddPlaylist from './pages/AddPlaylist';
+import PlaylistAnalytics from './pages/PlaylistAnalytics';
 
 // Phase 4 Imports
 import ContestArenaLayout from './pages/Contest/ContestArenaLayout';
@@ -85,6 +89,11 @@ export default function AppRoutes() {
                 <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
                 <Route path="/add-contest" element={<ProtectedRoute><AddContest /></ProtectedRoute>} />
                 <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
+                
+                <Route path="/playlists" element={<ProtectedRoute><PlaylistList /></ProtectedRoute>} />
+                <Route path="/playlists/:id" element={<ProtectedRoute><PlaylistView /></ProtectedRoute>} />
+                <Route path="/add-playlist" element={<ProtectedRoute><AddPlaylist /></ProtectedRoute>} />
+                <Route path="/playlists/:id/analytics" element={<ProtectedRoute><PlaylistAnalytics /></ProtectedRoute>} />
             </Route>
 
             {/* =========================================

@@ -79,6 +79,11 @@ func main() {
 	contestService := services.NewContestService(contestRepo, redisPkg.Client)
 	contestController := controllers.NewContestController(contestService)
 
+	// --- Initialize Playlist Domain (Phase 4) ---
+	playlistRepo := repositories.NewPlaylistRepository(database.Pool)
+	playlistService := services.NewPlaylistService(playlistRepo)
+	playlistController := controllers.NewPlaylistController(playlistService)
+
 	// Configure CORS for the React frontend dynamically
 	allowedOrigin := os.Getenv("BASE_URL")
 	if allowedOrigin == "" {
@@ -100,6 +105,7 @@ func main() {
 		problemController,
 		submissionController,
 		contestController,
+		playlistController,
 		jsonArmor,
 		uploadArmor,
 	)

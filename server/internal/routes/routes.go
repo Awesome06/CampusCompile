@@ -14,6 +14,7 @@ func Setup(
 	problemController *controllers.ProblemController,
 	submissionController *controllers.SubmissionController,
 	contestController *controllers.ContestController,
+	playlistController *controllers.PlaylistController,
 	jsonArmor gin.HandlerFunc,
 	uploadArmor gin.HandlerFunc,
 ) {
@@ -68,6 +69,11 @@ func Setup(
 			arena.POST("/telemetry/batch", jsonArmor, contestController.LogTelemetryBatch)
 		}
 
+		// --- PLAYLIST ROUTES (NEW) ---
+		protected.GET("/playlists", playlistController.GetPlaylists)
+		protected.GET("/playlists/:id", playlistController.GetPlaylistByID)
+		protected.GET("/playlists/:id/problems", playlistController.GetPlaylistProblems)
+
 		// --- FACULTY & ADMIN ROUTES ---
 		faculty := protected.Group("")
 		faculty.Use(middleware.RequireRole("professor", "admin"))
@@ -82,6 +88,9 @@ func Setup(
 			// Apply jsonArmor to Contest creation and modification
 			faculty.POST("/contests", jsonArmor, contestController.CreateContest)
 			faculty.PUT("/contests/:id", jsonArmor, contestController.UpdateContest)
+
+			faculty.POST("/playlists", jsonArmor, playlistController.CreatePlaylist)
+			faculty.GET("/playlists/:id/analytics", playlistController.GetPlaylistAnalytics)
 
 			// Test case uploads remain under the heavier uploadArmor
 			faculty.POST("/problems/:id/testcases/batch", uploadArmor, problemController.UploadTestCasesBatch)

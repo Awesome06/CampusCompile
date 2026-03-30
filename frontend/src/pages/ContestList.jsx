@@ -207,9 +207,14 @@ export default function ContestList() {
                 <span className="font-bold text-lg">{contest.title}</span>
                 {getStatusBadge(contest)}
               </div>
-              <div className="text-xs text-gray-400 font-mono flex gap-3">
+              <div className="text-xs text-gray-400 font-mono flex gap-3 items-center">
                 <span>🏢 {contest.host_organization || "CampusCompile Official"}</span>
                 <span>📅 {new Date(contest.start_time).toLocaleDateString()}</span>
+                {contest.total_count > 0 && (
+                  <span className="text-green-400 bg-green-900/10 px-1.5 py-0.5 border border-green-800/50 rounded font-bold shadow-sm">
+                    🏆 {contest.solved_count}/{contest.total_count} Solved
+                  </span>
+                )}
               </div>
             </div>
 

@@ -156,7 +156,7 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, query, args...)
+	return r.fetchContestsWithQuery(ctx, demo.UserID, query, args...)
 }
 
 func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
@@ -192,7 +192,7 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, query, args...)
+	return r.fetchContestsWithQuery(ctx, authorID, query, args...)
 }
 
 func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
@@ -220,10 +220,10 @@ func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, sea
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, query, args...)
+	return r.fetchContestsWithQuery(ctx, "", query, args...)
 }
 
-func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, args ...interface{}) ([]models.Contest, error) {
+func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, userID string, query string, args ...interface{}) ([]models.Contest, error) {
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -248,6 +248,21 @@ func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, 
 	if contests == nil {
 		contests = []models.Contest{}
 	}
+
+	// Fetch gamification stats for the contests
+	for i := range contests {
+		totalCount := 0
+		solvedCount := 0
+		_ = r.db.QueryRow(ctx, "SELECT COUNT(*) FROM contest_problems WHERE contest_id = $1", contests[i].ID).Scan(&totalCount)
+
+		if userID != "" {
+			_ = r.db.QueryRow(ctx, "SELECT COUNT(DISTINCT problem_id) FROM submissions WHERE contest_id = $1 AND user_id = $2 AND status = 'AC'", contests[i].ID, userID).Scan(&solvedCount)
+		}
+
+		contests[i].TotalCount = totalCount
+		contests[i].SolvedCount = solvedCount
+	}
+
 	return contests, nil
 }
 

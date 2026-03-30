@@ -11,6 +11,10 @@
     - Azure AD token handling
     - Role-based view guards
     - UI demographic checks
+  - Gamification & Progression
+    - Recharts visual metrics
+    - Problem sequence rendering
+    - Solved vs Total UI displays
 
 - **Backend API** (Routing Rule: Retrieve for Go, REST, PostgreSQL, SSE channels, Redis, or S3/MinIO storage.)
   - API Routing
@@ -21,6 +25,10 @@
     - PostgreSQL schema configuration
     - Relational data modeling
     - Demographic query execution
+  - Orchestration & Collections
+    - Playlist CRUD logic
+    - Active telemetry aggregation
+    - Dynamic analytics evaluation
   - Object Storage
     - S3/MinIO bucket management
     - I/O byte streaming
