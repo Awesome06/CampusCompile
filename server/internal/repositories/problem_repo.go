@@ -161,6 +161,9 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 			"user_status": userStatus, "tags": tags,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during problem list retrieval: %w", err)
+	}
 	
 	if problems == nil {
 		problems = []map[string]interface{}{}
@@ -334,6 +337,9 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 			"problem_id": id, "title": title, "difficulty": difficulty,
 			"is_public": isPublic, "created_at": createdAt, "tags": tags,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during faculty problem list retrieval: %w", err)
 	}
 	return problems, nil
 }

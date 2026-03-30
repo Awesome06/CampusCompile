@@ -43,7 +43,7 @@ export default function PlaylistAnalytics() {
         <div className="bg-[#1e1e1e] p-3 border border-dark-border shadow-lg rounded text-sm text-gray-300 font-mono">
           <p className="font-bold text-white mb-1">{label}</p>
           <p className="text-green-400">Completed By: {payload[0].value} users</p>
-          <p className="text-blue-400">Total Enrolled: {payload[1].value} users</p>
+          <p className="text-blue-400">Total Participants: {payload[1].value} users</p>
           <p className="text-red-400 mt-1 border-t border-dark-border pt-1">
             Drop-off Rate: {(payload[1].value > 0 ? ((payload[1].value - payload[0].value) / payload[1].value * 100).toFixed(1) : 0)}%
           </p>

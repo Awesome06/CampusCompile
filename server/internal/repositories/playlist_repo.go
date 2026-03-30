@@ -28,6 +28,26 @@ func NewPlaylistRepository(db *pgxpool.Pool) PlaylistRepository {
 }
 
 func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlaylistRequest, authorID string) (string, error) {
+	if req.IsPublic {
+		var problemIDs []string
+		for _, p := range req.Problems {
+			if id, ok := p["problem_id"].(string); ok && id != "" {
+				problemIDs = append(problemIDs, id)
+			}
+		}
+
+		if len(problemIDs) > 0 {
+			var privateCount int
+			err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM problems WHERE problem_id = ANY($1::uuid[]) AND is_public = false`, problemIDs).Scan(&privateCount)
+			if err != nil {
+				return "", fmt.Errorf("failed to validate problem visibility: %w", err)
+			}
+			if privateCount > 0 {
+				return "", fmt.Errorf("cannot publish playlist: it contains %d private/draft problems", privateCount)
+			}
+		}
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -275,6 +295,26 @@ func (r *playlistRepo) GetPlaylistAnalytics(ctx context.Context, playlistID stri
 }
 
 func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, req models.CreatePlaylistRequest) error {
+	if req.IsPublic {
+		var problemIDs []string
+		for _, p := range req.Problems {
+			if id, ok := p["problem_id"].(string); ok && id != "" {
+				problemIDs = append(problemIDs, id)
+			}
+		}
+
+		if len(problemIDs) > 0 {
+			var privateCount int
+			err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM problems WHERE problem_id = ANY($1::uuid[]) AND is_public = false`, problemIDs).Scan(&privateCount)
+			if err != nil {
+				return fmt.Errorf("failed to validate problem visibility: %w", err)
+			}
+			if privateCount > 0 {
+				return fmt.Errorf("cannot publish playlist: it contains %d private/draft problems", privateCount)
+			}
+		}
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err

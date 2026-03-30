@@ -237,15 +237,19 @@ func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, userID string,
 		var c models.Contest
 		var rulesJSON []byte
 
-		if err := rows.Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.AuthorID, &c.IsPublic, &c.CreatedAt); err == nil {
-			if rulesJSON != nil {
-				var rules models.ContestAccessRules
-				if err := json.Unmarshal(rulesJSON, &rules); err == nil {
-					c.AccessRules = &rules
-				}
-			}
-			contests = append(contests, c)
+		if err := rows.Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.AuthorID, &c.IsPublic, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan contest row: %w", err)
 		}
+		if rulesJSON != nil {
+			var rules models.ContestAccessRules
+			if err := json.Unmarshal(rulesJSON, &rules); err == nil {
+				c.AccessRules = &rules
+			}
+		}
+		contests = append(contests, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during contest retrieval: %w", err)
 	}
 	if contests == nil {
 		contests = []models.Contest{}
@@ -271,11 +275,15 @@ func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, userID string,
 	for rowsTotal.Next() {
 		var cid string
 		var total int
-		if err := rowsTotal.Scan(&cid, &total); err == nil {
-			if idx, ok := contestMap[cid]; ok {
-				contests[idx].TotalCount = total
-			}
+		if err := rowsTotal.Scan(&cid, &total); err != nil {
+			return nil, fmt.Errorf("failed to scan contest total count row: %w", err)
 		}
+		if idx, ok := contestMap[cid]; ok {
+			contests[idx].TotalCount = total
+		}
+	}
+	if err := rowsTotal.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during contest total count retrieval: %w", err)
 	}
 
 	// 2. Fetch solved counts
@@ -288,11 +296,15 @@ func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, userID string,
 		for rowsSolved.Next() {
 			var cid string
 			var solved int
-			if err := rowsSolved.Scan(&cid, &solved); err == nil {
-				if idx, ok := contestMap[cid]; ok {
-					contests[idx].SolvedCount = solved
-				}
+			if err := rowsSolved.Scan(&cid, &solved); err != nil {
+				return nil, fmt.Errorf("failed to scan contest solved count row: %w", err)
 			}
+			if idx, ok := contestMap[cid]; ok {
+				contests[idx].SolvedCount = solved
+			}
+		}
+		if err := rowsSolved.Err(); err != nil {
+			return nil, fmt.Errorf("cursor error during contest solved count retrieval: %w", err)
 		}
 	}
 

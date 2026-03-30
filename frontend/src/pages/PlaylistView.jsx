@@ -13,7 +13,7 @@ export default function PlaylistView() {
   const navigate = useNavigate();
 
   const isElevated = currentUser?.role === 'admin' || currentUser?.role === 'professor';
-  const canEdit = currentUser?.role === 'admin' || (playlist && playlist.author_id === currentUser?.user_id);
+  const canEdit = currentUser?.role === 'admin' || (playlist && playlist.author_id === currentUser?.id);
 
   useEffect(() => {
     setLoading(true);

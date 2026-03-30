@@ -129,7 +129,7 @@ export default function EditPlaylist() {
       await api.put(`/playlists/${id}`, payload);
       navigate(`/playlists/${id}`);
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to create playlist");
+      setError(err.response?.data?.error || "Failed to update/save playlist");
       setLoading(false);
     }
   };
@@ -140,7 +140,7 @@ export default function EditPlaylist() {
 
       {error && (
         <div className="bg-red-900/40 border border-red-500 text-red-300 p-4 rounded mb-6 font-mono text-sm leading-relaxed whitespace-pre-wrap">
-          <p className="font-bold border-b border-red-500/50 mb-2 pb-1">Error Creating Playlist</p>
+          <p className="font-bold border-b border-red-500/50 mb-2 pb-1">Error Updating Playlist Sequence</p>
           {error}
         </div>
       )}
@@ -201,8 +201,8 @@ export default function EditPlaylist() {
                 type="button"
                 onClick={() => toggleTag(tag)}
                 className={`px-3 py-1 rounded-full text-xs font-mono border transition ${selectedTags.includes(tag)
-                    ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30'
-                    : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
+                  ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30'
+                  : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
                   }`}
               >
                 {tag}
@@ -288,8 +288,8 @@ export default function EditPlaylist() {
                       disabled={isSelected}
                       onClick={() => handleAddProblem(prob)}
                       className={`px-3 py-1 text-xs font-bold rounded min-w-[60px] ${isSelected
-                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
-                          : 'bg-green-600/20 text-green-400 border border-green-600/50 hover:bg-green-600/40 transition'
+                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
+                        : 'bg-green-600/20 text-green-400 border border-green-600/50 hover:bg-green-600/40 transition'
                         }`}
                     >
                       {isSelected ? 'Added' : 'Add'}

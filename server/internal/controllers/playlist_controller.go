@@ -144,11 +144,29 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 
 func (ctrl *PlaylistController) GetPlaylistAnalytics(c *gin.Context) {
 	playlistID := c.Param("id")
+	
+	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || err.Error() == "no rows in result set" {
+			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		} else {
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to authenticate playlist visibility"))
+		}
+		return
+	}
 
-	// Protected by RoleMiddleware("professor", "admin") in router
+	userID := c.MustGet("user_id").(string)
+	userRole := c.MustGet("role").(string)
+
+	isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
+	if !isAuthor && userRole != "admin" {
+		c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "You do not have permission to view analytics for this playlist"))
+		return
+	}
+
 	analytics, err := ctrl.service.GetPlaylistAnalytics(c.Request.Context(), playlistID)
 	if err != nil {
-		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to load analytics"))
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch playlist analytics"))
 		return
 	}
 
