@@ -2,7 +2,8 @@ package services
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	appErrors "campuscompile/api/internal/errors"
 
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
@@ -53,7 +54,7 @@ func (s *playlistService) ModifyPlaylist(ctx context.Context, playlistID, userID
 	
 	isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
 	if !isAuthor && userRole != "admin" {
-		return errors.New("unauthorized: you do not have permission to modify this playlist")
+		return fmt.Errorf("%w: you do not have permission to modify this playlist", appErrors.ErrUnauthorized)
 	}
 
 	return s.repo.UpdatePlaylist(ctx, playlistID, req)

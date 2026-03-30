@@ -70,7 +70,7 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
 		} else {
 			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch playlist"))
@@ -112,7 +112,7 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 	// Authenticate Visibility before fetching problems
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
 		} else {
 			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to authenticate playlist visibility"))
@@ -151,7 +151,7 @@ func (ctrl *PlaylistController) GetPlaylistAnalytics(c *gin.Context) {
 	
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
 		} else {
 			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to authenticate playlist visibility"))
@@ -190,7 +190,7 @@ func (ctrl *PlaylistController) UpdatePlaylist(c *gin.Context) {
 
 	err := ctrl.service.ModifyPlaylist(c.Request.Context(), playlistID, userID, userRole, req)
 	if err != nil {
-		if errors.Is(err, appErrors.ErrUnauthorized) || err.Error() == "unauthorized: you do not have permission to modify this playlist" {
+		if errors.Is(err, appErrors.ErrUnauthorized) {
 			c.Error(appErrors.NewAppError(http.StatusForbidden, err, err.Error()))
 		} else if errors.Is(err, appErrors.ErrValidationFailed) {
 			c.Error(appErrors.NewAppError(http.StatusBadRequest, err, err.Error()))

@@ -12,7 +12,6 @@ export default function PlaylistView() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const isElevated = currentUser?.role === 'admin' || currentUser?.role === 'professor';
   const canEdit = currentUser?.role === 'admin' || (playlist && playlist.author_id === currentUser?.id);
 
   useEffect(() => {
@@ -88,7 +87,7 @@ export default function PlaylistView() {
       {/* Problem Progression */}
       <div className="bg-[#1e1e1e] p-6 rounded-lg border border-dark-border shadow-md">
         <h2 className="text-xl font-bold text-white mb-4 border-b border-dark-border pb-2">Problem Sequence</h2>
-        
+
         {problems.length === 0 ? (
           <p className="text-gray-500 italic">No problems have been added to this playlist yet.</p>
         ) : (
