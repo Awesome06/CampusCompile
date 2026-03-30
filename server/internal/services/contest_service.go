@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -276,24 +277,54 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 					"queued_at":  time.Now().Unix(), // Helpful for worker metrics
 				})
 				if err != nil {
+					slog.Error("Failed to marshal MOSS audit payload",
+						"component", "StartAuditDaemon",
+						"contest_id", id,
+						"error", err,
+					)
 					continue
 				}
 
 				// 2. ATOMIC-LIKE DB CLAIM
 				// Claim the job first to prevent other daemon instances from grabbing it
 				if err := s.repo.UpdateMossAuditStatus(ctx, id, "in_progress"); err != nil {
+					slog.Error("Failed to claim DB status for MOSS audit daemon",
+						"component", "StartAuditDaemon",
+						"contest_id", id,
+						"error", err,
+					)
 					continue
 				}
 
 				// 3. PUSH TO REDIS
 				if err := s.redis.LPush(ctx, "submission_queue", payload).Err(); err != nil {
+					slog.Error("Failed to enqueue MOSS audit to Redis. Attempting to rollback state.",
+						"component", "StartAuditDaemon",
+						"contest_id", id,
+						"error", err,
+					)
+
 					// 4. EXPLICIT REVERT HANDLING
-					_ = s.repo.UpdateMossAuditStatus(ctx, id, "pending")
+					revertErr := s.repo.UpdateMossAuditStatus(ctx, id, "pending")
+					if revertErr != nil {
+						slog.Error("CRITICAL EXPLICIT REVERT FAILURE: DB out of sync with Redis",
+							"component", "StartAuditDaemon",
+							"contest_id", id,
+							"error", revertErr,
+						)
+					}
 					continue
 				}
 
 				// 5. CACHE / UI UPDATES
-				_ = s.redis.SAdd(ctx, "dirty_contests", id).Err()
+				cacheErr := s.redis.SAdd(ctx, "dirty_contests", id).Err()
+				if cacheErr != nil {
+					slog.Warn("Failed to set contest as dirty inside audit daemon cache",
+						"component", "StartAuditDaemon",
+						"contest_id", id,
+						"error", cacheErr,
+					)
+				}
 			}
 		}
 	}

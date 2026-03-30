@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv" // <-- Added
 	"time"
@@ -163,9 +164,9 @@ func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 	if err != nil {
 		// 👇 NEW: Safely check for the Sentinel Error
 		if errors.Is(err, services.ErrUnauthorizedAction) {
-			c.Error(appErrors.NewAppError(http.StatusForbidden, err, err.Error()))
+			c.Error(appErrors.NewAppError(http.StatusForbidden, err, "You lack permissions to clear these test cases."))
 		} else {
-			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, err.Error()))
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to clear test cases due to an internal system error."))
 		}
 		return
 	}
@@ -303,9 +304,16 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 // Helper to clean up orphaned S3 objects if the transaction fails mid-flight
 func (ctrl *ProblemController) cleanupS3Keys(ctx context.Context, keys []string) {
 	for _, key := range keys {
-		_, _ = storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(storage.BucketName),
 			Key:    aws.String(key),
 		})
+		if err != nil {
+			slog.Error("Failed to clean up orphaned S3 object",
+				"component", "ProblemController.cleanupS3Keys",
+				"s3_key", key,
+				"error", err,
+			)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -151,17 +152,33 @@ func (s *problemService) ClearTestCases(ctx context.Context, problemID, userID, 
 	// 3. Delete from MinIO/S3 and log errors, but don't stop execution
 	for _, tc := range oldTestCases {
 		if inKey, ok := tc["input_s3_key"].(string); ok && inKey != "" {
-			_, _ = storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(storage.BucketName),
 				Key:    aws.String(inKey),
 			})
+			if err != nil {
+				slog.Error("Failed to delete orphaned S3 input object",
+					"component", "ProblemService.ClearTestCases",
+					"problem_id", problemID,
+					"s3_key", inKey,
+					"error", err,
+				)
+			}
 		}
 
 		if outKey, ok := tc["expected_s3_key"].(string); ok && outKey != "" {
-			_, _ = storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			_, err := storage.S3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(storage.BucketName),
 				Key:    aws.String(outKey),
 			})
+			if err != nil {
+				slog.Error("Failed to delete orphaned S3 expected output object",
+					"component", "ProblemService.ClearTestCases",
+					"problem_id", problemID,
+					"s3_key", outKey,
+					"error", err,
+				)
+			}
 		}
 	}
 

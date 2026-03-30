@@ -194,7 +194,7 @@ func HandleAzureCallback(c *gin.Context) {
 	token, err := oauthConfig.Exchange(exchangeCtx, code)
 	if err != nil {
 		if isLocal {
-			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to exchange token: " + err.Error()))
+			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Local Dev: Failed to exchange OAuth token"))
 		} else {
 			c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to exchange token"))
 		}

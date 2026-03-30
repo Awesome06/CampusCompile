@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	redisClient "github.com/redis/go-redis/v9"
@@ -90,6 +91,10 @@ func (h *Hub) broadcast(topic string, redisCh <-chan *redisClient.Message) {
 			select {
 			case ch <- msg.Payload:
 			default:
+				slog.Warn("Dropped SSE broadcast message to slow subscriber",
+					"component", "Hub.broadcast",
+					"topic", topic,
+				)
 			}
 		}
 		h.RUnlock()

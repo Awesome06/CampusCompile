@@ -29,7 +29,6 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	// Protected against memory/CPU exhaustion by the 128KB PayloadArmor middleware.
 	var req models.SubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// Safely grab the user ID for the audit log even if the payload is garbage
 		// No internal logging needed here as the middleware catches it if we wrap it
 		c.Error(errors.NewAppError(http.StatusBadRequest, err, "Invalid request payload. Please verify your submission format."))
 		return

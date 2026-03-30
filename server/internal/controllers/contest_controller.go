@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -264,7 +265,7 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 	// 4. Parse the payload
 	var input models.CreateContestInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid payload: " + err.Error()))
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid request payload format structure."))
 		return
 	}
 
@@ -346,7 +347,15 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 
 	// Fire and forget for students, with error logging to catch DB drops
 	go func() {
-		_ = ctrl.service.LogTelemetry(context.Background(), contestID, userID, payload)
+		err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, payload)
+		if err != nil {
+			slog.Error("Telemetry drop detected",
+				"component", "LogTelemetry",
+				"contest_id", contestID,
+				"user_id", userID,
+				"error", err,
+			)
+		}
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"status": "logged"})
@@ -372,7 +381,15 @@ func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 	// 3. Fire and forget for students
 	go func() {
 		for _, event := range payload.Events {
-			_ = ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
+			err := ctrl.service.LogTelemetry(context.Background(), contestID, userID, event)
+			if err != nil {
+				slog.Error("Batch telemetry drop detected",
+					"component", "LogTelemetry",
+					"contest_id", contestID,
+					"user_id", userID,
+					"error", err,
+				)
+			}
 		}
 	}()
 
