@@ -97,7 +97,7 @@ export default function AddPlaylist() {
       tags: selectedTags,
       problems: selectedProblems.map(p => ({
         problem_id: p.problem_id,
-        custom_difficulty: p.custom_difficulty || null
+        custom_difficulty: p.custom_difficulty === 'No Change' ? null : (p.custom_difficulty || null)
       }))
     };
 
@@ -177,8 +177,8 @@ export default function AddPlaylist() {
                 type="button"
                 onClick={() => toggleTag(tag)}
                 className={`px-3 py-1 rounded-full text-xs font-mono border transition ${selectedTags.includes(tag)
-                    ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30'
-                    : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
+                  ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30'
+                  : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
                   }`}
               >
                 {tag}
@@ -264,8 +264,8 @@ export default function AddPlaylist() {
                       disabled={isSelected}
                       onClick={() => handleAddProblem(prob)}
                       className={`px-3 py-1 text-xs font-bold rounded min-w-[60px] ${isSelected
-                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
-                          : 'bg-green-600/20 text-green-400 border border-green-600/50 hover:bg-green-600/40 transition'
+                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
+                        : 'bg-green-600/20 text-green-400 border border-green-600/50 hover:bg-green-600/40 transition'
                         }`}
                     >
                       {isSelected ? 'Added' : 'Add'}

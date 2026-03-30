@@ -7,7 +7,7 @@ import (
 
 	appErrors "campuscompile/api/internal/errors"
 
-
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"campuscompile/api/internal/models"
@@ -35,6 +35,9 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 		var problemIDs []string
 		for _, p := range req.Problems {
 			if id, ok := p["problem_id"].(string); ok && id != "" {
+				if err := uuid.Validate(id); err != nil {
+					return "", fmt.Errorf("%w: invalid UUID format for problem_id '%s'", appErrors.ErrValidationFailed, id)
+				}
 				problemIDs = append(problemIDs, id)
 			}
 		}
@@ -100,9 +103,12 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 		if !ok || problemID == "" {
 			return "", fmt.Errorf("%w: invalid or missing problem_id attached to sequence index %d", appErrors.ErrValidationFailed, i)
 		}
+		if err := uuid.Validate(problemID); err != nil {
+			return "", fmt.Errorf("%w: invalid UUID format for problem_id '%s' at index %d", appErrors.ErrValidationFailed, problemID, i)
+		}
 		
 		var customDiff *string
-		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" && cd != "No Change" {
+		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" {
 			cdStr := strings.TrimSpace(cd)
 			// Postgres format casing matches UI
 			if strings.EqualFold(cdStr, "easy") { 
@@ -311,6 +317,9 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 		var problemIDs []string
 		for _, p := range req.Problems {
 			if id, ok := p["problem_id"].(string); ok && id != "" {
+				if err := uuid.Validate(id); err != nil {
+					return fmt.Errorf("%w: invalid UUID format for problem_id '%s'", appErrors.ErrValidationFailed, id)
+				}
 				problemIDs = append(problemIDs, id)
 			}
 		}
@@ -384,9 +393,12 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 		if !ok || problemID == "" {
 			return fmt.Errorf("%w: invalid or missing problem_id attached to sequence index %d", appErrors.ErrValidationFailed, i)
 		}
+		if err := uuid.Validate(problemID); err != nil {
+			return fmt.Errorf("%w: invalid UUID format for problem_id '%s' at index %d", appErrors.ErrValidationFailed, problemID, i)
+		}
 		
 		var customDiff *string
-		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" && cd != "No Change" {
+		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" {
 			cdStr := strings.TrimSpace(cd)
 			if strings.EqualFold(cdStr, "easy") { 
 				cdStr = "Easy" 

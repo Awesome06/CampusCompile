@@ -121,7 +121,7 @@ export default function EditPlaylist() {
       tags: selectedTags,
       problems: selectedProblems.map(p => ({
         problem_id: p.problem_id,
-        custom_difficulty: p.custom_difficulty || null
+        custom_difficulty: p.custom_difficulty === 'No Change' ? null : (p.custom_difficulty || null)
       }))
     };
 
