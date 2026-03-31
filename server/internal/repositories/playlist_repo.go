@@ -36,12 +36,11 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 	if req.IsPublic {
 		var problemIDs []string
 		for _, p := range req.Problems {
-			if id, ok := p["problem_id"].(string); ok && id != "" {
-				if err := uuid.Validate(id); err != nil {
-					return "", fmt.Errorf("%w: invalid UUID format for problem_id '%s'", appErrors.ErrValidationFailed, id)
-				}
-				problemIDs = append(problemIDs, id)
+			id := p.ProblemID
+			if err := uuid.Validate(id); err != nil {
+				return "", fmt.Errorf("%w: invalid UUID format for problem_id '%s'", appErrors.ErrValidationFailed, id)
 			}
+			problemIDs = append(problemIDs, id)
 		}
 
 		if len(problemIDs) > 0 {
@@ -119,8 +118,8 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 	}
 
 	for i, p := range req.Problems {
-		problemID, ok := p["problem_id"].(string)
-		if !ok || problemID == "" {
+		problemID := p.ProblemID
+		if problemID == "" {
 			return "", fmt.Errorf("%w: invalid or missing problem_id attached to sequence index %d", appErrors.ErrValidationFailed, i)
 		}
 		if err := uuid.Validate(problemID); err != nil {
@@ -128,8 +127,8 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 		}
 		
 		var customDiff *string
-		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" {
-			cdStr := strings.TrimSpace(cd)
+		if p.CustomDifficulty != nil && *p.CustomDifficulty != "" {
+			cdStr := strings.TrimSpace(*p.CustomDifficulty)
 			// Postgres format casing matches UI
 			if strings.EqualFold(cdStr, "easy") { 
 				cdStr = "Easy" 
@@ -138,7 +137,7 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 			} else if strings.EqualFold(cdStr, "hard") { 
 				cdStr = "Hard" 
 			} else {
-				return "", fmt.Errorf("%w: invalid custom_difficulty literal '%s' attached to sequence index %d", appErrors.ErrValidationFailed, cd, i)
+				return "", fmt.Errorf("%w: invalid custom_difficulty literal '%s' attached to sequence index %d", appErrors.ErrValidationFailed, *p.CustomDifficulty, i)
 			}
 			customDiff = &cdStr
 		}
@@ -254,16 +253,20 @@ func (r *playlistRepo) GetPlaylistByID(ctx context.Context, playlistID string) (
 
 func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, userID string) ([]models.PlaylistProblemResponse, error) {
 	rows, err := r.db.Query(ctx, `
+		WITH LatestSubmissions AS (
+		    SELECT DISTINCT ON (problem_id) problem_id, status::VARCHAR
+		    FROM submissions
+		    WHERE user_id = $2 AND problem_id IN (
+		        SELECT problem_id FROM playlist_problems WHERE playlist_id = $1
+		    )
+		    ORDER BY problem_id, CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC
+		)
 		SELECT p.problem_id, p.title, p.slug, p.difficulty, pp.order_index, pp.custom_difficulty,
-		       COALESCE(
-		           (SELECT status::VARCHAR FROM submissions 
-		            WHERE user_id = $2 AND problem_id = p.problem_id 
-		            ORDER BY CASE WHEN status = 'AC' THEN 1 ELSE 2 END, submitted_at DESC LIMIT 1),
-		           'Unattempted'
-		       ) as status
+		       COALESCE(ls.status, 'Unattempted') as status
 		FROM playlist_problems pp
 		JOIN problems p ON pp.problem_id = p.problem_id
 		JOIN playlists pl ON pp.playlist_id = pl.playlist_id
+		LEFT JOIN LatestSubmissions ls ON ls.problem_id = p.problem_id
 		WHERE pp.playlist_id = $1 AND (pl.is_public = false OR p.is_public = true)
 		ORDER BY pp.order_index ASC
 	`, playlistID, userID)
@@ -312,7 +315,8 @@ func (r *playlistRepo) GetPlaylistAnalytics(ctx context.Context, playlistID stri
 			SELECT s.problem_id, COUNT(DISTINCT s.user_id) as completed_count
 			FROM submissions s
 			JOIN PlaylistStudents ps ON s.user_id = ps.user_id
-			WHERE s.status = 'AC'
+			JOIN playlist_problems pp ON s.problem_id = pp.problem_id
+			WHERE pp.playlist_id = $1 AND s.status = 'AC'
 			GROUP BY s.problem_id
 		)
 		SELECT 
@@ -352,12 +356,11 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 	if req.IsPublic {
 		var problemIDs []string
 		for _, p := range req.Problems {
-			if id, ok := p["problem_id"].(string); ok && id != "" {
-				if err := uuid.Validate(id); err != nil {
-					return fmt.Errorf("%w: invalid UUID format for problem_id '%s'", appErrors.ErrValidationFailed, id)
-				}
-				problemIDs = append(problemIDs, id)
+			id := p.ProblemID
+			if err := uuid.Validate(id); err != nil {
+				return fmt.Errorf("%w: invalid UUID format for problem_id '%s'", appErrors.ErrValidationFailed, id)
 			}
+			problemIDs = append(problemIDs, id)
 		}
 
 		if len(problemIDs) > 0 {
@@ -443,8 +446,8 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 	}
 
 	for i, p := range req.Problems {
-		problemID, ok := p["problem_id"].(string)
-		if !ok || problemID == "" {
+		problemID := p.ProblemID
+		if problemID == "" {
 			return fmt.Errorf("%w: invalid or missing problem_id attached to sequence index %d", appErrors.ErrValidationFailed, i)
 		}
 		if err := uuid.Validate(problemID); err != nil {
@@ -452,8 +455,8 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 		}
 		
 		var customDiff *string
-		if cd, ok := p["custom_difficulty"].(string); ok && cd != "" {
-			cdStr := strings.TrimSpace(cd)
+		if p.CustomDifficulty != nil && *p.CustomDifficulty != "" {
+			cdStr := strings.TrimSpace(*p.CustomDifficulty)
 			if strings.EqualFold(cdStr, "easy") { 
 				cdStr = "Easy" 
 			} else if strings.EqualFold(cdStr, "medium") { 
@@ -461,7 +464,7 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 			} else if strings.EqualFold(cdStr, "hard") { 
 				cdStr = "Hard" 
 			} else {
-				return fmt.Errorf("%w: invalid custom_difficulty literal '%s' attached to sequence index %d", appErrors.ErrValidationFailed, cd, i)
+				return fmt.Errorf("%w: invalid custom_difficulty literal '%s' attached to sequence index %d", appErrors.ErrValidationFailed, *p.CustomDifficulty, i)
 			}
 			customDiff = &cdStr
 		}

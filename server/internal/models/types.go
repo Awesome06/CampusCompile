@@ -161,13 +161,18 @@ type PlaylistProblem struct {
 	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
 }
 
+type PlaylistProblemInput struct {
+	ProblemID        string  `json:"problem_id" binding:"required"`
+	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
+}
+
 type CreatePlaylistRequest struct {
-	Title             string                   `json:"title" binding:"required"`
-	Description       string                   `json:"description"`
-	IsPublic          bool                     `json:"is_public"`
-	OverallDifficulty string                   `json:"overall_difficulty" binding:"required"`
-	Tags              []string                 `json:"tags"`
-	Problems          []map[string]interface{} `json:"problems" binding:"required"`
+	Title             string                 `json:"title" binding:"required"`
+	Description       string                 `json:"description"`
+	IsPublic          bool                   `json:"is_public"`
+	OverallDifficulty string                 `json:"overall_difficulty" binding:"required"`
+	Tags              []string               `json:"tags"`
+	Problems          []PlaylistProblemInput `json:"problems" binding:"required,dive"`
 }
 
 type PlaylistResponse struct {
