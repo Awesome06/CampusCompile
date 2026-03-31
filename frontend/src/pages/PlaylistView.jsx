@@ -72,7 +72,7 @@ export default function PlaylistView() {
 
   const getStatusColor = (status) => {
     if (status === 'Accepted') return 'bg-green-900/20 border-green-700/50 text-green-400';
-    if (status === 'Attempted/WA') return 'bg-yellow-900/20 border-yellow-700/50 text-yellow-500';
+    if (status === 'Attempted') return 'bg-yellow-900/20 border-yellow-700/50 text-yellow-500';
     return 'bg-gray-800 border-gray-600 text-gray-400';
   };
 
@@ -126,7 +126,7 @@ export default function PlaylistView() {
             {problems.map((prob) => {
               let rowColor = 'hover:bg-[#2a2a2a] bg-[#222]';
               if (prob.status === 'Accepted') rowColor = 'bg-green-900/10 border-green-800/50 hover:bg-green-900/20';
-              else if (prob.status === 'Attempted/WA') rowColor = 'bg-yellow-900/10 border-yellow-800/50 hover:bg-yellow-900/20';
+              else if (prob.status === 'Attempted') rowColor = 'bg-yellow-900/10 border-yellow-800/50 hover:bg-yellow-900/20';
 
               return (
                 <div key={prob.problem_id} className={`flex justify-between items-center py-4 text-white border border-dark-border px-4 rounded transition relative ${rowColor}`}>

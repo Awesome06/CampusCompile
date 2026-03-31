@@ -17,7 +17,7 @@ type ProblemRepository interface {
 	GetProblemAuthor(ctx context.Context, problemID string) (string, error)
 	UpdateProblem(ctx context.Context, problemID, title, description, difficulty string, timeLimit, memoryLimit int, isPublic bool, tags []string) error
 	DeleteProblem(ctx context.Context, problemID string) error
-	GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
+	GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) (map[string]interface{}, error)
 	GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	DeleteTestCases(ctx context.Context, problemID string) error
 	InsertTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
@@ -305,7 +305,24 @@ func (r *problemRepo) DeleteProblem(ctx context.Context, problemID string) error
 	return err
 }
 
-func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
+func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) (map[string]interface{}, error) {
+	var totalCount int
+	tsQuery := formatPrefixTSQuery(searchQuery)
+
+	// 1. Fetch exact total DB aggregate matching the scope
+	countQuery := `SELECT COUNT(*) FROM problems WHERE (is_public = true OR author_id = $1)`
+	countArgs := []interface{}{authorID}
+	
+	if tsQuery != "" {
+		countQuery += ` AND fts @@ to_tsquery('english', $2)`
+		countArgs = append(countArgs, tsQuery)
+	}
+	
+	if err := r.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount); err != nil {
+		return nil, fmt.Errorf("failed to aggregate total faculty problem count: %w", err)
+	}
+
+	// 2. Fetch literal rows
 	query := `
 		SELECT problem_id, title, difficulty, is_public, created_at,
 			COALESCE((
@@ -318,7 +335,6 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 	args := []interface{}{authorID}
 	argIdx := 2
 
-	tsQuery := formatPrefixTSQuery(searchQuery)
 	if tsQuery != "" {
 		paramStr := `$` + fmt.Sprint(argIdx)
 		query += ` AND fts @@ to_tsquery('english', ` + paramStr + `)`
@@ -355,7 +371,16 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("cursor error during faculty problem list retrieval: %w", err)
 	}
-	return problems, nil
+	
+	if problems == nil {
+		problems = []map[string]interface{}{}
+	}
+
+	return map[string]interface{}{
+		"problems":     problems,
+		"solved_count": 0,
+		"total_count":  totalCount,
+	}, nil
 }
 
 func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {

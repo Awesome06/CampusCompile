@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	appErrors "campuscompile/api/internal/errors"
@@ -101,7 +102,13 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 		return
 	}
 
-	err = ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), userID, userRole, req)
+	problemID := c.Param("id")
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
+
+	err = ctrl.service.ModifyProblem(c.Request.Context(), problemID, userID, userRole, req)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusForbidden, err, "Update failed or unauthorized"))
 		return
@@ -111,6 +118,10 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 
 func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 	problemID := c.Param("id")
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
 	userRole, err := getSafeString(c, "role")
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
@@ -160,20 +171,15 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 		return
 	}
 
-	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), userID, limit, offset, searchQuery)
+	result, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), userID, limit, offset, searchQuery)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch your problems"))
 		return
 	}
-	if problems == nil {
-		problems = []map[string]interface{}{}
+	if result == nil {
+		result = map[string]interface{}{"problems": []map[string]interface{}{}, "solved_count": 0, "total_count": 0}
 	}
 	
-	result := map[string]interface{}{
-		"problems":     problems,
-		"solved_count": 0,
-		"total_count":  len(problems),
-	}
 	c.JSON(http.StatusOK, result)
 }
 
