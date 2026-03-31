@@ -96,7 +96,7 @@ func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, u
 
 	// 👇 FIX: Allow admins to bypass the author check
 	if userRole != "admin" && userID != authorID {
-		return fmt.Errorf("%w: only the original author or admin can modify this feature", appErrors.ErrUnauthorized)
+		return fmt.Errorf("%w: only the original author or an admin can modify this problem", appErrors.ErrUnauthorized)
 	}
 
 	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic, req.Tags)

@@ -28,7 +28,11 @@ func (ctrl *PlaylistController) CreatePlaylist(c *gin.Context) {
 		return
 	}
 
-	authorID := c.MustGet("user_id").(string)
+	authorID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	playlistID, err := ctrl.service.CreatePlaylist(c.Request.Context(), req, authorID)
 	if err != nil {
@@ -50,7 +54,11 @@ func (ctrl *PlaylistController) GetPlaylists(c *gin.Context) {
 	limit, offset := parsePaginationArgs(c, 25)
 	viewMode := c.Query("view_mode") // "public" or "faculty"
 
-	userID := c.MustGet("user_id").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	playlists, err := ctrl.service.GetPlaylists(c.Request.Context(), userID, viewMode, limit, offset)
 	if err != nil {
@@ -63,6 +71,10 @@ func (ctrl *PlaylistController) GetPlaylists(c *gin.Context) {
 
 func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 	playlistID := c.Param("id")
+	if err := uuid.Validate(playlistID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for playlist ID"))
+		return
+	}
 
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
@@ -75,8 +87,16 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 	}
 
 	if !playlist.IsPublic {
-		reqUserID := c.MustGet("user_id").(string)
-		reqUserRole := c.MustGet("role").(string)
+		reqUserID, err := getSafeString(c, "user_id")
+		if err != nil {
+			c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+			return
+		}
+		reqUserRole, err := getSafeString(c, "role")
+		if err != nil {
+			c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+			return
+		}
 
 		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == reqUserID
 		hasPermission := reqUserRole == "admin"
@@ -92,7 +112,16 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 
 func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 	playlistID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
+	if err := uuid.Validate(playlistID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for playlist ID"))
+		return
+	}
+
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	// Authenticate Visibility before fetching problems
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
@@ -106,7 +135,11 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 	}
 
 	if !playlist.IsPublic {
-		reqUserRole := c.MustGet("role").(string)
+		reqUserRole, err := getSafeString(c, "role")
+		if err != nil {
+			c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing role"))
+			return
+		}
 
 		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
 		hasPermission := reqUserRole == "admin"
@@ -128,6 +161,10 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 
 func (ctrl *PlaylistController) GetPlaylistAnalytics(c *gin.Context) {
 	playlistID := c.Param("id")
+	if err := uuid.Validate(playlistID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for playlist ID"))
+		return
+	}
 	
 	playlist, err := ctrl.service.GetPlaylistByID(c.Request.Context(), playlistID)
 	if err != nil {
@@ -139,8 +176,16 @@ func (ctrl *PlaylistController) GetPlaylistAnalytics(c *gin.Context) {
 		return
 	}
 
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing user_id"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing role"))
+		return
+	}
 
 	isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
 	if !isAuthor && userRole != "admin" {
@@ -170,10 +215,18 @@ func (ctrl *PlaylistController) UpdatePlaylist(c *gin.Context) {
 		return
 	}
 
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing user_id"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing role"))
+		return
+	}
 
-	err := ctrl.service.ModifyPlaylist(c.Request.Context(), playlistID, userID, userRole, req)
+	err = ctrl.service.ModifyPlaylist(c.Request.Context(), playlistID, userID, userRole, req)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
