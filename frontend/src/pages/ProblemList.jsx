@@ -5,6 +5,7 @@ import Button from '../components/ui/Button';
 
 export default function ProblemList() {
   const [problems, setProblems] = useState([]);
+  const [stats, setStats] = useState({ solved: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('public'); // 'public' or 'faculty'
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,9 +23,16 @@ export default function ProblemList() {
 
     api.get(endpoint, { params: { limit, offset: currentOffset, search: query } })
       .then((response) => {
-        const data = response.data || [];
-        setProblems(data);
-        setHasMore(data.length === limit);
+        const data = response.data?.problems || response.data || [];
+        // If it's an array directly (Fallback for faculty endpoint)
+        const problemList = Array.isArray(data) ? data : (data.problems || []);
+        
+        setProblems(problemList);
+        setStats({ 
+          solved: response.data?.solved_count || 0, 
+          total: response.data?.total_count || 0 
+        });
+        setHasMore(problemList.length === limit);
         setOffset(currentOffset);
         setLoading(false);
       })
@@ -108,7 +116,14 @@ export default function ProblemList() {
             </button>
           </div>
         ) : (
-          <h2 className="text-3xl font-bold text-white whitespace-nowrap">Problem Repository</h2>
+          <div className="flex flex-col items-center">
+            <h2 className="text-3xl font-bold text-white whitespace-nowrap">Problem Repository</h2>
+            {stats.total > 0 && viewMode === 'public' && (
+              <span className="text-sm font-semibold text-gray-400 mt-1 bg-[#1e1e1e] border border-dark-border px-3 py-1 rounded-full shadow-inner">
+                Progression: <span className="text-green-400">{stats.solved}</span> / {stats.total}
+              </span>
+            )}
+          </div>
         )}
 
         {/* Right-Pinned Button */}
@@ -143,8 +158,14 @@ export default function ProblemList() {
           </div>
         )}
 
-        {!loading && problems.map((prob, index) => (
-          <div key={prob.problem_id} className="flex justify-between items-center py-4 text-white border-b border-dark-border last:border-0 hover:bg-[#2a2a2a] px-2 rounded transition relative">
+        {!loading && problems.map((prob, index) => {
+          let rowColor = 'hover:bg-[#2a2a2a]';
+          if (viewMode === 'public') {
+            if (prob.user_status === 'AC') rowColor = 'bg-green-900/10 border-green-800/50 hover:bg-green-900/20';
+            else if (prob.user_status === 'Attempted') rowColor = 'bg-yellow-900/10 border-yellow-800/50 hover:bg-yellow-900/20';
+          }
+          return (
+          <div key={prob.problem_id} className={`flex justify-between items-center py-4 text-white border-b border-dark-border last:border-0 px-2 rounded transition relative ${rowColor}`}>
             <span className="w-12 text-left font-bold text-gray-500">{offset + index + 1}</span>
 
             {/* Title & Status Badges */}
@@ -162,6 +183,18 @@ export default function ProblemList() {
                     ○ DRAFT
                   </span>
                 )
+              )}
+
+              {/* Public Workspace Status Indicators */}
+              {viewMode === 'public' && prob.user_status === 'AC' && (
+                <span className="bg-green-900/20 text-green-400 border border-green-700/50 text-[10px] px-2 py-0.5 rounded font-bold tracking-wider whitespace-nowrap">
+                  ACCEPTED
+                </span>
+              )}
+              {viewMode === 'public' && prob.user_status === 'Attempted' && (
+                <span className="bg-yellow-900/20 text-yellow-500 border border-yellow-700/50 text-[10px] px-2 py-0.5 rounded font-bold tracking-wider whitespace-nowrap">
+                  ATTEMPTED
+                </span>
               )}
             </div>
 
@@ -185,7 +218,7 @@ export default function ProblemList() {
               </Link>
             </span>
           </div>
-        ))}
+        )})}
 
         {!loading && (hasMore || offset > 0) && (
           <div className="flex justify-between items-center mt-6 pt-4 border-t border-dark-border">

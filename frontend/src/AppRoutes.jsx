@@ -17,6 +17,11 @@ import ContestList from './pages/ContestList';
 import EditContest from './pages/EditContest';
 import AddContest from './pages/AddContest';
 import Leaderboard from './pages/Leaderboard';
+import PlaylistList from './pages/PlaylistList';
+import PlaylistView from './pages/PlaylistView';
+import AddPlaylist from './pages/AddPlaylist';
+import EditPlaylist from './pages/EditPlaylist';
+import PlaylistAnalytics from './pages/PlaylistAnalytics';
 
 // Phase 4 Imports
 import ContestArenaLayout from './pages/Contest/ContestArenaLayout';
@@ -43,6 +48,28 @@ const ProtectedRoute = ({ children, requireOnboarding = true }) => {
 
         if (requireOnboarding && !decoded.is_onboarded) {
             return <Navigate to="/onboarding" replace />;
+        }
+    } catch (error) {
+        return <Navigate to="/login" replace />;
+    }
+
+    return children;
+};
+
+// 👇 THE ROLE BOUNCER 👇
+const RequireRole = ({ children, allowedRoles }) => {
+    const { token, isLoading } = useAuth();
+
+    if (isLoading) {
+        return <div className="flex h-screen items-center justify-center bg-dark-bg text-white font-mono">Verifying Clearance...</div>;
+    }
+
+    if (!token) return <Navigate to="/login" replace />;
+
+    try {
+        const decoded = jwtDecode(token);
+        if (!allowedRoles.includes(decoded.role?.toLowerCase())) {
+            return <Navigate to="/problems" replace />;
         }
     } catch (error) {
         return <Navigate to="/login" replace />;
@@ -85,6 +112,30 @@ export default function AppRoutes() {
                 <Route path="/contests" element={<ProtectedRoute><ContestList /></ProtectedRoute>} />
                 <Route path="/add-contest" element={<ProtectedRoute><AddContest /></ProtectedRoute>} />
                 <Route path="/edit-contest/:id" element={<ProtectedRoute><EditContest /></ProtectedRoute>} />
+                
+                <Route path="/playlists" element={<ProtectedRoute><PlaylistList /></ProtectedRoute>} />
+                <Route path="/playlists/:id" element={<ProtectedRoute><PlaylistView /></ProtectedRoute>} />
+                <Route path="/add-playlist" element={
+                    <ProtectedRoute>
+                        <RequireRole allowedRoles={['admin', 'professor']}>
+                            <AddPlaylist />
+                        </RequireRole>
+                    </ProtectedRoute>
+                } />
+                <Route path="/playlists/:id/edit" element={
+                    <ProtectedRoute>
+                        <RequireRole allowedRoles={['admin', 'professor']}>
+                            <EditPlaylist />
+                        </RequireRole>
+                    </ProtectedRoute>
+                } />
+                <Route path="/playlists/:id/analytics" element={
+                    <ProtectedRoute>
+                        <RequireRole allowedRoles={['admin', 'professor']}>
+                            <PlaylistAnalytics />
+                        </RequireRole>
+                    </ProtectedRoute>
+                } />
             </Route>
 
             {/* =========================================

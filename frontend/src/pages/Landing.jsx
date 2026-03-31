@@ -31,6 +31,9 @@ export default function Landing() {
             <Link to="/contests" className="bg-dark-accent text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-600 transition shadow-lg">
               Contests
             </Link>
+            <Link to="/playlists" className="bg-dark-surface border border-dark-border text-white px-8 py-3 rounded-lg font-bold hover:bg-[#2a2a2a] transition shadow-lg">
+              Playlists
+            </Link>
             <Link to="/problems" className="bg-dark-surface border border-dark-border text-white px-8 py-3 rounded-lg font-bold hover:bg-[#2a2a2a] transition shadow-lg">
               Problems
             </Link>

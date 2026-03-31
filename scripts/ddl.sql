@@ -82,6 +82,21 @@ CREATE TABLE IF NOT EXISTS contests (
     ) STORED
 );
 
+-- Playlists table: Stores curated lists of problems
+CREATE TABLE IF NOT EXISTS playlists (
+    playlist_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    author_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    is_public BOOLEAN NOT NULL DEFAULT false,
+    overall_difficulty problem_difficulty NOT NULL DEFAULT 'Easy',
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    fts tsvector GENERATED ALWAYS AS (
+        to_tsvector('english', title)
+    ) STORED
+);
+
 -- ==========================================
 -- 3. RELATIONAL & ACTIVITY TABLES
 -- ==========================================
@@ -101,6 +116,37 @@ CREATE TABLE IF NOT EXISTS contest_problems (
     points_value INTEGER NOT NULL DEFAULT 100,
     PRIMARY KEY (contest_id, problem_id)
 );
+
+-- Playlist Problems: Maps specific problems to specific playlists
+CREATE TABLE IF NOT EXISTS playlist_problems (
+    playlist_id UUID REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    order_index INTEGER NOT NULL,
+    custom_difficulty problem_difficulty,
+    PRIMARY KEY (playlist_id, problem_id),
+    CONSTRAINT unique_playlist_order UNIQUE (playlist_id, order_index)
+);
+
+-- Central Tags Table: Stores all unique problem and playlist tags
+CREATE TABLE IF NOT EXISTS tags (
+    tag_id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL
+);
+
+-- Problem Tags: Maps generic tags directly to the problem
+CREATE TABLE IF NOT EXISTS problem_tags (
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    tag_id INTEGER REFERENCES tags(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (problem_id, tag_id)
+);
+
+-- Playlist Tags: Maps generic topic tags directly to the playlist
+CREATE TABLE IF NOT EXISTS playlist_tags (
+    playlist_id UUID REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+    tag_id INTEGER REFERENCES tags(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (playlist_id, tag_id)
+);
+
 
 -- Submissions table: Tracks code execution runs
 CREATE TABLE IF NOT EXISTS submissions (
@@ -162,6 +208,13 @@ CREATE INDEX IF NOT EXISTS idx_contests_times ON contests(start_time, end_time);
 CREATE INDEX IF NOT EXISTS idx_contests_moss_audit ON contests(moss_audit_status, end_time, updated_at);
 CREATE INDEX IF NOT EXISTS idx_contests_fts ON contests USING GIN (fts);
 
+-- Playlists
+CREATE INDEX IF NOT EXISTS idx_playlists_author_id ON playlists(author_id);
+CREATE INDEX IF NOT EXISTS idx_playlists_fts ON playlists USING GIN (fts);
+
+-- Playlist Problems
+CREATE INDEX IF NOT EXISTS idx_playlist_problems_playlist_id ON playlist_problems(playlist_id);
+
 -- Problems
 CREATE INDEX IF NOT EXISTS idx_problems_fts ON problems USING GIN (fts);
 CREATE INDEX IF NOT EXISTS idx_problems_created_at ON problems(created_at DESC);
@@ -170,6 +223,11 @@ CREATE INDEX IF NOT EXISTS idx_problems_created_at ON problems(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_contest_registrations_user_id ON contest_registrations(user_id);
 
 -- Submissions
+-- --------------------------------------------------------------------------------
+-- Phase 3 Indices
+-- --------------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_submissions_user_problem_time ON submissions(user_id, problem_id, submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_playlist_problems_problem_id ON playlist_problems(problem_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_contest_id ON submissions(contest_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_problem_id ON submissions(problem_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON submissions(user_id);
@@ -201,6 +259,14 @@ BEGIN
         DROP TRIGGER IF EXISTS update_contests_modtime ON contests;
         CREATE TRIGGER update_contests_modtime
             BEFORE UPDATE ON contests
+            FOR EACH ROW
+            EXECUTE FUNCTION update_modified_column();
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'playlists') THEN
+        DROP TRIGGER IF EXISTS update_playlists_modtime ON playlists;
+        CREATE TRIGGER update_playlists_modtime
+            BEFORE UPDATE ON playlists
             FOR EACH ROW
             EXECUTE FUNCTION update_modified_column();
     END IF;

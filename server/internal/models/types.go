@@ -81,6 +81,8 @@ type Contest struct {
 	AuthorID         *string             `json:"author_id,omitempty"`
 	IsPublic         bool                `json:"is_public"`
 	CreatedAt        time.Time           `json:"created_at"`
+	SolvedCount      int                 `json:"solved_count"`
+	TotalCount       int                 `json:"total_count"`
 }
 
 type ContestRegistration struct {
@@ -110,22 +112,24 @@ type CreateContestInput struct {
 // ==========================================
 
 type CreateProblemRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Difficulty  string `json:"difficulty"`
-	TimeLimit   int    `json:"time_limit"`
-	MemoryLimit int    `json:"memory_limit"`
-	IsPublic    bool   `json:"is_public"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Difficulty  string   `json:"difficulty"`
+	TimeLimit   int      `json:"time_limit"`
+	MemoryLimit int      `json:"memory_limit"`
+	IsPublic    bool     `json:"is_public"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 type Problem struct {
-	ID           string  `json:"problem_id"`
-	Title        string  `json:"title"`
-	Slug         string  `json:"slug"`
-	Description  string  `json:"description"`
-	Difficulty   string  `json:"difficulty"`
-	SampleInput  *string `json:"sample_input,omitempty"`
-	SampleOutput *string `json:"sample_output,omitempty"`
+	ID           string   `json:"problem_id"`
+	Title        string   `json:"title"`
+	Slug         string   `json:"slug"`
+	Description  string   `json:"description"`
+	Difficulty   string   `json:"difficulty"`
+	SampleInput  *string  `json:"sample_input,omitempty"`
+	SampleOutput *string  `json:"sample_output,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
 }
 
 type TestCaseUploadRecord struct {
@@ -135,7 +139,68 @@ type TestCaseUploadRecord struct {
 }
 
 // ==========================================
-// 5. SUBMISSION & EXECUTION STRUCTS
+// 5. PLAYLIST STRUCTS (PHASE 4)
+// ==========================================
+
+type Playlist struct {
+	ID                string    `json:"playlist_id"`
+	Title             string    `json:"title"`
+	Description       string    `json:"description,omitempty"`
+	AuthorID          *string   `json:"author_id,omitempty"`
+	IsPublic          bool      `json:"is_public"`
+	OverallDifficulty string    `json:"overall_difficulty"`
+	Tags              []string  `json:"tags,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type PlaylistProblem struct {
+	PlaylistID       string  `json:"playlist_id"`
+	ProblemID        string  `json:"problem_id"`
+	OrderIndex       int     `json:"order_index"`
+	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
+}
+
+type PlaylistProblemInput struct {
+	ProblemID        string  `json:"problem_id" binding:"required"`
+	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
+}
+
+type CreatePlaylistRequest struct {
+	Title             string                 `json:"title" binding:"required"`
+	Description       string                 `json:"description"`
+	IsPublic          bool                   `json:"is_public"`
+	OverallDifficulty string                 `json:"overall_difficulty" binding:"required"`
+	Tags              []string               `json:"tags"`
+	Problems          []PlaylistProblemInput `json:"problems" binding:"required,dive"`
+}
+
+type PlaylistResponse struct {
+	Playlist
+	AuthorName  string `json:"author_name"`
+	SolvedCount int    `json:"solved_count"`
+	TotalCount  int    `json:"total_count"`
+}
+
+type PlaylistProblemResponse struct {
+	ID               string  `json:"problem_id"`
+	Title            string  `json:"title"`
+	Slug             string  `json:"slug"`
+	Difficulty       string  `json:"difficulty"`
+	OrderIndex       int     `json:"order_index"`
+	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
+	Status           string  `json:"status"` // "AC", "Attempted", "Unattempted"
+}
+
+type PlaylistAnalyticsItem struct {
+	ProblemID      string `json:"problem_id"`
+	OrderIndex     int    `json:"order_index"`
+	CompletedCount int    `json:"completed_count"`
+	TotalStudents  int    `json:"total_students"`
+}
+
+// ==========================================
+// 6. SUBMISSION & EXECUTION STRUCTS
 // ==========================================
 
 type OfficialSubmissionPayload struct {
@@ -160,7 +225,7 @@ type SubmissionHistoryEntry struct {
 }
 
 // ==========================================
-// 6. ANTI-CHEAT & TELEMETRY
+// 7. ANTI-CHEAT & TELEMETRY
 // ==========================================
 
 type TelemetryPayload struct {

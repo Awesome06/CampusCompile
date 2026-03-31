@@ -91,8 +91,10 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 	`
 	args := []interface{}{}
 	argIdx := 1
+	var userID string
 
 	if demo != nil {
+		userID = demo.UserID
 		if demo.Course != "" {
 			query += ` AND (access_rules IS NULL OR access_rules->'allowed_courses' IS NULL OR jsonb_typeof(access_rules->'allowed_courses') != 'array' OR jsonb_array_length(access_rules->'allowed_courses') = 0 OR access_rules->'allowed_courses' ? $` + fmt.Sprint(argIdx) + `)`
 			args = append(args, demo.Course)
@@ -156,7 +158,7 @@ func (r *contestRepo) GetPublicContests(ctx context.Context, demo *models.UserDe
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, query, args...)
+	return r.fetchContestsWithQuery(ctx, userID, query, args...)
 }
 
 func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
@@ -192,7 +194,7 @@ func (r *contestRepo) GetFacultyContests(ctx context.Context, authorID string, l
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, query, args...)
+	return r.fetchContestsWithQuery(ctx, authorID, query, args...)
 }
 
 func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, searchQuery, viewMode string) ([]models.Contest, error) {
@@ -220,10 +222,10 @@ func (r *contestRepo) GetAllContests(ctx context.Context, limit, offset int, sea
 	query += ` LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
 
-	return r.fetchContestsWithQuery(ctx, query, args...)
+	return r.fetchContestsWithQuery(ctx, "", query, args...)
 }
 
-func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, args ...interface{}) ([]models.Contest, error) {
+func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, userID string, query string, args ...interface{}) ([]models.Contest, error) {
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -235,19 +237,77 @@ func (r *contestRepo) fetchContestsWithQuery(ctx context.Context, query string, 
 		var c models.Contest
 		var rulesJSON []byte
 
-		if err := rows.Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.AuthorID, &c.IsPublic, &c.CreatedAt); err == nil {
-			if rulesJSON != nil {
-				var rules models.ContestAccessRules
-				if err := json.Unmarshal(rulesJSON, &rules); err == nil {
-					c.AccessRules = &rules
-				}
-			}
-			contests = append(contests, c)
+		if err := rows.Scan(&c.ID, &c.Title, &c.HostOrganization, &c.StartTime, &c.EndTime, &rulesJSON, &c.AuthorID, &c.IsPublic, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan contest row: %w", err)
 		}
+		if rulesJSON != nil {
+			var rules models.ContestAccessRules
+			if err := json.Unmarshal(rulesJSON, &rules); err == nil {
+				c.AccessRules = &rules
+			}
+		}
+		contests = append(contests, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during contest retrieval: %w", err)
 	}
 	if contests == nil {
 		contests = []models.Contest{}
 	}
+
+	if len(contests) == 0 {
+		return contests, nil
+	}
+
+	var contestIDs []string
+	contestMap := make(map[string]int) // Maps contest ID to index in contests array
+	for i, c := range contests {
+		contestIDs = append(contestIDs, c.ID)
+		contestMap[c.ID] = i
+	}
+
+	// 1. Fetch total counts
+	rowsTotal, err := r.db.Query(ctx, "SELECT contest_id::text, COUNT(*) FROM contest_problems WHERE contest_id = ANY($1::uuid[]) GROUP BY contest_id", contestIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch contest problem counts: %w", err)
+	}
+	defer rowsTotal.Close()
+	for rowsTotal.Next() {
+		var cid string
+		var total int
+		if err := rowsTotal.Scan(&cid, &total); err != nil {
+			return nil, fmt.Errorf("failed to scan contest total count row: %w", err)
+		}
+		if idx, ok := contestMap[cid]; ok {
+			contests[idx].TotalCount = total
+		}
+	}
+	if err := rowsTotal.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error during contest total count retrieval: %w", err)
+	}
+
+	// 2. Fetch solved counts
+	if userID != "" {
+		rowsSolved, err := r.db.Query(ctx, "SELECT contest_id::text, COUNT(DISTINCT problem_id) FROM submissions WHERE contest_id = ANY($1::uuid[]) AND user_id = NULLIF($2, '')::uuid AND status = 'AC' GROUP BY contest_id", contestIDs, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch contest solved counts: %w", err)
+		}
+		defer rowsSolved.Close()
+		for rowsSolved.Next() {
+			var cid string
+			var solved int
+			if err := rowsSolved.Scan(&cid, &solved); err != nil {
+				return nil, fmt.Errorf("failed to scan contest solved count row: %w", err)
+			}
+			if idx, ok := contestMap[cid]; ok {
+				contests[idx].SolvedCount = solved
+			}
+		}
+		if err := rowsSolved.Err(); err != nil {
+			return nil, fmt.Errorf("cursor error during contest solved count retrieval: %w", err)
+		}
+	}
+
 	return contests, nil
 }
 

@@ -35,7 +35,11 @@ func (ctrl *SubmissionController) SubmitCode(c *gin.Context) {
 	}
 
 	// 2. IDENTITY & CONTEXT DETERMINATION
-	userID := c.MustGet("user_id").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 	cooldownDuration := 3 * time.Second
 
 	if req.ContestID != nil && *req.ContestID != "" {
@@ -105,6 +109,10 @@ func (ctrl *SubmissionController) RunCode(c *gin.Context) {
 
 func (ctrl *SubmissionController) GetRunStatus(c *gin.Context) {
 	runID := c.Param("id")
+	if err := uuid.Validate(runID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for run ID"))
+		return
+	}
 
 	result, err := ctrl.service.FetchRunStatus(c.Request.Context(), runID)
 	if err != nil {
@@ -117,6 +125,10 @@ func (ctrl *SubmissionController) GetRunStatus(c *gin.Context) {
 
 func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 	submissionID := c.Param("id")
+	if err := uuid.Validate(submissionID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for submission ID"))
+		return
+	}
 
 	result, err := ctrl.service.FetchSubmissionStatus(c.Request.Context(), submissionID)
 	if err != nil {
@@ -129,7 +141,16 @@ func (ctrl *SubmissionController) GetSubmissionStatus(c *gin.Context) {
 
 func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 	problemID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
+
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	contestIDQuery := c.Query("contest_id")
 	var contestID *string
@@ -150,6 +171,10 @@ func (ctrl *SubmissionController) GetSubmissionHistory(c *gin.Context) {
 
 func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
 	submissionID := c.Param("id")
+	if err := uuid.Validate(submissionID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for submission ID"))
+		return
+	}
 
 	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), "submission_updates:"+submissionID)
 	defer cleanup()
@@ -175,6 +200,10 @@ func (ctrl *SubmissionController) StreamSubmissionStatus(c *gin.Context) {
 
 func (ctrl *SubmissionController) StreamRunStatus(c *gin.Context) {
 	runID := c.Param("id")
+	if err := uuid.Validate(runID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for run ID"))
+		return
+	}
 
 	ch, cleanup := ctrl.service.SubscribeToChannel(c.Request.Context(), "run_updates:"+runID)
 	defer cleanup()

@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 
+	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 	"campuscompile/api/internal/storage"
@@ -19,11 +20,11 @@ import (
 
 type ProblemService interface {
 	ForgeProblem(ctx context.Context, req models.CreateProblemRequest, authorID string) (string, error)
-	FetchProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
+	FetchProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error)
 	FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error)
 	ModifyProblem(ctx context.Context, problemID, userID, userRole string, req models.CreateProblemRequest) error
 	RemoveProblem(ctx context.Context, problemID, userID, userRole string) error
-	FetchFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error)
+	FetchFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) (map[string]interface{}, error)
 	FetchAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error)
 	ClearTestCases(ctx context.Context, problemID, userID, userRole string) error
 	SaveTestCasesBatch(ctx context.Context, problemID string, records []models.TestCaseUploadRecord) error
@@ -54,7 +55,7 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 
 	err := s.repo.CreateProblem(
 		ctx, problemID, req.Title, slug, req.Description, req.Difficulty,
-		req.TimeLimit, req.MemoryLimit, authorID, req.IsPublic,
+		req.TimeLimit, req.MemoryLimit, authorID, req.IsPublic, req.Tags,
 	)
 
 	if err != nil {
@@ -63,8 +64,8 @@ func (s *problemService) ForgeProblem(ctx context.Context, req models.CreateProb
 	return problemID, nil
 }
 
-func (s *problemService) FetchProblems(ctx context.Context, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
-	return s.repo.GetProblems(ctx, limit, offset, searchQuery)
+func (s *problemService) FetchProblems(ctx context.Context, userID string, limit, offset int, searchQuery string) (map[string]interface{}, error) {
+	return s.repo.GetProblems(ctx, userID, limit, offset, searchQuery)
 }
 
 func (s *problemService) FetchProblemByID(ctx context.Context, problemID string) (map[string]interface{}, error) {
@@ -95,10 +96,10 @@ func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, u
 
 	// 👇 FIX: Allow admins to bypass the author check
 	if userRole != "admin" && userID != authorID {
-		return errors.New("unauthorized: only the original author can edit this problem")
+		return fmt.Errorf("%w: only the original author or an admin can modify this problem", appErrors.ErrUnauthorized)
 	}
 
-	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic)
+	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic, req.Tags)
 }
 
 func (s *problemService) RemoveProblem(ctx context.Context, problemID, userID, userRole string) error {
@@ -111,7 +112,7 @@ func (s *problemService) RemoveProblem(ctx context.Context, problemID, userID, u
 	return s.repo.DeleteProblem(ctx, problemID)
 }
 
-func (s *problemService) FetchFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) ([]map[string]interface{}, error) {
+func (s *problemService) FetchFacultyProblems(ctx context.Context, authorID string, limit, offset int, searchQuery string) (map[string]interface{}, error) {
 	return s.repo.GetFacultyProblems(ctx, authorID, limit, offset, searchQuery)
 }
 
