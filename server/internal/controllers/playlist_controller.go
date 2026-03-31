@@ -49,12 +49,7 @@ func (ctrl *PlaylistController) GetPlaylists(c *gin.Context) {
 	limit, offset := parsePaginationArgs(c, 25)
 	viewMode := c.Query("view_mode") // "public" or "faculty"
 
-	var userID string
-	if uid, exists := c.Get("user_id"); exists {
-		if strUid, ok := uid.(string); ok {
-			userID = strUid
-		}
-	}
+	userID := c.MustGet("user_id").(string)
 
 	playlists, err := ctrl.service.GetPlaylists(c.Request.Context(), userID, viewMode, limit, offset)
 	if err != nil {
@@ -79,19 +74,8 @@ func (ctrl *PlaylistController) GetPlaylistByID(c *gin.Context) {
 	}
 
 	if !playlist.IsPublic {
-		reqUserID := ""
-		reqUserRole := "student"
-
-		if uid, exists := c.Get("user_id"); exists {
-			if strUid, ok := uid.(string); ok {
-				reqUserID = strUid
-			}
-		}
-		if role, exists := c.Get("role"); exists {
-			if strRole, ok := role.(string); ok {
-				reqUserRole = strRole
-			}
-		}
+		reqUserID := c.MustGet("user_id").(string)
+		reqUserRole := c.MustGet("role").(string)
 
 		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == reqUserID
 		hasPermission := reqUserRole == "admin"
@@ -121,12 +105,7 @@ func (ctrl *PlaylistController) GetPlaylistProblems(c *gin.Context) {
 	}
 
 	if !playlist.IsPublic {
-		reqUserRole := "student"
-		if role, exists := c.Get("role"); exists {
-			if strRole, ok := role.(string); ok {
-				reqUserRole = strRole
-			}
-		}
+		reqUserRole := c.MustGet("role").(string)
 
 		isAuthor := playlist.AuthorID != nil && *playlist.AuthorID == userID
 		hasPermission := reqUserRole == "admin"
@@ -190,7 +169,9 @@ func (ctrl *PlaylistController) UpdatePlaylist(c *gin.Context) {
 
 	err := ctrl.service.ModifyPlaylist(c.Request.Context(), playlistID, userID, userRole, req)
 	if err != nil {
-		if errors.Is(err, appErrors.ErrUnauthorized) {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Playlist not found"))
+		} else if errors.Is(err, appErrors.ErrUnauthorized) {
 			c.Error(appErrors.NewAppError(http.StatusForbidden, err, err.Error()))
 		} else if errors.Is(err, appErrors.ErrValidationFailed) {
 			c.Error(appErrors.NewAppError(http.StatusBadRequest, err, err.Error()))
