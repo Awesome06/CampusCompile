@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	appErrors "campuscompile/api/internal/errors"
@@ -164,6 +165,11 @@ func (ctrl *PlaylistController) UpdatePlaylist(c *gin.Context) {
 	}
 
 	playlistID := c.Param("id")
+	if err := uuid.Validate(playlistID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for playlist ID"))
+		return
+	}
+
 	userID := c.MustGet("user_id").(string)
 	userRole := c.MustGet("role").(string)
 

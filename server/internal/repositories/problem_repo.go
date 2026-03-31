@@ -56,9 +56,15 @@ func (r *problemRepo) CreateProblem(ctx context.Context, problemID, title, slug,
 
 		var tagID int
 		err = tx.QueryRow(ctx, `
-			INSERT INTO tags (name) VALUES ($1)
-			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
-			RETURNING tag_id
+			WITH insert_tag AS (
+				INSERT INTO tags (name) VALUES ($1)
+				ON CONFLICT (name) DO NOTHING
+				RETURNING tag_id
+			)
+			SELECT tag_id FROM insert_tag
+			UNION ALL
+			SELECT tag_id FROM tags WHERE name = $1
+			LIMIT 1
 		`, tagStr).Scan(&tagID)
 		if err != nil {
 			return err
@@ -268,9 +274,15 @@ func (r *problemRepo) UpdateProblem(ctx context.Context, problemID, title, descr
 
 			var tagID int
 			err = tx.QueryRow(ctx, `
-				INSERT INTO tags (name) VALUES ($1)
-				ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
-				RETURNING tag_id
+				WITH insert_tag AS (
+					INSERT INTO tags (name) VALUES ($1)
+					ON CONFLICT (name) DO NOTHING
+					RETURNING tag_id
+				)
+				SELECT tag_id FROM insert_tag
+				UNION ALL
+				SELECT tag_id FROM tags WHERE name = $1
+				LIMIT 1
 			`, tagStr).Scan(&tagID)
 			if err != nil {
 				return err

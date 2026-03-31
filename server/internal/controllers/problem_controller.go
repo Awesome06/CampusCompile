@@ -28,6 +28,18 @@ func NewProblemController(service services.ProblemService) *ProblemController {
 	return &ProblemController{service: service}
 }
 
+func getSafeString(c *gin.Context, key string) (string, error) {
+	val, exists := c.Get(key)
+	if !exists {
+		return "", fmt.Errorf("missing key %s", key)
+	}
+	str, ok := val.(string)
+	if !ok || str == "" {
+		return "", fmt.Errorf("missing or invalid key %s", key)
+	}
+	return str, nil
+}
+
 func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 	var req models.CreateProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,13 +47,13 @@ func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 		return
 	}
 
-	authorID, exists := c.Get("user_id")
-	if !exists {
-		c.Error(appErrors.NewAppError(http.StatusUnauthorized, nil, "User identity not found in request context"))
+	authorID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "User identity not found or malformed in request context"))
 		return
 	}
 
-	problemID, err := ctrl.service.ForgeProblem(c.Request.Context(), req, authorID.(string))
+	problemID, err := ctrl.service.ForgeProblem(c.Request.Context(), req, authorID)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to forge problem in database"))
 		return
@@ -57,7 +69,11 @@ func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 	limit, offset := parsePaginationArgs(c, 25)
 	searchQuery := c.Query("search")
 
-	userID := c.MustGet("user_id").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	result, err := ctrl.service.FetchProblems(c.Request.Context(), userID, limit, offset, searchQuery)
 	if err != nil {
@@ -86,10 +102,18 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 		return
 	}
 
-	userRole := c.MustGet("role").(string)
-	userID := c.MustGet("user_id").(string)
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing role"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context: missing user_id"))
+		return
+	}
 
-	err := ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), userID, userRole, req)
+	err = ctrl.service.ModifyProblem(c.Request.Context(), c.Param("id"), userID, userRole, req)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusForbidden, err, "Update failed or unauthorized"))
 		return
@@ -99,8 +123,16 @@ func (ctrl *ProblemController) UpdateProblem(c *gin.Context) {
 
 func (ctrl *ProblemController) DeleteProblem(c *gin.Context) {
 	problemID := c.Param("id")
-	userRole := c.MustGet("role").(string)
-	userID := c.MustGet("user_id").(string)
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	// Fetch problem to verify ownership and publish status
 	problemMeta, err := ctrl.service.FetchProblemByID(c.Request.Context(), problemID)
@@ -134,7 +166,13 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 	limit, offset := parsePaginationArgs(c, 25)
 	searchQuery := c.Query("search")
 
-	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), c.MustGet("user_id").(string), limit, offset, searchQuery)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+
+	problems, err := ctrl.service.FetchFacultyProblems(c.Request.Context(), userID, limit, offset, searchQuery)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch your problems"))
 		return
@@ -159,10 +197,18 @@ func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 
 func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 	problemID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
-	err := ctrl.service.ClearTestCases(c.Request.Context(), problemID, userID, userRole)
+	err = ctrl.service.ClearTestCases(c.Request.Context(), problemID, userID, userRole)
 	if err != nil {
 		// 👇 NEW: Safely check for the Sentinel Error
 		if errors.Is(err, services.ErrUnauthorizedAction) {
@@ -178,7 +224,11 @@ func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 
 func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	problemID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	var userRole string
 	if roleVal, exists := c.Get("role"); exists {

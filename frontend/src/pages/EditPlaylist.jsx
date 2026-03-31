@@ -92,10 +92,11 @@ export default function EditPlaylist() {
   };
 
   const toggleTag = (tag) => {
-    if (selectedTags.includes(tag)) {
-      setSelectedTags(selectedTags.filter(t => t !== tag));
+    const lowerTag = tag.toLowerCase();
+    if (selectedTags.includes(lowerTag)) {
+      setSelectedTags(selectedTags.filter(t => t !== lowerTag));
     } else {
-      setSelectedTags([...selectedTags, tag]);
+      setSelectedTags([...selectedTags, lowerTag]);
     }
   };
 
@@ -200,7 +201,7 @@ export default function EditPlaylist() {
                 key={tag}
                 type="button"
                 onClick={() => toggleTag(tag)}
-                className={`px-3 py-1 rounded-full text-xs font-mono border transition ${selectedTags.includes(tag)
+                className={`px-3 py-1 rounded-full text-xs font-mono border transition ${selectedTags.includes(tag.toLowerCase())
                   ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 hover:bg-blue-600/30'
                   : 'bg-dark-surface text-gray-400 border-dark-border hover:bg-gray-700 hover:text-white'
                   }`}

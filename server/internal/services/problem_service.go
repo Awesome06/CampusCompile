@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 
+	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
 	"campuscompile/api/internal/repositories"
 	"campuscompile/api/internal/storage"
@@ -95,7 +96,7 @@ func (s *problemService) ModifyProblem(ctx context.Context, problemID, userID, u
 
 	// 👇 FIX: Allow admins to bypass the author check
 	if userRole != "admin" && userID != authorID {
-		return errors.New("unauthorized: only the original author can edit this problem")
+		return fmt.Errorf("%w: only the original author or admin can modify this feature", appErrors.ErrUnauthorized)
 	}
 
 	return s.repo.UpdateProblem(ctx, problemID, req.Title, req.Description, req.Difficulty, req.TimeLimit, req.MemoryLimit, req.IsPublic, req.Tags)
