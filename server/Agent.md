@@ -10,7 +10,7 @@
 * **UUIDs**: `google/uuid`
 
 ## Architecture & Conventions
-* **`cmd/`**: Contains main entry points (e.g., `cmd/server/main.go`).
+* **`cmd/`**: Contains main entry points (e.g., `server/cmd/api/main.go`).
 * **`internal/`**: Core logic isolated within bounded contexts.
   * **`controllers/` & `handlers/`**: Define HTTP handlers using Gin contexts.
   * **`routes/`**: Route definitions attaching handlers to Gin engines.

@@ -28,18 +28,6 @@ func NewProblemController(service services.ProblemService) *ProblemController {
 	return &ProblemController{service: service}
 }
 
-func getSafeString(c *gin.Context, key string) (string, error) {
-	val, exists := c.Get(key)
-	if !exists {
-		return "", fmt.Errorf("missing key %s", key)
-	}
-	str, ok := val.(string)
-	if !ok || str == "" {
-		return "", fmt.Errorf("missing or invalid key %s", key)
-	}
-	return str, nil
-}
-
 func (ctrl *ProblemController) CreateProblem(c *gin.Context) {
 	var req models.CreateProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
