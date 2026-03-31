@@ -112,20 +112,20 @@ type CreateContestInput struct {
 // ==========================================
 
 type CreateProblemRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Difficulty  string `json:"difficulty"`
-	TimeLimit   int    `json:"time_limit"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Difficulty  string   `json:"difficulty"`
+	TimeLimit   int      `json:"time_limit"`
 	MemoryLimit int      `json:"memory_limit"`
 	IsPublic    bool     `json:"is_public"`
 	Tags        []string `json:"tags,omitempty"`
 }
 
 type Problem struct {
-	ID           string  `json:"problem_id"`
-	Title        string  `json:"title"`
-	Slug         string  `json:"slug"`
-	Description  string  `json:"description"`
+	ID           string   `json:"problem_id"`
+	Title        string   `json:"title"`
+	Slug         string   `json:"slug"`
+	Description  string   `json:"description"`
 	Difficulty   string   `json:"difficulty"`
 	SampleInput  *string  `json:"sample_input,omitempty"`
 	SampleOutput *string  `json:"sample_output,omitempty"`
@@ -143,15 +143,15 @@ type TestCaseUploadRecord struct {
 // ==========================================
 
 type Playlist struct {
-	ID                string            `json:"playlist_id"`
-	Title             string            `json:"title"`
-	Description       string            `json:"description,omitempty"`
-	AuthorID          *string           `json:"author_id,omitempty"`
-	IsPublic          bool              `json:"is_public"`
-	OverallDifficulty string            `json:"overall_difficulty"`
-	Tags              []string          `json:"tags,omitempty"`
-	CreatedAt         time.Time         `json:"created_at"`
-	UpdatedAt         time.Time         `json:"updated_at"`
+	ID                string    `json:"playlist_id"`
+	Title             string    `json:"title"`
+	Description       string    `json:"description,omitempty"`
+	AuthorID          *string   `json:"author_id,omitempty"`
+	IsPublic          bool      `json:"is_public"`
+	OverallDifficulty string    `json:"overall_difficulty"`
+	Tags              []string  `json:"tags,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type PlaylistProblem struct {
@@ -189,14 +189,14 @@ type PlaylistProblemResponse struct {
 	Difficulty       string  `json:"difficulty"`
 	OrderIndex       int     `json:"order_index"`
 	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
-	Status           string  `json:"status"` // "Accepted", "Attempted/WA", "Unattempted"
+	Status           string  `json:"status"` // "AC", "Attempted", "Unattempted"
 }
 
 type PlaylistAnalyticsItem struct {
-	ProblemID      string  `json:"problem_id"`
-	OrderIndex     int     `json:"order_index"`
-	CompletedCount int     `json:"completed_count"`
-	TotalStudents  int     `json:"total_students"`
+	ProblemID      string `json:"problem_id"`
+	OrderIndex     int    `json:"order_index"`
+	CompletedCount int    `json:"completed_count"`
+	TotalStudents  int    `json:"total_students"`
 }
 
 // ==========================================

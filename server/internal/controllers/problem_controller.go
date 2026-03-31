@@ -76,7 +76,13 @@ func (ctrl *ProblemController) GetProblems(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) GetProblemByID(c *gin.Context) {
-	problem, err := ctrl.service.FetchProblemByID(c.Request.Context(), c.Param("id"))
+	problemID := c.Param("id")
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
+
+	problem, err := ctrl.service.FetchProblemByID(c.Request.Context(), problemID)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusNotFound, err, "Problem not found in the Arena."))
 		return
@@ -184,7 +190,13 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 }
 
 func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
-	testCases, err := ctrl.service.FetchAllTestCases(c.Request.Context(), c.Param("id"))
+	problemID := c.Param("id")
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
+
+	testCases, err := ctrl.service.FetchAllTestCases(c.Request.Context(), problemID)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to fetch test cases"))
 		return
@@ -197,6 +209,10 @@ func (ctrl *ProblemController) GetAllTestCasesForProblem(c *gin.Context) {
 
 func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 	problemID := c.Param("id")
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
 	userID, err := getSafeString(c, "user_id")
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
@@ -224,6 +240,10 @@ func (ctrl *ProblemController) ClearTestCases(c *gin.Context) {
 
 func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	problemID := c.Param("id")
+	if err := uuid.Validate(problemID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for problem ID"))
+		return
+	}
 	userID, err := getSafeString(c, "user_id")
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))

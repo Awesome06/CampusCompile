@@ -1,6 +1,9 @@
 package errors
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // AppError is the centralized application error structure.
 // It wraps an internal error with an HTTP status and a safe client-facing message.
@@ -32,7 +35,7 @@ func (e *AppError) Unwrap() error {
 }
 
 var (
-	ErrValidationFailed = fmt.Errorf("validation failed")
-	ErrUnauthorized     = fmt.Errorf("unauthorized action")
-	ErrNotFound         = fmt.Errorf("resource not found")
+	ErrValidationFailed = errors.New("validation failed")
+	ErrUnauthorized     = errors.New("unauthorized action")
+	ErrNotFound         = errors.New("resource not found")
 )
