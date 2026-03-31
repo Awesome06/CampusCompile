@@ -311,8 +311,6 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 		pr.CustomDifficulty = customDiff
 		if pr.Status != "AC" && pr.Status != "Unattempted" {
 			pr.Status = "Attempted"
-		} else if pr.Status == "AC" {
-			pr.Status = "Accepted"
 		}
 		problems = append(problems, pr)
 	}

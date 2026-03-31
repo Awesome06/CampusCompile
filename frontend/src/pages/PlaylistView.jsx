@@ -71,7 +71,7 @@ export default function PlaylistView() {
   }
 
   const getStatusColor = (status) => {
-    if (status === 'Accepted') return 'bg-green-900/20 border-green-700/50 text-green-400';
+    if (status === 'AC') return 'bg-green-900/20 border-green-700/50 text-green-400';
     if (status === 'Attempted') return 'bg-yellow-900/20 border-yellow-700/50 text-yellow-500';
     return 'bg-gray-800 border-gray-600 text-gray-400';
   };
@@ -125,7 +125,7 @@ export default function PlaylistView() {
           <div className="space-y-4">
             {problems.map((prob) => {
               let rowColor = 'hover:bg-[#2a2a2a] bg-[#222]';
-              if (prob.status === 'Accepted') rowColor = 'bg-green-900/10 border-green-800/50 hover:bg-green-900/20';
+              if (prob.status === 'AC') rowColor = 'bg-green-900/10 border-green-800/50 hover:bg-green-900/20';
               else if (prob.status === 'Attempted') rowColor = 'bg-yellow-900/10 border-yellow-800/50 hover:bg-yellow-900/20';
 
               return (
