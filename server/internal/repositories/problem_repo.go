@@ -252,35 +252,37 @@ func (r *problemRepo) UpdateProblem(ctx context.Context, problemID, title, descr
 		return err
 	}
 
-	_, err = tx.Exec(ctx, "DELETE FROM problem_tags WHERE problem_id = $1", problemID)
-	if err != nil {
-		return err
-	}
-
-	tagSet := make(map[string]bool)
-	for _, tag := range tags {
-		tagStr := strings.TrimSpace(strings.ToLower(tag))
-		if tagStr == "" || tagSet[tagStr] {
-			continue
-		}
-		tagSet[tagStr] = true
-
-		var tagID int
-		err = tx.QueryRow(ctx, `
-			INSERT INTO tags (name) VALUES ($1)
-			ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
-			RETURNING tag_id
-		`, tagStr).Scan(&tagID)
+	if tags != nil {
+		_, err = tx.Exec(ctx, "DELETE FROM problem_tags WHERE problem_id = $1", problemID)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.Exec(ctx, `
-			INSERT INTO problem_tags (problem_id, tag_id) VALUES ($1, $2)
-			ON CONFLICT DO NOTHING
-		`, problemID, tagID)
-		if err != nil {
-			return err
+		tagSet := make(map[string]bool)
+		for _, tag := range tags {
+			tagStr := strings.TrimSpace(strings.ToLower(tag))
+			if tagStr == "" || tagSet[tagStr] {
+				continue
+			}
+			tagSet[tagStr] = true
+
+			var tagID int
+			err = tx.QueryRow(ctx, `
+				INSERT INTO tags (name) VALUES ($1)
+				ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name
+				RETURNING tag_id
+			`, tagStr).Scan(&tagID)
+			if err != nil {
+				return err
+			}
+
+			_, err = tx.Exec(ctx, `
+				INSERT INTO problem_tags (problem_id, tag_id) VALUES ($1, $2)
+				ON CONFLICT DO NOTHING
+			`, problemID, tagID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit(ctx)

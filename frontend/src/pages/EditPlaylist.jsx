@@ -247,6 +247,7 @@ export default function EditPlaylist() {
                     type="button"
                     onClick={() => handleRemoveProblem(prob.problem_id)}
                     className="text-red-400 hover:text-red-300 mx-2 transition"
+                    aria-label={`Remove ${prob.title} from playlist`}
                   >
                     🗑️
                   </button>

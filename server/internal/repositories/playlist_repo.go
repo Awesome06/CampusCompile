@@ -2,12 +2,14 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	appErrors "campuscompile/api/internal/errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"campuscompile/api/internal/models"
@@ -141,6 +143,15 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 		`, playlistID, problemID, i+1, customDiff)
 
 		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				if pgErr.Code == "23505" { // unique_violation
+					return "", fmt.Errorf("%w: duplicate problem configuration detected at index %d", appErrors.ErrValidationFailed, i)
+				}
+				if pgErr.Code == "23503" { // foreign_key_violation
+					return "", fmt.Errorf("%w: unrecognized problem_id '%s' at index %d", appErrors.ErrValidationFailed, problemID, i)
+				}
+			}
 			return "", err
 		}
 	}
@@ -443,6 +454,15 @@ func (r *playlistRepo) UpdatePlaylist(ctx context.Context, playlistID string, re
 		`, playlistID, problemID, i+1, customDiff)
 
 		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				if pgErr.Code == "23505" { // unique_violation
+					return fmt.Errorf("%w: duplicate problem configuration detected at index %d", appErrors.ErrValidationFailed, i)
+				}
+				if pgErr.Code == "23503" { // foreign_key_violation
+					return fmt.Errorf("%w: unrecognized problem_id '%s' at index %d", appErrors.ErrValidationFailed, problemID, i)
+				}
+			}
 			return err
 		}
 	}

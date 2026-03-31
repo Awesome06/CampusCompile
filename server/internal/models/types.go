@@ -178,7 +178,10 @@ type PlaylistResponse struct {
 }
 
 type PlaylistProblemResponse struct {
-	Problem
+	ID               string  `json:"problem_id"`
+	Title            string  `json:"title"`
+	Slug             string  `json:"slug"`
+	Difficulty       string  `json:"difficulty"`
 	OrderIndex       int     `json:"order_index"`
 	CustomDifficulty *string `json:"custom_difficulty,omitempty"`
 	Status           string  `json:"status"` // "Accepted", "Attempted/WA", "Unattempted"
