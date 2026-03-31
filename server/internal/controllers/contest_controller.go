@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	appErrors "campuscompile/api/internal/errors"
 	"campuscompile/api/internal/models"
@@ -26,7 +27,15 @@ func NewContestController(service services.ContestService) *ContestController {
 // StreamLeaderboard is the SSE endpoint that keeps the React UI perfectly in sync
 func (ctrl *ContestController) StreamLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
-	userRole := c.MustGet("role").(string)
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	// 1. The Bouncer - Fetch the ENRICHED leaderboard immediately BEFORE allocating resources
 	auditStatus, initialLeaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
@@ -116,8 +125,20 @@ func (ctrl *ContestController) GetContests(c *gin.Context) {
 // GetContestDetails fetches specific metadata and checks if the current user is registered
 func (ctrl *ContestController) GetContestDetails(c *gin.Context) {
 	contestID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string) // Extract role
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
 	if err != nil {
@@ -145,9 +166,17 @@ func (ctrl *ContestController) GetContestDetails(c *gin.Context) {
 // RegisterForContest handles the user opting into the arena and initializing their Redis score
 func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
 	contestID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
-	err := ctrl.service.EnrollUser(c.Request.Context(), contestID, userID)
+	err = ctrl.service.EnrollUser(c.Request.Context(), contestID, userID)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to register for contest"))
 		return
@@ -159,7 +188,15 @@ func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
 // GetLeaderboard provides the initial static snapshot of the leaderboard before the SSE stream takes over
 func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
-	userRole := c.MustGet("role").(string)
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	auditStatus, leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err != nil {
@@ -182,8 +219,20 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 
 func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	contestID := c.Param("id")
-	userRole := c.MustGet("role").(string)
-	userID := c.MustGet("user_id").(string)
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	// 🔒 API GUARD: PREVENT PROBLEM LEAKS 🔒
 	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
@@ -212,7 +261,11 @@ func (ctrl *ContestController) CreateContest(c *gin.Context) {
 	}
 
 	// Securely grab the professor/admin's ID from the JWT
-	userID := c.MustGet("user_id").(string)
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	contest := models.Contest{
 		Title:            input.Title,
@@ -238,8 +291,20 @@ func (ctrl *ContestController) CreateContest(c *gin.Context) {
 
 func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 	contestID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string)
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	// 1. Fetch the existing contest to check ownership and time
 	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
@@ -290,8 +355,20 @@ func (ctrl *ContestController) UpdateContest(c *gin.Context) {
 
 func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 	contestID := c.Param("id")
-	userRole := c.MustGet("role").(string)
-	userID := c.MustGet("user_id").(string) // Extract userID
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	// Fetch the contest to check its timing and ownership
 	existingContest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
@@ -329,8 +406,20 @@ func (ctrl *ContestController) DeleteContest(c *gin.Context) {
 
 func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 	contestID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string)
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	var payload models.TelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -363,8 +452,20 @@ func (ctrl *ContestController) LogTelemetry(c *gin.Context) {
 
 func (ctrl *ContestController) LogTelemetryBatch(c *gin.Context) {
 	contestID := c.Param("id")
-	userID := c.MustGet("user_id").(string)
-	userRole := c.MustGet("role").(string) // 1. Extract the role
+	if err := uuid.Validate(contestID); err != nil {
+		c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Malformed UUID format for contest ID"))
+		return
+	}
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+	userRole, err := getSafeString(c, "role")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
 
 	var payload models.BatchTelemetryPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {

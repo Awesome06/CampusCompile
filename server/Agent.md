@@ -20,8 +20,9 @@
   * **`errors/`**: Centralized typed errors.
 
 ## Style & Best Practices
-* **Error Handling**: ELIMINATE string-based error handling. Strictly utilize typed, sentinel errors defined in `internal/errors/`. Prevent 500-level crashes from invalid inputs (e.g. failing to cast/parse inputs blindly).
-* **Validation**: Enforce strict UUID validation for all incoming database requests at the controller/handler level.
+* **Error Handling**: ELIMINATE string-based error handling. Strictly utilize typed, sentinel errors defined in `internal/errors/`.
+* **Context Extraction Safety**: NEVER extract JWT variables using `c.MustGet(key)` directly, as token middleware slips or mock setups will yield hard server panics. ALWAYS use safe map handlers like `val, exists := c.Get(key)` yielding explicit `401 Unauthorized` responses before routing.
+* **Database Parameter Validation**: Enforce strict `uuid.Validate(param)` checks natively across the Controller layer for all endpoints retrieving UUIDs. Prevent 500-level database crashes from invalid inputs before any `pgx` executions.
 * **Concurrency**: Leverage Go's lightning-fast concurrency model. Design the API to elegantly handle hundreds of simultaneous Server-Sent Events (SSE) connections for live leaderboards without choking memory.
 * **Raw SQL**: Write efficient raw PostgreSQL queries via `pgx/v5`. Do not bring in ORMs. Keep queries optimized and indexed.
 
