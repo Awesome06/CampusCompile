@@ -169,41 +169,66 @@ func (r *playlistRepo) CreatePlaylist(ctx context.Context, req models.CreatePlay
 }
 
 func (r *playlistRepo) GetPlaylists(ctx context.Context, userID, viewMode string, limit, offset int) ([]models.PlaylistResponse, error) {
-	query := `
-		SELECT p.playlist_id, p.title, p.description, p.author_id, p.is_public, p.overall_difficulty, 
-		       COALESCE((
-		           SELECT ARRAY_AGG(t.name) 
-		           FROM playlist_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
-                   WHERE pt.playlist_id = p.playlist_id
-		       ), ARRAY[]::VARCHAR[]) as tags,
-		       p.created_at, p.updated_at,
-		       COALESCE(u.real_name, u.username, 'Anonymous') as author_name,
-		       (SELECT COUNT(*) FROM playlist_problems pp WHERE pp.playlist_id = p.playlist_id) as total_count,
-		       COALESCE((
-		           SELECT COUNT(DISTINCT s.problem_id) 
-		           FROM submissions s
-		           JOIN playlist_problems pp2 ON s.problem_id = pp2.problem_id
-		           WHERE pp2.playlist_id = p.playlist_id AND s.user_id = $1 AND s.status = 'AC'
-		       ), 0) as solved_count
-		FROM playlists p
-		LEFT JOIN users u ON p.author_id = u.user_id
-		WHERE 1=1
+	queryBase := `
+		WITH FilteredPlaylists AS (
+			SELECT p.playlist_id, p.title, COALESCE(p.description, '') as description, 
+			       p.author_id, p.is_public, p.overall_difficulty, p.created_at, p.updated_at,
+			       COALESCE(u.real_name, u.username, 'Anonymous') as author_name
+			FROM playlists p
+			LEFT JOIN users u ON p.author_id = u.user_id
+			WHERE 1=1
 	`
 	
 	args := []interface{}{userID}
 	argIdx := 2
 
 	if viewMode == "faculty" {
-		query += ` AND p.author_id = $` + fmt.Sprint(argIdx)
+		queryBase += ` AND p.author_id = $` + fmt.Sprint(argIdx)
 		args = append(args, userID)
 		argIdx++
 	} else {
 		// Public
-		query += ` AND p.is_public = true`
+		queryBase += ` AND p.is_public = true`
 	}
 
-	query += ` ORDER BY p.created_at DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
+	queryBase += ` ORDER BY p.created_at DESC LIMIT $` + fmt.Sprint(argIdx) + ` OFFSET $` + fmt.Sprint(argIdx+1)
 	args = append(args, limit, offset)
+
+	query := queryBase + `
+		),
+		PlaylistTags AS (
+			SELECT pt.playlist_id, ARRAY_AGG(t.name) as tags
+			FROM playlist_tags pt
+			JOIN tags t ON pt.tag_id = t.tag_id
+			WHERE pt.playlist_id IN (SELECT playlist_id FROM FilteredPlaylists)
+			GROUP BY pt.playlist_id
+		),
+		PlaylistCounts AS (
+			SELECT playlist_id, COUNT(*) as total_count
+			FROM playlist_problems
+			WHERE playlist_id IN (SELECT playlist_id FROM FilteredPlaylists)
+			GROUP BY playlist_id
+		),
+		SolvedCounts AS (
+			SELECT pp.playlist_id, COUNT(DISTINCT s.problem_id) as solved_count
+			FROM playlist_problems pp
+			JOIN submissions s ON s.problem_id = pp.problem_id
+			WHERE pp.playlist_id IN (SELECT playlist_id FROM FilteredPlaylists) 
+			  AND s.user_id = $1 AND s.status = 'AC'
+			GROUP BY pp.playlist_id
+		)
+		SELECT 
+			fp.playlist_id, fp.title, fp.description, fp.author_id, fp.is_public, fp.overall_difficulty,
+			COALESCE(pt.tags, ARRAY[]::VARCHAR[]) as tags,
+			fp.created_at, fp.updated_at, fp.author_name,
+			COALESCE(pc.total_count, 0) as total_count,
+			COALESCE(sc.solved_count, 0) as solved_count
+		FROM FilteredPlaylists fp
+		LEFT JOIN PlaylistTags pt ON fp.playlist_id = pt.playlist_id
+		LEFT JOIN PlaylistCounts pc ON fp.playlist_id = pc.playlist_id
+		LEFT JOIN SolvedCounts sc ON fp.playlist_id = sc.playlist_id
+		ORDER BY fp.created_at DESC
+	`
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -234,7 +259,7 @@ func (r *playlistRepo) GetPlaylistByID(ctx context.Context, playlistID string) (
 	var p models.PlaylistResponse
 	var authorID *string
 	err := r.db.QueryRow(ctx, `
-		SELECT p.playlist_id, p.title, p.description, p.author_id, p.is_public, p.overall_difficulty, 
+		SELECT p.playlist_id, p.title, COALESCE(p.description, ''), p.author_id, p.is_public, p.overall_difficulty, 
 		       COALESCE((
 		           SELECT ARRAY_AGG(t.name) 
 		           FROM playlist_tags pt JOIN tags t ON pt.tag_id = t.tag_id 
