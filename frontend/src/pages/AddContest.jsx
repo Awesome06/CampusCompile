@@ -38,7 +38,7 @@ export default function AddContest() {
     setFetchingProblems(true);
     api.get('/faculty/problems', { params: { limit, offset: currentOffset, search: query } })
       .then(res => {
-        const data = res.data || [];
+        const data = res.data?.problems || (Array.isArray(res.data) ? res.data : []);
         setAvailableProblems(data);
         setHasMore(data.length === limit);
         setOffset(currentOffset);
