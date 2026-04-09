@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
-import useAuthToken from './useAuthToken';
+import { useAuth } from '../context/AuthContext';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
 export default function useHeartbeat(contestId, isElevated, hasEnteredArena) {
-  const token = useAuthToken();
+  const { token } = useAuth();
   const heartbeatIntervalRef = useRef(null);
 
   useEffect(() => {
