@@ -27,12 +27,6 @@ MAX_WORKERS = 10
 # Semaphore to apply backpressure: prevents unbounded memory growth if Redis floods us
 job_semaphore = threading.Semaphore(MAX_WORKERS) 
 
-LANGUAGE_CONFIG = {
-    'cpp':    {'time': 1.0, 'memory': 1.0},
-    'python': {'time': 2.0, 'memory': 1.5},
-    'java':   {'time': 2.0, 'memory': 2.0},
-}
-
 def process_submission(submission_id):
     """Handles the full lifecycle of grading a single submission."""
     conn = None
@@ -85,7 +79,7 @@ def process_submission(submission_id):
         base_time_ms = submission.get('time_limit_ms', 2000)
         base_mem_kb = submission.get('memory_limit_kb', 256000)
 
-        limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
+        limits = {'time': 1.0, 'memory': 1.0}
 
         actual_time_ms = int(base_time_ms * limits['time'])
         actual_mem_kb = int(base_mem_kb * limits['memory'])
@@ -213,7 +207,7 @@ def route_job(submission_data):
             }]
             
             lang = submission_data.get('language')
-            limits = LANGUAGE_CONFIG.get(lang, {'time': 1.0, 'memory': 1.0})
+            limits = {'time': 1.0, 'memory': 1.0}
 
             result = grade_submission(
                 submission_id=run_id,
