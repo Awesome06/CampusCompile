@@ -25,6 +25,9 @@
 * **Database Parameter Validation**: Enforce strict `uuid.Validate(param)` checks natively across the Controller layer for all endpoints retrieving UUIDs. Prevent 500-level database crashes from invalid inputs before any `pgx` executions.
 * **Concurrency**: Leverage Go's lightning-fast concurrency model. Design the API to elegantly handle hundreds of simultaneous Server-Sent Events (SSE) connections for live leaderboards without choking memory.
 * **Raw SQL**: Write efficient raw PostgreSQL queries via `pgx/v5`. Do not bring in ORMs. Keep queries optimized and indexed.
+* **Background Tasks**: Heavy analytics logic, heartbeat auditing, and asynchronous tasks must be offloaded to Go Daemons (e.g., `StartPlaylistAnalyticsDaemon`) launched from `main.go`.
+* **Aggressive Caching**: To minimize database stress, highly repetitive queries like access control (RBAC) should be fronted with aggressive Redis caching layers (e.g., `playlist:auth:{id}`).
+* **Data Snapshots**: State that is volatile in Redis (like contest leaderboards) should be securely serialized and snapshot-saved in PostgreSQL (`finalized_leaderboards`) asynchronously upon contest conclusion to create an immutable historical record.
 
 ## Developer Workflow
 * **Start Dev Server**: `air` (Uses `.air.toml` for Go live reloading)
