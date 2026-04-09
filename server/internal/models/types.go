@@ -130,14 +130,12 @@ type Problem struct {
 	SampleInput  *string  `json:"sample_input,omitempty"`
 	SampleOutput *string  `json:"sample_output,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
-	SampleTestCases []map[string]interface{} `json:"sample_test_cases,omitempty"`
 }
 
 type TestCaseUploadRecord struct {
 	InputS3Key    string
 	ExpectedS3Key string
 	IsHidden      bool
-	IsSample      bool
 }
 
 // ==========================================

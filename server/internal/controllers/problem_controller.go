@@ -185,7 +185,7 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 	if result == nil {
 		result = map[string]interface{}{"problems": []map[string]interface{}{}, "solved_count": 0, "total_count": 0}
 	}
-	
+
 	c.JSON(http.StatusOK, result)
 }
 
@@ -283,7 +283,6 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 	inputFiles := form.File["input_files"]
 	expectedFiles := form.File["expected_files"]
 	isHiddenVals := form.Value["is_hidden"]
-	isSampleVals := form.Value["is_sample"]
 
 	// 3. Strict Payload Validation
 	if len(inputFiles) == 0 {
@@ -291,7 +290,7 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 		return
 	}
 
-	if len(inputFiles) != len(expectedFiles) || len(inputFiles) != len(isHiddenVals) || (isSampleVals != nil && len(inputFiles) != len(isSampleVals)) {
+	if len(inputFiles) != len(expectedFiles) || len(inputFiles) != len(isHiddenVals) {
 		c.Error(appErrors.NewAppError(http.StatusBadRequest, nil, "Mismatched file arrays in payload"))
 		return
 	}
@@ -355,23 +354,11 @@ func (ctrl *ProblemController) UploadTestCasesBatch(c *gin.Context) {
 			return
 		}
 
-		isSample := false
-		if len(isSampleVals) > i {
-			parsed, err := strconv.ParseBool(isSampleVals[i])
-			if err != nil {
-				ctrl.cleanupS3Keys(c.Request.Context(), uploadedKeys)
-				c.Error(appErrors.NewAppError(http.StatusBadRequest, err, "Invalid boolean value for is_sample flag"))
-				return
-			}
-			isSample = parsed
-		}
-
 		// Map to our DTO
 		records = append(records, models.TestCaseUploadRecord{
 			InputS3Key:    inKey,
 			ExpectedS3Key: outKey,
 			IsHidden:      isHidden,
-			IsSample:      isSample,
 		})
 	}
 

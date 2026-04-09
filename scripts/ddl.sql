@@ -177,8 +177,6 @@ CREATE TABLE IF NOT EXISTS test_cases (
     test_case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
     is_hidden BOOLEAN DEFAULT true,
-    is_sample BOOLEAN DEFAULT false,
-    order_index INTEGER DEFAULT 0,
     input_s3_key VARCHAR(512) NOT NULL,
     expected_s3_key VARCHAR(512) NOT NULL
 );
