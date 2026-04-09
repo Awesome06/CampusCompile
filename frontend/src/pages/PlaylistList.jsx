@@ -74,12 +74,13 @@ export default function PlaylistList() {
         <div className="flex bg-[#1e1e1e] rounded-lg p-1 border border-dark-border shadow-lg">
           {isElevated && (
             <>
-              <button onClick={() => setViewMode('faculty')} className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'faculty' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}>
-                My Playlists
-              </button>
               <button onClick={() => setViewMode('public')} className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'public' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}>
-                Community Playlists
+                Published Playlists
               </button>
+              <button onClick={() => setViewMode('faculty')} className={`px-6 py-2 text-sm font-bold rounded-md transition-all ${viewMode === 'faculty' ? 'bg-dark-accent text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}>
+                Playlists Created
+              </button>
+
             </>
           )}
           {!isElevated && (
@@ -88,7 +89,7 @@ export default function PlaylistList() {
             </button>
           )}
         </div>
-        
+
         {/* Right-Pinned Create Button */}
         {isElevated && (
           <div className="absolute right-0">
@@ -102,17 +103,17 @@ export default function PlaylistList() {
       {/* Playlist List Render */}
       <div className="bg-[#1e1e1e] border border-dark-border rounded-lg p-4 shadow-lg">
         {loading && <div className="text-center py-8 text-gray-400 animate-pulse font-mono">Fetching collections...</div>}
-        
+
         {!loading && playlists.length === 0 && (
           <div className="text-center py-10 text-gray-500 italic border-b border-dark-border last:border-0">
             No playlists found.
           </div>
         )}
-        
+
         {!loading && playlists.map((playlist) => (
           <Link key={playlist.playlist_id} to={`/playlists/${playlist.playlist_id}`} className="block">
             <div className="flex justify-between items-center py-5 text-white border-b border-dark-border last:border-0 hover:bg-[#252525] px-4 rounded transition group cursor-pointer relative">
-              
+
               <div className="w-2/3 flex flex-col items-start gap-2">
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-xl group-hover:text-blue-400 transition">{playlist.title}</span>
