@@ -63,7 +63,8 @@ export default function EditProblem() {
           const normalizedTestCases = (tcRes.data.test_cases || []).map(tc => ({
             input: tc.input_data || '',
             expectedOutput: tc.expected_output || '',
-            isHidden: tc.is_hidden ?? true
+            isHidden: tc.is_hidden ?? true,
+            isSample: tc.is_sample ?? false
           }));
           
           setTestCases(normalizedTestCases);
@@ -87,7 +88,7 @@ export default function EditProblem() {
 
   const handleAddTestCase = () => {
     const newIndex = testCases.length;
-    setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true }]);
+    setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true, isSample: false }]);
     setExpandedCases(prev => ({ ...prev, [newIndex]: true }));
   };
 
@@ -159,6 +160,7 @@ const handleSaveChanges = async () => {
       formData.append('input_files', inBlob, `in_${index}.txt`);
       formData.append('expected_files', outBlob, `out_${index}.txt`);
       formData.append('is_hidden', tc.isHidden ? 'true' : 'false');
+      formData.append('is_sample', tc.isSample ? 'true' : 'false');
     });
 
     try {
@@ -368,6 +370,15 @@ const handleSaveChanges = async () => {
                     </div>
 
                     <div className="flex items-center space-x-4" onClick={(e) => e.stopPropagation()}>
+                      <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={tc.isSample}
+                          onChange={(e) => updateTestCase(index, 'isSample', e.target.checked)}
+                          className="rounded border-gray-600 bg-[#121212] text-green-500 focus:ring-green-500 focus:ring-offset-[#1e1e1e]"
+                        />
+                        <span className="select-none">Sample</span>
+                      </label>
                       <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
                         <input 
                           type="checkbox" 

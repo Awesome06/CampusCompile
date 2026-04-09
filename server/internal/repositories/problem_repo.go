@@ -215,8 +215,8 @@ func (r *problemRepo) GetProblemByID(ctx context.Context, problemID string) (map
 
 	rows, err := r.db.Query(ctx, `
 		SELECT input_s3_key, expected_s3_key 
-		FROM test_cases WHERE problem_id = $1 AND is_hidden = false
-		ORDER BY input_s3_key ASC
+		FROM test_cases WHERE problem_id = $1 AND is_sample = true
+		ORDER BY order_index ASC, input_s3_key ASC
 	`, problemID)
 
 	var samples []map[string]interface{}
@@ -384,7 +384,7 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 }
 
 func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]map[string]interface{}, error) {
-	rows, err := r.db.Query(ctx, "SELECT is_hidden, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1 ORDER BY input_s3_key ASC", problemID)
+	rows, err := r.db.Query(ctx, "SELECT is_hidden, is_sample, order_index, input_s3_key, expected_s3_key FROM test_cases WHERE problem_id = $1 ORDER BY order_index ASC, input_s3_key ASC", problemID)
 	if err != nil {
 		return nil, err
 	}
@@ -393,13 +393,16 @@ func (r *problemRepo) GetAllTestCases(ctx context.Context, problemID string) ([]
 	var testCases []map[string]interface{}
 	for rows.Next() {
 		var inS3, outS3 string
-		var isHidden bool
+		var isHidden, isSample bool
+		var orderIndex int
 
-		if err := rows.Scan(&isHidden, &inS3, &outS3); err != nil {
+		if err := rows.Scan(&isHidden, &isSample, &orderIndex, &inS3, &outS3); err != nil {
 			return nil, fmt.Errorf("failed to scan testcase row: %w", err)
 		}
 		testCases = append(testCases, map[string]interface{}{
 			"is_hidden":       isHidden,
+			"is_sample":       isSample,
+			"order_index":     orderIndex,
 			"input_data":      "", // Inflated by Service
 			"expected_output": "", // Inflated by Service
 			"input_s3_key":    inS3,
@@ -423,11 +426,11 @@ func (r *problemRepo) InsertTestCasesBatch(ctx context.Context, problemID string
 	}
 	defer tx.Rollback(ctx)
 
-	for _, rec := range records {
+	for i, rec := range records {
 		_, err = tx.Exec(ctx, `
-			INSERT INTO test_cases (problem_id, is_hidden, input_s3_key, expected_s3_key) 
-			VALUES ($1, $2, $3, $4)
-		`, problemID, rec.IsHidden, rec.InputS3Key, rec.ExpectedS3Key)
+			INSERT INTO test_cases (problem_id, is_hidden, is_sample, order_index, input_s3_key, expected_s3_key) 
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, problemID, rec.IsHidden, rec.IsSample, i, rec.InputS3Key, rec.ExpectedS3Key)
 
 		if err != nil {
 			return err

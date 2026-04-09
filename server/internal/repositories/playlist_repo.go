@@ -325,30 +325,13 @@ func (r *playlistRepo) GetPlaylistProblems(ctx context.Context, playlistID, user
 
 func (r *playlistRepo) GetPlaylistAnalytics(ctx context.Context, playlistID string) ([]models.PlaylistAnalyticsItem, error) {
 	rows, err := r.db.Query(ctx, `
-		WITH PlaylistStudents AS (
-		    SELECT DISTINCT s.user_id 
-			FROM submissions s 
-			JOIN playlist_problems pp ON s.problem_id = pp.problem_id 
-			WHERE pp.playlist_id = $1
-		),
-		TotalStudents AS (
-		    SELECT COUNT(*) as t FROM PlaylistStudents
-		),
-		CompletedCounts AS (
-			SELECT s.problem_id, COUNT(DISTINCT s.user_id) as completed_count
-			FROM submissions s
-			JOIN PlaylistStudents ps ON s.user_id = ps.user_id
-			JOIN playlist_problems pp ON s.problem_id = pp.problem_id
-			WHERE pp.playlist_id = $1 AND s.status = 'AC'
-			GROUP BY s.problem_id
-		)
 		SELECT 
 		    pp.problem_id, 
 		    pp.order_index, 
-		    COALESCE(cc.completed_count, 0) as completed_count,
-		    (SELECT t FROM TotalStudents) as total_students
+		    COALESCE(pas.completed_count, 0) as completed_count,
+		    COALESCE(pas.total_students, 0) as total_students
 		FROM playlist_problems pp
-		LEFT JOIN CompletedCounts cc ON pp.problem_id = cc.problem_id
+		LEFT JOIN playlist_analytics_summary pas ON pp.playlist_id = pas.playlist_id AND pp.problem_id = pas.problem_id
 		WHERE pp.playlist_id = $1
 		ORDER BY pp.order_index ASC
 	`, playlistID)

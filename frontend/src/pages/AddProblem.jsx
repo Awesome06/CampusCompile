@@ -47,7 +47,7 @@ export default function AddProblem() {
     time_limit: 2000, memory_limit: 256, is_public: false
   });
 
-  const [testCases, setTestCases] = useState([{ input: '', expectedOutput: '', isHidden: false }]);
+  const [testCases, setTestCases] = useState([{ input: '', expectedOutput: '', isHidden: false, isSample: false }]);
   const [expandedCases, setExpandedCases] = useState({ 0: true });
 
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function AddProblem() {
 
   const handleAddTestCase = () => {
     const newIndex = testCases.length;
-    setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true }]);
+    setTestCases([...testCases, { input: '', expectedOutput: '', isHidden: true, isSample: false }]);
     setExpandedCases(prev => ({ ...prev, [newIndex]: true }));
   };
 
@@ -143,6 +143,7 @@ const handlePublish = async () => {
       formData.append('input_files', inBlob, `in_${index}.txt`);
       formData.append('expected_files', outBlob, `out_${index}.txt`);
       formData.append('is_hidden', tc.isHidden ? 'true' : 'false');
+      formData.append('is_sample', tc.isSample ? 'true' : 'false');
     });
 
     let newProblemId = null;
@@ -207,7 +208,7 @@ const handlePublish = async () => {
 
   const resetForm = () => {
     setProblemData({ title: '', description: DEFAULT_DESCRIPTION, difficulty: 'Easy', time_limit: 2000, memory_limit: 256, is_public: false });
-    setTestCases([{ input: '', expectedOutput: '', isHidden: false }]);
+    setTestCases([{ input: '', expectedOutput: '', isHidden: false, isSample: false }]);
     setExpandedCases({ 0: true });
     setStatus({ type: '', message: '' });
     setShowSuccessModal(false);
@@ -350,6 +351,15 @@ const handlePublish = async () => {
                     </div>
 
                     <div className="flex items-center space-x-4" onClick={(e) => e.stopPropagation()}>
+                      <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={tc.isSample}
+                          onChange={(e) => updateTestCase(index, 'isSample', e.target.checked)}
+                          className="rounded border-gray-600 bg-[#121212] text-green-500 focus:ring-green-500 focus:ring-offset-[#1e1e1e]"
+                        />
+                        <span className="select-none">Sample</span>
+                      </label>
                       <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
                         <input 
                           type="checkbox" 

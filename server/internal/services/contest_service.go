@@ -22,15 +22,20 @@ type ContestService interface {
 	FetchContestByID(ctx context.Context, contestID string) (models.Contest, error)
 	EnrollUser(ctx context.Context, contestID, userID string) error
 	IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error)
+	IsUserDisqualified(ctx context.Context, contestID, userID string) (bool, error)
+	ProcessHeartbeat(ctx context.Context, contestID, userID string) error
 	SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func())
 	FetchCurrentLeaderboard(ctx context.Context, contestID string) ([]redisClient.Z, error)
 	FetchEnrichedLeaderboard(ctx context.Context, contestID string) (string, []map[string]interface{}, error)
+	SnapshotLeaderboard(ctx context.Context, contestID string, data map[string]interface{}) error
+	GetFinalizedLeaderboard(ctx context.Context, contestID string) (map[string]interface{}, error)
 	FetchContestProblems(ctx context.Context, contestID, userID string) ([]map[string]interface{}, error)
 	StartLeaderboardDaemon(ctx context.Context)
 	UpdateContest(ctx context.Context, contestID string, contest models.Contest, problems []map[string]interface{}) error
 	DeleteContest(ctx context.Context, contestID string) error
 	LogTelemetry(ctx context.Context, contestID, userID string, payload models.TelemetryPayload) error
 	StartAuditDaemon(ctx context.Context)
+	StartHeartbeatSweeperDaemon(ctx context.Context)
 }
 
 type contestService struct {
@@ -96,6 +101,19 @@ func (s *contestService) EnrollUser(ctx context.Context, contestID, userID strin
 
 func (s *contestService) IsUserEnrolled(ctx context.Context, contestID, userID string) (bool, error) {
 	return s.repo.CheckRegistration(ctx, contestID, userID)
+}
+
+func (s *contestService) IsUserDisqualified(ctx context.Context, contestID, userID string) (bool, error) {
+	return s.repo.IsUserDisqualified(ctx, contestID, userID)
+}
+
+func (s *contestService) ProcessHeartbeat(ctx context.Context, contestID, userID string) error {
+	heartbeatKey := fmt.Sprintf("contest:heartbeats:%s", contestID)
+	// Track user heartbeat timestamp as score in a Sorted Set.
+	return s.redis.ZAdd(ctx, heartbeatKey, redisClient.Z{
+		Score:  float64(time.Now().Unix()),
+		Member: userID,
+	}).Err()
 }
 
 func (s *contestService) SubscribeToChannel(ctx context.Context, channel string) (<-chan string, func()) {
@@ -237,6 +255,13 @@ func (s *contestService) FetchContestProblems(ctx context.Context, contestID, us
 	return s.repo.GetContestProblems(ctx, contestID, userID)
 }
 
+func (s *contestService) SnapshotLeaderboard(ctx context.Context, contestID string, data map[string]interface{}) error {
+	return s.repo.SaveFinalizedLeaderboard(ctx, contestID, data)
+}
+
+func (s *contestService) GetFinalizedLeaderboard(ctx context.Context, contestID string) (map[string]interface{}, error) {
+	return s.repo.GetFinalizedLeaderboard(ctx, contestID)
+}
 
 func (s *contestService) DeleteContest(ctx context.Context, contestID string) error {
 	err := s.repo.DeleteContest(ctx, contestID)
@@ -326,6 +351,55 @@ func (s *contestService) StartAuditDaemon(ctx context.Context) {
 						"contest_id", id,
 						"error", cacheErr,
 					)
+				}
+			}
+		}
+	}
+}
+
+func (s *contestService) StartHeartbeatSweeperDaemon(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second) // Check every 15 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("Shutting down heartbeat sweeper gracefully", "component", "StartHeartbeatSweeperDaemon")
+			return
+		case <-ticker.C:
+			// Fetch active contests (contests currently ongoing)
+			// For simplicity, we can fetch all keys matching contest:heartbeats:*
+			// This could be optimized by tracking active contests in a Redis set
+			iter := s.redis.Scan(ctx, 0, "contest:heartbeats:*", 0).Iterator()
+			
+			cutoffTime := float64(time.Now().Unix() - 30) // 30 seconds grace period
+
+			for iter.Next(ctx) {
+				key := iter.Val()
+				// Extract contestID from key (contest:heartbeats:contestID)
+				contestID := key[len("contest:heartbeats:"):]
+				
+				// Find users whose heartbeat score is older than cutoffTime
+				expiredUsers, err := s.redis.ZRangeByScore(ctx, key, &redisClient.ZRangeBy{
+					Min: "-inf",
+					Max: fmt.Sprintf("%f", cutoffTime),
+				}).Result()
+
+				if err == nil && len(expiredUsers) > 0 {
+					for _, userID := range expiredUsers {
+						// Found a disconnected user. 
+						// 1. Remove from heartbeats
+						s.redis.ZRem(ctx, key, userID)
+						
+						// 2. Disqualify them via repo
+						err = s.repo.DisqualifyUser(ctx, contestID, userID)
+						if err != nil {
+							slog.Error("Failed to disqualify user", "contest_id", contestID, "user_id", userID, "error", err)
+						} else {
+							slog.Info("Disqualified user due to missed heartbeat", "contest_id", contestID, "user_id", userID)
+							// Optional: Log telemetry about disqualification
+						}
+					}
 				}
 			}
 		}

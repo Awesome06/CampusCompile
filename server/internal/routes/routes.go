@@ -62,6 +62,7 @@ func Setup(
 			arena.GET("/problems", ipTracker, contestController.GetContestProblems)
 
 			// 3. High-Frequency Endpoints (Untracked)
+			arena.POST("/heartbeat", contestController.ProcessHeartbeat)
 			arena.GET("/leaderboard", contestController.GetLeaderboard)
 			arena.GET("/leaderboard/stream", middleware.RequireSSECap("leaderboard", 5), contestController.StreamLeaderboard)
 			arena.POST("/telemetry", jsonArmor, contestController.LogTelemetry)
@@ -70,8 +71,13 @@ func Setup(
 
 		// --- PLAYLIST ROUTES (NEW) ---
 		protected.GET("/playlists", playlistController.GetPlaylists)
-		protected.GET("/playlists/:id", playlistController.GetPlaylistByID)
-		protected.GET("/playlists/:id/problems", playlistController.GetPlaylistProblems)
+
+		playlistGroup := protected.Group("/playlists/:id")
+		playlistGroup.Use(middleware.RequirePlaylistClearance())
+		{
+			playlistGroup.GET("", playlistController.GetPlaylistByID)
+			playlistGroup.GET("/problems", playlistController.GetPlaylistProblems)
+		}
 
 		// --- FACULTY & ADMIN ROUTES ---
 		faculty := protected.Group("")

@@ -185,6 +185,23 @@ func (ctrl *ContestController) RegisterForContest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Successfully entered the arena!"})
 }
 
+func (ctrl *ContestController) ProcessHeartbeat(c *gin.Context) {
+	contestID := c.Param("id")
+	userID, err := getSafeString(c, "user_id")
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusUnauthorized, err, "Malformed authentication token context"))
+		return
+	}
+
+	err = ctrl.service.ProcessHeartbeat(c.Request.Context(), contestID, userID)
+	if err != nil {
+		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to process heartbeat"))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "alive"})
+}
+
 // GetLeaderboard provides the initial static snapshot of the leaderboard before the SSE stream takes over
 func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 	contestID := c.Param("id")
@@ -198,13 +215,47 @@ func (ctrl *ContestController) GetLeaderboard(c *gin.Context) {
 		return
 	}
 
+	// 1. Check if the contest is over
+	contest, err := ctrl.service.FetchContestByID(c.Request.Context(), contestID)
+	if err == nil && time.Now().After(contest.EndTime) {
+		// Try to serve the static snapshot
+		snapshot, err := ctrl.service.GetFinalizedLeaderboard(c.Request.Context(), contestID)
+		if err == nil && snapshot != nil {
+			// Security: Strip out MOSS plagiarism alerts if the user is a student
+			if userRole == "student" {
+				if leaderboard, ok := snapshot["leaderboard"].([]interface{}); ok {
+					for _, entryIntf := range leaderboard {
+						if entry, ok := entryIntf.(map[string]interface{}); ok {
+							delete(entry, "alerts")
+						}
+					}
+				}
+			}
+			c.JSON(http.StatusOK, snapshot)
+			return
+		}
+	}
+
+	// 2. Fetch the live state
 	auditStatus, leaderboard, err := ctrl.service.FetchEnrichedLeaderboard(c.Request.Context(), contestID)
 	if err != nil {
 		c.Error(appErrors.NewAppError(http.StatusInternalServerError, err, "Failed to load leaderboard"))
 		return
 	}
 
-	// Security: Strip out MOSS plagiarism alerts if the user is a student
+	// 3. Snapshot it passively if the contest is over and no snapshot existed yet
+	if time.Now().After(contest.EndTime) {
+		dataToSnapshot := map[string]interface{}{
+			"audit_status": auditStatus,
+			"leaderboard":  leaderboard,
+		}
+		// Goroutine to not block the response
+		go func(cid string, snap map[string]interface{}) {
+			_ = ctrl.service.SnapshotLeaderboard(context.Background(), cid, snap)
+		}(contestID, dataToSnapshot)
+	}
+
+	// 4. Security: Strip out MOSS plagiarism alerts if the user is a student
 	if userRole == "student" {
 		for _, entry := range leaderboard {
 			delete(entry, "alerts")
@@ -239,6 +290,14 @@ func (ctrl *ContestController) GetContestProblems(c *gin.Context) {
 	if err == nil && time.Now().Before(contest.StartTime) && userRole != "admin" {
 		if contest.AuthorID == nil || *contest.AuthorID != userID {
 			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "Classified: Problems cannot be viewed before the contest begins."))
+			return
+		}
+	}
+
+	if userRole == "student" {
+		disqualified, err := ctrl.service.IsUserDisqualified(c.Request.Context(), contestID, userID)
+		if err == nil && disqualified {
+			c.Error(appErrors.NewAppError(http.StatusForbidden, nil, "You have been disqualified from this contest due to session abandonment or abnormal activity."))
 			return
 		}
 	}
