@@ -313,9 +313,9 @@ export default function EditContest() {
                 <h4 className="text-sm font-bold text-gray-400 mb-2">Selected Problems</h4>
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
                   {formData.problems.map(selectedData => {
-                    const prob = assignedCache.find(p => p.problem_id === selectedData.problem_id) || 
-                                 availableProblems.find(p => p.problem_id === selectedData.problem_id) || 
-                                 { problem_id: selectedData.problem_id, title: 'Pinned Problem', difficulty: 'Unknown' };
+                    const prob = assignedCache.find(p => p.problem_id === selectedData.problem_id) ||
+                      availableProblems.find(p => p.problem_id === selectedData.problem_id) ||
+                      { problem_id: selectedData.problem_id, title: 'Pinned Problem', difficulty: 'Unknown' };
                     return (
                       <div key={prob.problem_id} className="flex items-center justify-between p-3 rounded border border-blue-500 bg-blue-900/10 transition">
                         <div className="flex items-center gap-4">
@@ -396,7 +396,7 @@ export default function EditContest() {
             <>
               <div className="flex gap-4">
                 {step > 1 ? <Button onClick={() => setStep(step - 1)} variant="secondary">Back</Button> : <div></div>}
-                {(userRole === 'admin' || (userRole === 'professor' && !formData.is_public)) && (
+                {step == 1 && (userRole === 'admin' || (userRole === 'professor' && !formData.is_public)) && (
                   <Button onClick={handleDelete} variant="danger" disabled={saving} className="bg-red-900/50 border border-red-600 text-red-500 hover:bg-red-600 hover:text-white transition">
                     Delete Arena
                   </Button>
