@@ -6,7 +6,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import remarkGfm from 'remark-gfm';
-import api from '../services/api'; 
+import api from '../services/api';
 import Button from '../components/ui/Button';
 import { parseZipTestCases } from '../utils/testCaseParser';
 import { markdownComponents } from '../utils/markdownConfig';
@@ -22,7 +22,7 @@ export default function EditProblem() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [problemData, setProblemData] = useState({
-    title: '', description: '', difficulty: 'Easy', 
+    title: '', description: '', difficulty: 'Easy',
     time_limit: 2000, memory_limit: 256, is_public: false
   });
 
@@ -45,7 +45,7 @@ export default function EditProblem() {
         try {
           const probRes = await api.get(`/problems/${id}`);
           const p = probRes.data;
-          
+
           if (user.role !== 'admin' && user.id !== p.author_id) {
             navigate('/');
             return;
@@ -53,19 +53,19 @@ export default function EditProblem() {
 
           setProblemData({
             title: p.title, description: p.description, difficulty: p.difficulty,
-            time_limit: p.time_limit_ms, memory_limit: p.memory_limit_kb / 1024, 
+            time_limit: p.time_limit_ms, memory_limit: p.memory_limit_kb / 1024,
             is_public: p.is_public ?? false
           });
 
           const tcRes = await api.get(`/problems/${id}/testcases/all`);
-          
+
           // 🛡️ THE FIX: Normalize Database snake_case to React camelCase immediately
           const normalizedTestCases = (tcRes.data.test_cases || []).map(tc => ({
             input: tc.input_data || '',
             expectedOutput: tc.expected_output || '',
             isHidden: tc.is_hidden ?? true
           }));
-          
+
           setTestCases(normalizedTestCases);
           setIsLoading(false);
         } catch (err) {
@@ -100,7 +100,7 @@ export default function EditProblem() {
       const newExpanded = {};
       Object.keys(prev).forEach(key => {
         const numKey = parseInt(key, 10);
-        
+
         if (numKey < indexToRemove) {
           // Items before the deleted index stay exactly where they are
           newExpanded[numKey] = prev[numKey];
@@ -122,30 +122,30 @@ export default function EditProblem() {
 
   // 🛡️ ZIP PARSER FIX: Ignore macOS Ghost Files
   const handleZipUpload = async (e) => {
-    e.preventDefault(); 
+    e.preventDefault();
     const file = e.dataTransfer ? e.dataTransfer.files[0] : e.target.files[0];
     if (!file) return;
-    
+
     setStatus({ type: 'info', message: 'Extracting test cases from ZIP...' });
-    
+
     const { testCases: parsedCases, error } = await parseZipTestCases(file);
-    
+
     if (error) {
       setStatus({ type: 'error', message: error });
     } else {
       const startingIndex = testCases.length;
       setTestCases(prev => [...prev, ...parsedCases]);
-      
+
       // Expand the first newly added test case
       setExpandedCases(prev => ({ ...prev, [startingIndex]: true }));
       setStatus({ type: 'success', message: `Successfully appended ${parsedCases.length} test cases!` });
       setTimeout(() => setStatus({ type: '', message: '' }), 3000);
     }
-    
-    if(e.target) e.target.value = null; 
+
+    if (e.target) e.target.value = null;
   };
 
-const handleSaveChanges = async () => {
+  const handleSaveChanges = async () => {
     setIsSubmitting(true);
     setStatus({ type: 'info', message: 'Saving problem and streaming test cases to S3... 🚀' });
 
@@ -154,7 +154,7 @@ const handleSaveChanges = async () => {
     testCases.forEach((tc, index) => {
       const inBlob = tc.inputBlob || new Blob([tc.input], { type: 'text/plain' });
       const outBlob = tc.expectedBlob || new Blob([tc.expectedOutput], { type: 'text/plain' });
-      
+
       // Appending to the same key creates an array on the backend!
       formData.append('input_files', inBlob, `in_${index}.txt`);
       formData.append('expected_files', outBlob, `out_${index}.txt`);
@@ -189,10 +189,10 @@ const handleSaveChanges = async () => {
 
     } catch (error) {
       console.error("Critical Upload Error:", error);
-      
+
       // 👇 COMPENSATING ACTION: Force draft state and alert
       try {
-        await api.put(`/problems/${id}`, { 
+        await api.put(`/problems/${id}`, {
           title: problemData.title,
           description: problemData.description,
           difficulty: problemData.difficulty,
@@ -202,26 +202,26 @@ const handleSaveChanges = async () => {
           memory_limit_kb: problemData.memory_limit * 1024,
           is_public: false // 👈 Force it to be a private draft
         });
-        
-        setStatus({ 
-          type: 'error', 
-          message: 'Network error during batch upload! The problem has been forced into a private Draft without test cases to prevent students from accessing a broken problem.' 
+
+        setStatus({
+          type: 'error',
+          message: 'Network error during batch upload! The problem has been forced into a private Draft without test cases to prevent students from accessing a broken problem.'
         });
       } catch (fallbackError) {
         setStatus({ type: 'error', message: 'CRITICAL ERROR: Upload failed and automatic draft fallback failed.' });
       }
     } finally {
-      setIsSubmitting(false); 
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async () => {
     if (!window.confirm("Are you absolute sure? This will delete the problem and ALL associated student submissions. This cannot be undone.")) return;
-    
+
     setIsDeleting(true);
     try {
       await api.delete(`/problems/${id}`);
-      navigate('/'); 
+      navigate('/');
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to delete problem.' });
       setIsDeleting(false);
@@ -232,13 +232,12 @@ const handleSaveChanges = async () => {
 
   return (
     <div className="h-[calc(100vh-61px)] bg-dark-bg text-gray-300 flex flex-col overflow-hidden relative">
-      
+
       {status.message && (
-        <div className={`p-3 text-center font-bold text-sm ${
-          status.type === 'error' ? 'bg-red-900/90 text-red-200' :
-          status.type === 'success' ? 'bg-green-900/90 text-green-200' :
-          'bg-blue-900/90 text-blue-200'
-        }`}>
+        <div className={`p-3 text-center font-bold text-sm ${status.type === 'error' ? 'bg-red-900/90 text-red-200' :
+            status.type === 'success' ? 'bg-green-900/90 text-green-200' :
+              'bg-blue-900/90 text-blue-200'
+          }`}>
           {status.message}
         </div>
       )}
@@ -250,26 +249,26 @@ const handleSaveChanges = async () => {
             <div className="space-y-5 flex-1 flex flex-col">
               <div>
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Problem Name</label>
-                <input required type="text" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent transition-colors" 
-                  value={problemData.title} onChange={e => setProblemData({...problemData, title: e.target.value})} />
+                <input required type="text" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent transition-colors"
+                  value={problemData.title} onChange={e => setProblemData({ ...problemData, title: e.target.value })} />
               </div>
               <div className="flex space-x-4">
                 <div className="w-1/3">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Difficulty</label>
                   <select className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent"
-                    value={problemData.difficulty} onChange={e => setProblemData({...problemData, difficulty: e.target.value})}>
+                    value={problemData.difficulty} onChange={e => setProblemData({ ...problemData, difficulty: e.target.value })}>
                     <option>Easy</option><option>Medium</option><option>Hard</option>
                   </select>
                 </div>
                 <div className="w-1/3">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Time Limit (ms)</label>
                   <input required type="number" step="100" min="500" max="5000" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent"
-                    value={problemData.time_limit} onChange={e => setProblemData({...problemData, time_limit: parseInt(e.target.value)})} />
+                    value={problemData.time_limit} onChange={e => setProblemData({ ...problemData, time_limit: parseInt(e.target.value) })} />
                 </div>
                 <div className="w-1/3">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Memory (MB)</label>
                   <input required type="number" step="64" min="64" max="1024" className="w-full bg-dark-bg text-white p-2.5 rounded border border-dark-border mt-1 outline-none focus:border-dark-accent"
-                    value={problemData.memory_limit} onChange={e => setProblemData({...problemData, memory_limit: parseInt(e.target.value)})} />
+                    value={problemData.memory_limit} onChange={e => setProblemData({ ...problemData, memory_limit: parseInt(e.target.value) })} />
                 </div>
               </div>
 
@@ -278,17 +277,17 @@ const handleSaveChanges = async () => {
                   <span>Description (Markdown + LaTeX)</span>
                 </label>
                 <textarea required className="w-full flex-1 min-h-[300px] bg-dark-bg text-gray-300 p-4 rounded border border-dark-border font-mono text-sm outline-none focus:border-dark-accent resize-none custom-scrollbar"
-                  value={problemData.description} onChange={e => setProblemData({...problemData, description: e.target.value})} />
+                  value={problemData.description} onChange={e => setProblemData({ ...problemData, description: e.target.value })} />
               </div>
 
               <div className="flex items-center space-x-3 bg-[#121212] p-3 rounded border border-dark-border mt-4">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex-1">Visibility Status</label>
                 <div className="flex bg-[#1e1e1e] rounded p-1 border border-dark-border">
-                  <button onClick={() => setProblemData({...problemData, is_public: false})}
+                  <button onClick={() => setProblemData({ ...problemData, is_public: false })}
                     className={`px-4 py-1.5 text-xs font-bold rounded transition-colors ${!problemData.is_public ? 'bg-yellow-900/30 text-yellow-500' : 'text-gray-500 hover:text-white'}`}>
                     DRAFT (Hidden)
                   </button>
-                  <button onClick={() => setProblemData({...problemData, is_public: true})}
+                  <button onClick={() => setProblemData({ ...problemData, is_public: true })}
                     className={`px-4 py-1.5 text-xs font-bold rounded transition-colors ${problemData.is_public ? 'bg-green-900/30 text-green-500' : 'text-gray-500 hover:text-white'}`}>
                     PUBLIC (Live)
                   </button>
@@ -310,32 +309,31 @@ const handleSaveChanges = async () => {
           </div>
 
           <div className="w-1/2 bg-dark-bg p-8 overflow-y-auto custom-scrollbar">
-             <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-6 border-b border-gray-800 pb-2">Arena Live Preview</div>
-             <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problemData.title || 'Untitled Problem'}</h2>
-              <div className="flex flex-wrap gap-3 mb-6">
-                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
-                  ⏱️ {(problemData.time_limit || 2000) / 1000}s
-                </span>
-                <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
-                  💾 {problemData.memory_limit || 256}MB
-                </span>
-                <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${
-                    problemData.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' : 
-                    problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' : 
+            <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-6 border-b border-gray-800 pb-2">Arena Live Preview</div>
+            <h2 className="text-3xl font-bold mb-3 text-white tracking-tight">{problemData.title || 'Untitled Problem'}</h2>
+            <div className="flex flex-wrap gap-3 mb-6">
+              <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
+                ⏱️ {(problemData.time_limit || 2000) / 1000}s
+              </span>
+              <span className="bg-[#1e1e1e] text-gray-400 px-3 py-1 rounded text-xs border border-dark-border shadow-sm flex items-center gap-1.5">
+                💾 {problemData.memory_limit || 256}MB
+              </span>
+              <span className={`px-3 py-1 text-xs rounded font-bold border shadow-sm ${problemData.difficulty === 'Easy' ? 'border-green-800 bg-green-900/20 text-green-400' :
+                  problemData.difficulty === 'Medium' ? 'border-yellow-800 bg-yellow-900/20 text-yellow-400' :
                     'border-red-800 bg-red-900/20 text-red-400'
-                  }`}>
-                  {problemData.difficulty}
-                </span>
-              </div>
-              <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
-                <ReactMarkdown
-                  remarkPlugins={[remarkMath, remarkGfm]}
-                  rehypePlugins={[rehypeKatex]}
-                  components={markdownComponents}
-                >
-                  {problemData.description}
-                </ReactMarkdown>
-              </div>
+                }`}>
+                {problemData.difficulty}
+              </span>
+            </div>
+            <div className="prose prose-invert max-w-none text-gray-300 mb-8 text-[15px] leading-relaxed">
+              <ReactMarkdown
+                remarkPlugins={[remarkMath, remarkGfm]}
+                rehypePlugins={[rehypeKatex]}
+                components={markdownComponents}
+              >
+                {problemData.description}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       )}
@@ -354,9 +352,9 @@ const handleSaveChanges = async () => {
             <div className="space-y-3">
               {testCases.map((tc, index) => (
                 <div key={index} className="border border-dark-border rounded-lg overflow-hidden bg-[#1e1e1e] shadow-lg">
-                  
+
                   {/* ACCORDION HEADER */}
-                  <div 
+                  <div
                     className="flex justify-between items-center p-3 bg-[#2a2a2a] cursor-pointer hover:bg-[#333] transition-colors"
                     onClick={() => toggleTestCase(index)}
                   >
@@ -369,16 +367,16 @@ const handleSaveChanges = async () => {
 
                     <div className="flex items-center space-x-4" onClick={(e) => e.stopPropagation()}>
                       <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={tc.isHidden}
                           onChange={(e) => updateTestCase(index, 'isHidden', e.target.checked)}
                           className="rounded border-gray-600 bg-[#121212] text-blue-500 focus:ring-blue-500 focus:ring-offset-[#1e1e1e]"
                         />
                         <span className="select-none">Hidden</span>
                       </label>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => handleRemoveTestCase(index)}
                         className="text-red-400 hover:text-white text-sm font-bold bg-red-900/20 hover:bg-red-600 px-3 py-1 rounded transition-colors"
                       >
@@ -412,14 +410,14 @@ const handleSaveChanges = async () => {
                       </div>
                     </div>
                   )}
-                  
+
                 </div>
               ))}
             </div>
 
             {/* 👇 NEW: Drag and Drop zone wrapper */}
-            <div 
-              onDragOver={(e) => e.preventDefault()} 
+            <div
+              onDragOver={(e) => e.preventDefault()}
               onDrop={handleZipUpload}
               className="mt-8 flex justify-between items-center bg-[#1e1e1e] p-5 rounded-lg border border-dark-border sticky bottom-4 shadow-2xl z-10 hover:border-blue-500 transition-colors"
             >
@@ -434,7 +432,7 @@ const handleSaveChanges = async () => {
                   <input type="file" accept=".zip" className="hidden" onChange={handleZipUpload} />
                 </label>
               </div>
-              <Button onClick={handleSaveChanges} variant="success" className="px-8 shadow-lg shadow-green-900/20" 
+              <Button onClick={handleSaveChanges} variant="success" className="px-8 shadow-lg shadow-green-900/20"
                 disabled={isSubmitting || testCases.some(tc => !tc.input?.trim() || !tc.expectedOutput?.trim())}>
                 {isSubmitting ? 'Streaming to S3...' : 'Save All Changes'}
               </Button>

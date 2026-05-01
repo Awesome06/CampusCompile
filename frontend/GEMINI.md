@@ -13,9 +13,10 @@
 ## Architecture & Conventions
 * **Components / Pages**: Use functional components with hooks. Maintain separation of state and presentation.
 * **Context/State**: Utilize React Context (`src/context/`) for global state like auth/roles. 
-* **Hooks**: Place custom reusable logic in `src/hooks/`.
+* **Hooks & Polling**: Place custom reusable logic in `src/hooks/`. For critical asynchronous synchronization like presence checks, utilize lightweight hooks polling REST endpoints (e.g., `useHeartbeat.js`).
 * **Services**: Isolated API calls go into `src/services/` using `axios`.
-* **Telemetry**: Aggressively monitor and flag suspicious behavior (e.g., tab-switching, focus loss, unauthorized copy-pasting, auto-typer checks) to maintain academic integrity. Avoid disabling or bypassing these checks.
+* **Telemetry & Integrity**: Aggressively monitor and flag suspicious behavior (e.g., tab-switching, focus loss, unauthorized copy-pasting, auto-typer checks) to maintain academic integrity. Avoid disabling or bypassing these checks. Ensure `beforeunload` interceptors are actively mounted during active contest sessions.
+* **Data Visualization**: Recharts is the standard for rendering complex data views (like completions versus drop-off analytics mapping in `PlaylistAnalytics.jsx`).
 
 ## Style & Best Practices
 * Strive for a "buttery-smooth" Single Page Application experience essential for embedding the heavy Monaco Code Editor.

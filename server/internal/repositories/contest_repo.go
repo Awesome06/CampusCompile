@@ -27,6 +27,10 @@ type ContestRepository interface {
 	GetMossAuditStatus(ctx context.Context, contestID string) (string, error)
 	GetPendingMossAudits(ctx context.Context) ([]string, error)
 	UpdateMossAuditStatus(ctx context.Context, contestID, status string) error
+	DisqualifyUser(ctx context.Context, contestID, userID string) error
+	IsUserDisqualified(ctx context.Context, contestID, userID string) (bool, error)
+	SaveFinalizedLeaderboard(ctx context.Context, contestID string, data map[string]interface{}) error
+	GetFinalizedLeaderboard(ctx context.Context, contestID string) (map[string]interface{}, error)
 }
 
 type contestRepo struct {
@@ -587,4 +591,39 @@ func (r *contestRepo) GetPendingMossAudits(ctx context.Context) ([]string, error
 func (r *contestRepo) UpdateMossAuditStatus(ctx context.Context, contestID, status string) error {
 	_, err := r.db.Exec(ctx, "UPDATE contests SET moss_audit_status = $1, updated_at = NOW() WHERE contest_id = $2", status, contestID)
 	return err
+}
+
+func (r *contestRepo) DisqualifyUser(ctx context.Context, contestID, userID string) error {
+	_, err := r.db.Exec(ctx, "UPDATE contest_registrations SET is_disqualified = true WHERE contest_id = $1 AND user_id = $2", contestID, userID)
+	return err
+}
+
+func (r *contestRepo) IsUserDisqualified(ctx context.Context, contestID, userID string) (bool, error) {
+	var disqualified bool
+	err := r.db.QueryRow(ctx, "SELECT is_disqualified FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", contestID, userID).Scan(&disqualified)
+	return disqualified, err
+}
+
+func (r *contestRepo) SaveFinalizedLeaderboard(ctx context.Context, contestID string, data map[string]interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, `
+		INSERT INTO finalized_leaderboards (contest_id, leaderboard_data)
+		VALUES ($1, $2)
+		ON CONFLICT (contest_id) DO NOTHING
+	`, contestID, jsonData)
+	return err
+}
+
+func (r *contestRepo) GetFinalizedLeaderboard(ctx context.Context, contestID string) (map[string]interface{}, error) {
+	var dataBytes []byte
+	err := r.db.QueryRow(ctx, "SELECT leaderboard_data FROM finalized_leaderboards WHERE contest_id = $1", contestID).Scan(&dataBytes)
+	if err != nil {
+		return nil, err
+	}
+	var data map[string]interface{}
+	err = json.Unmarshal(dataBytes, &data)
+	return data, err
 }

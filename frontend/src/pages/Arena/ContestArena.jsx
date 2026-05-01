@@ -7,6 +7,7 @@ import ExecutionConsole from './ExecutionConsole';
 import useExecutionEngine, { boilerplates } from '../../hooks/useExecutionEngine';
 import { ArrowLeft, LogOut, ShieldAlert, AlertTriangle, Maximize } from 'lucide-react';
 import useSecureArena from '../../hooks/useSecureArena';
+import useHeartbeat from '../../hooks/useHeartbeat';
 
 export default function ContestArena() {
   const { id: contestId, problemId } = useParams(); 
@@ -15,6 +16,9 @@ export default function ContestArena() {
   
   const [hasEnteredArena, setHasEnteredArena] = useState(false);
   const { isElevated, isFullscreen, tabViolations, toggleFullscreen } = useSecureArena(contestId, hasEnteredArena);
+
+  // Send periodic heartbeat to server to prove session activity
+  useHeartbeat(contestId, isElevated, hasEnteredArena);
 
   const leaveTimeRef = useRef(null);
   const [timeAway, setTimeAway] = useState(0);

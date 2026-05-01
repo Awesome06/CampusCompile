@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS contest_registrations (
     contest_id UUID REFERENCES contests(contest_id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     registered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    is_disqualified BOOLEAN DEFAULT false,
     PRIMARY KEY (contest_id, user_id)
 );
 
@@ -125,6 +126,14 @@ CREATE TABLE IF NOT EXISTS playlist_problems (
     custom_difficulty problem_difficulty,
     PRIMARY KEY (playlist_id, problem_id),
     CONSTRAINT unique_playlist_order UNIQUE (playlist_id, order_index)
+);
+
+-- Playlist Registrations: Maps users to the playlists they registered for (private)
+CREATE TABLE IF NOT EXISTS playlist_registrations (
+    playlist_id UUID REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    registered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (playlist_id, user_id)
 );
 
 -- Central Tags Table: Stores all unique problem and playlist tags
@@ -196,6 +205,23 @@ CREATE TABLE IF NOT EXISTS plagiarism_reports (
     similarity_score NUMERIC(5,2) NOT NULL,
     moss_url TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Finalized Leaderboards: JSONB snapshot of the Redis leaderboard at contest end
+CREATE TABLE IF NOT EXISTS finalized_leaderboards (
+    contest_id UUID PRIMARY KEY REFERENCES contests(contest_id) ON DELETE CASCADE,
+    leaderboard_data JSONB NOT NULL,
+    snapshot_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Playlist Analytics Summary: Materialized view alternative, updated by a background worker
+CREATE TABLE IF NOT EXISTS playlist_analytics_summary (
+    playlist_id UUID REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    completed_count INTEGER DEFAULT 0,
+    total_students INTEGER DEFAULT 0,
+    last_updated TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (playlist_id, problem_id)
 );
 
 -- ==========================================

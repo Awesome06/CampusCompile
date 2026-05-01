@@ -170,7 +170,7 @@ func (r *problemRepo) GetProblems(ctx context.Context, userID string, limit, off
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("cursor error during problem list retrieval: %w", err)
 	}
-	
+
 	if problems == nil {
 		problems = []map[string]interface{}{}
 	}
@@ -312,12 +312,12 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 	// 1. Fetch exact total DB aggregate matching the scope
 	countQuery := `SELECT COUNT(*) FROM problems WHERE (is_public = true OR author_id = $1)`
 	countArgs := []interface{}{authorID}
-	
+
 	if tsQuery != "" {
 		countQuery += ` AND fts @@ to_tsquery('english', $2)`
 		countArgs = append(countArgs, tsQuery)
 	}
-	
+
 	if err := r.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount); err != nil {
 		return nil, fmt.Errorf("failed to aggregate total faculty problem count: %w", err)
 	}
@@ -371,7 +371,7 @@ func (r *problemRepo) GetFacultyProblems(ctx context.Context, authorID string, l
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("cursor error during faculty problem list retrieval: %w", err)
 	}
-	
+
 	if problems == nil {
 		problems = []map[string]interface{}{}
 	}

@@ -185,7 +185,7 @@ func (ctrl *ProblemController) GetFacultyProblems(c *gin.Context) {
 	if result == nil {
 		result = map[string]interface{}{"problems": []map[string]interface{}{}, "solved_count": 0, "total_count": 0}
 	}
-	
+
 	c.JSON(http.StatusOK, result)
 }
 

@@ -121,6 +121,10 @@ func main() {
 	// Pass the cancellable context to the daemons instead of context.Background()
 	go contestService.StartAuditDaemon(ctx)
 	go contestService.StartLeaderboardDaemon(ctx)
+	go contestService.StartHeartbeatSweeperDaemon(ctx)
+
+	analyticsService := services.NewAnalyticsService(database.Pool)
+	go analyticsService.StartPlaylistAnalyticsDaemon(ctx)
 
 	// Configure the HTTP server manually instead of using router.Run()
 	srv := &http.Server{
