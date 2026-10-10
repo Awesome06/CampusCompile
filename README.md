@@ -1,53 +1,148 @@
-# CampusCompile: The Ultimate Collegiate Coding Arena
-CampusCompile is a centralized, high-performance competitive programming platform built specifically for the university ecosystem. It bridges the gap between generic coding websites and the specific, rigorous demands of academic coursework, providing a secure arena for campus-wide coding competitions, algorithmic problem sets, and automated code evaluation.
+# CampusCompile — Scalable Collegiate Coding Arena
 
-# 🌟 The Vision
-Generic platforms don't understand university structures. CampusCompile is engineered to map directly to campus demographics—allowing faculty to target contests to specific courses, graduation years, and student groups, all while enforcing strict academic integrity.
+A centralized, high-performance competitive programming platform built specifically for the university ecosystem. CampusCompile bridges the gap between generic coding websites and rigorous academic coursework by providing a secure, distributed arena for campus-wide algorithmic competitions and automated code evaluation.
 
-# 🚀 Core Features
-## 🛡️ Ironclad Academic Integrity
-* Proactive Telemetry: The frontend aggressively monitors and flags suspicious behavior, including tab-switching, focus loss, and unauthorized copy-pasting.
+**Live Platform:** [CampusCompile Frontend](#) *(Replace with actual link)*  
+**API Gateway:** [Go Backend Instance](#) *(Replace with actual link)*  
 
-* Auto-Typer Detection: Analyzes keystroke variance and WPM in real-time to flag artificially injected code.
+## Contents
+- [Quick start](#quick-start)
+- [Tech stack](#tech-stack)
+- [System Architecture](#system-architecture)
+- [Core Features & Integrity](#core-features--integrity)
+- [Database schema](#database-schema)
+- [Execution Pipeline](#execution-pipeline)
+- [Project layout](#project-layout)
 
-* Environment Lockout: Forces a secure fullscreen environment during live contests; exiting triggers a recorded security lockout.
+## Quick start
+Because CampusCompile relies on a microservices architecture (Go, Python, Redis, Postgres, MinIO), the entire platform is orchestrated via Docker Compose.
 
-* Automated MOSS Audits: The backend automatically bundles contest submissions and interfaces with Stanford's Measure of Software Similarity (MOSS) to generate deep structural plagiarism reports post-contest.
+Requires **Docker** and **Docker Compose**.
 
-## 🎯 Granular Demographic Access
-Faculty can restrict contest access using precise rules: Allowed Courses (e.g., B.Tech, MCA), Departments (e.g., CSE, ECE), Batches, Sections, and Graduation Years.
+```bash
+# Clone the repository
+git clone [https://github.com/Awesome06/CampusCompile.git](https://github.com/Awesome06/CampusCompile.git)
+cd CampusCompile
 
-## ⚡ Precision Execution Engine
-* Sandboxed Evaluation: Code is executed in fully isolated, ephemeral Docker containers with strict, dynamically allocated CPU, memory, and PID limits.
+# Build and spin up the microservices
+docker-compose up --build
+```
+* **Student/Admin SPA:** `http://localhost:3000`
+* **Go API Gateway:** `http://localhost:8080`
+* **MinIO Object Storage Console:** `http://localhost:9001`
 
-* Real-Time Streaming: Students receive instant, character-by-character feedback via Server-Sent Events (SSE) as their code runs against hidden test cases.
+## Tech stack
 
-* Language Support: Natively supports C++ 20, Python 3, and Java 17, with automatic time and memory limit multipliers applied based on the language's inherent overhead.
+| Component | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Frontend** | React, Vite, Monaco Editor | High-performance SPA handling intense live state changes. |
+| **API Gateway** | Go (Golang) | Lightning-fast concurrency for handling hundreds of SSE connections. |
+| **Execution Worker** | Python | Orchestrates Docker daemon for sandboxing and interfaces with Stanford MOSS. |
+| **Message Broker** | Redis | High-throughput Pub/Sub and async queueing for student submissions. |
+| **Primary Database**| PostgreSQL | Strict ACID compliance for complex demographic mapping and roles. |
+| **Object Storage** | S3 / MinIO | Scalable storage for massive test-case ZIP files and user source code. |
 
-## 👥 The User Experience
-### For Faculty & Admins (The Forge)
-* Rich Problem Creation: Craft algorithmic challenges using a dual-pane Markdown editor with full LaTeX support for mathematical formulas.
+## System Architecture
 
-* Frictionless Test Cases: Upload massive I/O test cases via a simple drag-and-drop ZIP extraction tool, which are automatically streamed securely to S3 storage.
+```text
+┌─────────────────────────┐        ┌─────────────────────────┐
+│  React SPA (The Arena)  │◄──────►│ Microsoft Azure AD SSO  │
+└────────────┬────────────┘        └─────────────────────────┘
+             │ HTTP / SSE
+┌────────────▼────────────┐        ┌─────────────────────────┐
+│      Go API Gateway     │◄──────►│       PostgreSQL        │
+└────────────┬────────────┘        └─────────────────────────┘
+             │ Enqueues Job
+┌────────────▼────────────┐        ┌─────────────────────────┐
+│   Redis Message Broker  │◄──────►│      MinIO / AWS S3     │
+└────────────┬────────────┘        └─────────────────────────┘
+             │ Consumes Job
+┌────────────▼────────────┐        ┌─────────────────────────┐
+│  Python Grading Worker  │───────►│ Stanford MOSS (Audits)  │
+└────────────┬────────────┘        └─────────────────────────┘
+             │ Spawns Sandbox
+┌────────────▼────────────┐
+│   Docker (C++/Py/Java)  │
+└─────────────────────────┘
+```
 
-* Live Overseer Dashboard: Monitor live leaderboards enriched with real-time telemetry alerts, showing exactly which students are triggering integrity flags.
+Three core engineering decisions define the platform:
+1. **Asynchronous Execution:** Code submission is completely decoupled from evaluation. The Go API ingests submissions and pushes them to Redis. Python workers pick up the jobs, compile/execute in Docker, and broadcast verdicts back to the client via Go Server-Sent Events (SSE). This ensures the API never drops requests during peak traffic spikes.
+2. **Ephemeral Sandboxing:** Every student submission is executed in a fully isolated, ephemeral Docker container with strict, dynamically allocated CPU, memory, and PID limits.
+3. **Academic-First Access Control:** Unlike generic platforms, CampusCompile's RBAC is mapped directly to university hierarchies (Courses, Departments, Batches, Sections, Graduation Years).
 
-### For Students (The Arena)
-* Microsoft SSO: Seamless one-click login utilizing the university's existing Azure Active Directory.
+## Core Features & Integrity
 
-* Professional Workspace: A distraction-free coding environment powered by the Monaco Editor (the engine behind VS Code).
+To ensure zero-trust academic integrity during campus-wide exams, CampusCompile enforces strict telemetry and security measures:
 
-# 🏗️ Tech Stack & Engineering Choices
-* CampusCompile utilizes a microservices-oriented architecture to ensure high availability, security, and scalability during massive campus-wide events.
+| Feature | Mechanism |
+| :--- | :--- |
+| **Proactive Telemetry** | The frontend aggressively monitors and flags suspicious behavior, including tab-switching, focus loss, and unauthorized copy-pasting. |
+| **Auto-Typer Detection** | Analyzes keystroke variance and WPM in real-time to flag artificially injected code. |
+| **Environment Lockout** | Forces a secure fullscreen environment during live contests; exiting triggers a recorded security lockout. |
+| **Stanford MOSS Audits** | The backend automatically bundles contest submissions and sends them to Stanford's Measure of Software Similarity (MOSS) API to generate deep structural plagiarism reports post-contest. |
+| **Language Overhead Scaling**| Natively supports C++20, Python 3, and Java 17, automatically applying time/memory limit multipliers to account for runtime overhead (e.g., JVM startup vs. compiled C++). |
 
-* Backend API — Go (Golang): Chosen for its lightning-fast concurrency model. Go effortlessly handles hundreds of simultaneous Server-Sent Events (SSE) connections for live leaderboards and submission tracking without choking the server's memory.
+## Database schema
+A simplified view of the core relational structures enforcing demographic rules and contest state.
 
-* Execution Worker — Python: Ideal for scripting complex sandboxed environments. Python seamlessly interfaces with the Docker daemon to spawn isolated compilation containers and handles the complex network requests required for Stanford's MOSS anti-plagiarism API.
+```text
+users
+├─ id PK
+├─ azure_oid UNIQUE
+├─ email
+├─ role 'student' | 'faculty' | 'admin'
+├─ department
+├─ batch_year
+└─ section
 
-* Frontend — React + Vite: Delivers a buttery-smooth Single Page Application experience, which is absolutely critical for embedding the heavy Monaco Code Editor and maintaining rapid state changes during intense coding contests.
+contests
+├─ id PK
+├─ title
+├─ start_time
+├─ end_time
+├─ allowed_departments ARRAY
+└─ allowed_batches ARRAY
 
-* Primary Database — PostgreSQL: Provides strict ACID compliance and relational integrity. Essential for mapping complex demographic rules, user roles, and historical submission logs.
+problems
+├─ id PK
+├─ contest_id ─► contests.id
+├─ title
+├─ description (Markdown/LaTeX)
+├─ time_limit_ms
+└─ memory_limit_mb
 
-* Message Broker — Redis: Acts as the high-throughput nervous system of the platform. It queues student submissions for the Python workers and manages the Pub/Sub channels that broadcast live execution verdicts back to the Go API.
+submissions
+├─ id PK
+├─ user_id ─► users.id
+├─ problem_id ─► problems.id
+├─ language
+├─ status 'pending' | 'running' | 'accepted' | 'rejected'
+├─ telemetry_flags JSONB
+└─ submitted_at
+```
 
-* Object Storage — S3 / MinIO: Ensures isolated, highly scalable, and secure storage for massive test-case ZIP files and user source code, keeping the core database lightweight.
+## Execution Pipeline
+
+The core workflow relies on a mix of REST endpoints and persistent connections:
+
+1. **Submission (`POST /api/submit`):** The React client posts source code. The Go API writes a `pending` record to PostgreSQL, uploads the code to MinIO, and pushes a job ID to Redis.
+2. **Evaluation (Python Worker):** A worker pops the job from Redis, pulls the code and test cases from MinIO, and spins up a restricted Docker container.
+3. **Streaming Feedback (`GET /api/stream/submission/{id}`):** The React client opens an SSE connection to the Go API. As the Python worker evaluates test cases, it publishes verdicts to a Redis Pub/Sub channel. The Go API relays these directly to the client, providing character-by-character real-time feedback.
+
+## Project layout
+
+```text
+.
+├── backend-api/          # Go API Gateway (Fiber/Gin, PostgreSQL, Redis Pub/Sub)
+├── execution-worker/     # Python Worker (Docker SDK, MinIO Client, MOSS API)
+├── frontend/             # React SPA (Monaco Editor, SSE hooks, Telemetry)
+├── docker-compose.yml    # Full local environment orchestration
+├── scripts/              # DB migrations and test-case seeder scripts
+└── README.md
+```
+
+## Contact
+**Mrigank Bhatnagar**  
+* [LinkedIn](https://linkedin.com/in/mrigank-bhatnagar)
+* [GitHub](https://github.com/Awesome06)
