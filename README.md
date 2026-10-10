@@ -2,9 +2,6 @@
 
 A centralized, high-performance competitive programming platform built specifically for the university ecosystem. CampusCompile bridges the gap between generic coding websites and rigorous academic coursework by providing a secure, distributed arena for campus-wide algorithmic competitions and automated code evaluation.
 
-**Live Platform:** [CampusCompile Frontend](#) *(Replace with actual link)*  
-**API Gateway:** [Go Backend Instance](#) *(Replace with actual link)*  
-
 ## Contents
 - [Quick start](#quick-start)
 - [Tech stack](#tech-stack)
